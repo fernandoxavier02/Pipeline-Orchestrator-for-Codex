@@ -1,0 +1,33 @@
+{
+  "name": "pipeline-orchestrator-for-codex",
+  "version": "0.1.0",
+  "description": "Structured multi-phase execution pipeline for Codex with gates, state, and adversarial review.",
+  "author": {
+    "name": "Fernando Xavier - FX Studio AI",
+    "email": "",
+    "url": ""
+  },
+  "homepage": "https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex",
+  "repository": "https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex",
+  "license": "MIT",
+  "keywords": ["codex", "pipeline", "orchestration", "review", "workflow"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Pipeline Orchestrator for Codex",
+    "shortDescription": "Structured execution pipeline with gates and review",
+    "longDescription": "Functional Codex port of the original Claude Code Pipeline-Orchestrator.",
+    "developerName": "Fernando Xavier - FX Studio AI",
+    "category": "Coding",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex",
+    "privacyPolicyURL": "https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex/blob/main/README.md",
+    "termsOfServiceURL": "https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex/blob/main/LICENSE",
+    "defaultPrompt": [
+      "Run the pipeline for this repository.",
+      "Classify the request, show the proposal, then execute in phases."
+    ],
+    "brandColor": "#14532D",
+    "screenshots": []
+  }
+}
