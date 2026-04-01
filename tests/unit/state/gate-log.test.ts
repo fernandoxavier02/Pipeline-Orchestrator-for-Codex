@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -9,14 +9,35 @@ describe("gate log", () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-gates-"));
     const log = createGateLog(root);
 
-    await log.append({
+    await expect(log.append({
       gate: "INFO_GATE_BLOCKED",
-      status: "blocked",
       hardness: "MANDATORY",
-      reason: "Missing reproduction steps",
-    });
+      phase: "phase-0",
+      decision: "block",
+      decided_by: "controller",
+      timestamp: "2026-04-01T12:00:00.000Z",
+      detail: "Missing reproduction steps",
+      confidence_impact: 0,
+    })).resolves.toBeUndefined();
 
     const raw = readFileSync(join(root, "gate-decisions.jsonl"), "utf8");
     expect(raw).toContain("\"gate\":\"INFO_GATE_BLOCKED\"");
+  });
+
+  it("rejects malformed current gate log rows", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-gates-current-"));
+    const log = createGateLog(root);
+
+    writeFileSync(
+      join(root, "gate-decisions.jsonl"),
+      `${JSON.stringify({
+        gate: "INFO_GATE_BLOCKED",
+        status: "blocked",
+        reason: "Missing reproduction steps",
+      })}\n`,
+      "utf8",
+    );
+
+    await expect(log.list()).rejects.toThrow();
   });
 });

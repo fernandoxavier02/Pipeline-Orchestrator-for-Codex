@@ -5,6 +5,10 @@ const designReviewStatusSchema = z.enum(["passed", "partial", "skipped"]);
 const planModeStatusSchema = z.enum(["required", "optional", "skipped"]);
 const validationIntentSchema = z.enum(["standard", "reduced"]);
 const proposalConfirmationStatusSchema = z.enum(["APPROVED", "ADJUSTED", "REJECTED"]);
+const pipelinePhaseSchema = z.enum(["phase-0", "phase-1", "phase-1.5", "phase-2", "phase-3"]);
+const gateHardnessSchema = z.enum(["MANDATORY", "HARD", "CIRCUIT_BREAKER", "SOFT"]);
+const gateDecisionValueSchema = z.enum(["pass", "block", "skip", "partial"]);
+const confidenceBandSchema = z.enum(["low", "medium", "high"]);
 
 export const orchestratorDecisionSchema = z.object({
   mode: z.string(),
@@ -18,7 +22,7 @@ export const orchestratorDecisionSchema = z.object({
 export const proposalSchema = z.object({
   summary: z.string(),
   variant: z.string(),
-  awaitingUserConfirmation: z.boolean(),
+  awaitingUserConfirmation: z.boolean().optional(),
   infoGateStatus: gateStatusSchema,
   designReviewStatus: designReviewStatusSchema,
   planModeStatus: planModeStatusSchema,
@@ -55,28 +59,57 @@ const controllerManagedTransitionSchema = z.object({
 
 export const sessionStateSchema = z.object({
   sessionId: z.string(),
-  currentPhase: z.enum(["phase-0", "phase-1", "phase-1.5", "phase-2", "phase-3"]),
+  currentPhase: pipelinePhaseSchema,
+  phase: pipelinePhaseSchema.optional(),
+  batchIndex: z.number().int().nonnegative().default(0),
   mode: z.string(),
   variant: z.string(),
   confidenceScore: z.number(),
   proposal: proposalSchema.optional(),
   approvalProof: controllerManagedTransitionSchema.optional(),
+  unresolvedBlockers: z.array(z.string()).default([]),
+  pendingDecision: z.string().optional(),
+  touchedFiles: z.array(z.string()).default([]),
 });
 
 export const gateDecisionSchema = z.object({
   gate: z.string(),
-  status: z.enum(["passed", "blocked", "partial"]),
-  hardness: z.enum(["MANDATORY", "HARD", "CIRCUIT_BREAKER", "SOFT"]),
-  reason: z.string(),
+  hardness: gateHardnessSchema,
+  phase: z.string(),
+  decision: gateDecisionValueSchema,
+  decided_by: z.enum(["controller", "user", "system", "resume-router"]),
+  timestamp: z.string(),
+  detail: z.string(),
+  confidence_impact: z.number(),
+});
+
+export const controllerRevalidationLockSchema = z.object({
+  kind: z.literal("controller-revalidation-lock"),
+  runDir: z.string(),
+  phase: pipelinePhaseSchema,
+  staleContext: gateDecisionSchema,
+  updatedAt: z.string(),
 });
 
 export const checkpointSchema = z.object({
   name: z.string(),
+  phase: pipelinePhaseSchema,
+  batchIndex: z.number().int().nonnegative(),
   status: z.enum(["pending", "completed", "failed"]),
+  timestamp: z.string(),
+  detail: z.string().optional(),
 });
 
 export const checkpointListSchema = z.array(checkpointSchema);
 
 export const confidenceScoreSchema = z.object({
   score: z.number(),
+  band: confidenceBandSchema,
+  thresholds: z.object({
+    medium: z.number(),
+    high: z.number(),
+  }),
+  gate_penalty: z.number(),
+  dimensions: z.record(z.union([z.number(), z.null()])),
+  updated_at: z.string(),
 });

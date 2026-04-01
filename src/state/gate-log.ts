@@ -6,8 +6,10 @@ export function createGateLog(root: string) {
   const file = join(root, "gate-decisions.jsonl");
 
   return {
+    root,
     async append(decision: unknown) {
       const parsed = gateDecisionSchema.parse(decision);
+
       await mkdir(root, { recursive: true });
       await appendFile(file, `${JSON.stringify(parsed)}\n`, "utf8");
     },

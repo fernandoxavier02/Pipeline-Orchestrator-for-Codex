@@ -10,11 +10,19 @@ import { createSessionStore } from "./state/session-store.js";
 
 export function createPipelineRuntime(options: RuntimeOptions) {
   const stateDir = `${options.cwd}/.codex/pipeline`;
-  const stores = {
-    session: createSessionStore(stateDir),
-    checkpoints: createCheckpointStore(stateDir),
-    gateLog: createGateLog(stateDir),
-    confidence: createConfidenceScoreStore(stateDir),
+  const sessionStore = createSessionStore(stateDir);
+  const checkpointStore = createCheckpointStore(stateDir);
+  const gateLogStore = createGateLog(stateDir);
+  const confidenceStore = createConfidenceScoreStore(stateDir);
+  const controllerStores = {
+    session: sessionStore,
+    checkpoints: checkpointStore,
+    gateLog: gateLogStore,
+    confidence: confidenceStore,
+  };
+  const publicStores = {
+    session: sessionStore,
+    checkpoints: checkpointStore,
   };
   const getReferenceIndex = (() => {
     let referenceIndexPromise: Promise<ReturnType<typeof createReferenceProfileIndex>> | undefined;
@@ -26,11 +34,11 @@ export function createPipelineRuntime(options: RuntimeOptions) {
   })();
 
   return {
-    controller: createPipelineController({ stores, referenceIndex: getReferenceIndex }),
+    controller: createPipelineController({ stores: controllerStores, referenceIndex: getReferenceIndex }),
     dispatcher: { runRole },
     stateDir,
     supportedModes: [...PIPELINE_MODES],
     referenceIndex: getReferenceIndex,
-    stores,
+    stores: publicStores,
   };
 }

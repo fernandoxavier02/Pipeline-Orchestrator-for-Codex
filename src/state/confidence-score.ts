@@ -1,19 +1,32 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import YAML from "yaml";
 import { confidenceScoreSchema } from "../domain/pipeline-schemas.js";
 
 export function createConfidenceScoreStore(root: string) {
-  const file = join(root, "confidence-score.json");
+  const yamlFile = join(root, "confidence-score.yaml");
+  const legacyJsonFile = join(root, "confidence-score.json");
 
   return {
-    async save(score: number) {
-      const parsed = confidenceScoreSchema.parse({ score });
+    root,
+    async save(snapshot: unknown) {
+      const parsed = confidenceScoreSchema.parse(snapshot);
+
       await mkdir(root, { recursive: true });
-      await writeFile(file, JSON.stringify(parsed), "utf8");
+      await writeFile(yamlFile, YAML.stringify(parsed), "utf8");
     },
     async load() {
-      const raw = await readFile(file, "utf8");
-      return confidenceScoreSchema.parse(JSON.parse(raw));
+      try {
+        const raw = await readFile(yamlFile, "utf8");
+        return confidenceScoreSchema.parse(YAML.parse(raw));
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+          const raw = await readFile(legacyJsonFile, "utf8");
+          return confidenceScoreSchema.parse(JSON.parse(raw));
+        }
+
+        throw error;
+      }
     },
   };
 }

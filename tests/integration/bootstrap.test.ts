@@ -13,5 +13,9 @@ describe("bootstrap", () => {
     expect(runtime.supportedModes).toEqual(
       expect.arrayContaining(["full", "diagnostic", "continue", "review-only"]),
     );
+    expect(runtime.stores.session).toBeDefined();
+    expect(runtime.stores.checkpoints).toBeDefined();
+    expect("gateLog" in runtime.stores).toBe(false);
+    expect("confidence" in runtime.stores).toBe(false);
   });
 });

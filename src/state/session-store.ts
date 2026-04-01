@@ -6,6 +6,7 @@ export function createSessionStore(root: string) {
   const file = join(root, "session.json");
 
   return {
+    root,
     async save(session: unknown) {
       const parsed = sessionStateSchema.parse(session);
       await mkdir(root, { recursive: true });

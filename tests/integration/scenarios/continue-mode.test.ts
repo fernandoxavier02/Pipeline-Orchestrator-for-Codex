@@ -34,7 +34,14 @@ describe("continue mode", () => {
         validationIntent: "standard",
       },
     });
-    await createCheckpointStore(root).save({ name: "plan", status: "completed" });
+    await createCheckpointStore(root).save({
+      name: "plan",
+      phase: "phase-1",
+      batchIndex: 0,
+      status: "completed",
+      timestamp: "2026-04-01T12:00:00.000Z",
+      detail: "Plan completed",
+    });
 
     await expect(controller.start("/pipeline continue")).rejects.toThrow(
       "Cannot continue while proposal confirmation is pending",
@@ -68,7 +75,14 @@ describe("continue mode", () => {
         validationIntent: "standard",
       },
     });
-    await createCheckpointStore(root).save({ name: "plan", status: "completed" });
+    await createCheckpointStore(root).save({
+      name: "plan",
+      phase: "phase-1.5",
+      batchIndex: 0,
+      status: "completed",
+      timestamp: "2026-04-01T12:00:00.000Z",
+      detail: "Plan completed",
+    });
 
     await expect(controller.start("/pipeline continue")).rejects.toThrow(
       "phase-1.5 session is missing controller-managed transition proof",
