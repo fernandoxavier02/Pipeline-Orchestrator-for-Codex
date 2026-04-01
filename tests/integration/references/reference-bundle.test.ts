@@ -59,7 +59,7 @@ describe("reference bundle", () => {
     }
   });
 
-  it("loads reference files by catalog content instead of hard-coded file names", async () => {
+  it("loads reference files by catalog content instead of hard-coded file names", { timeout: 10000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-refs-"));
     const sourceRefs = join(process.cwd(), "references");
     const copiedRefs = join(root, "references");

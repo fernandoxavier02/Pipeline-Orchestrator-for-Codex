@@ -15,9 +15,22 @@ describe("session store", () => {
       mode: "full",
       variant: "implement-heavy",
       confidenceScore: 1,
+      proposal: {
+        summary: "build new dashboard",
+        variant: "implement-light",
+        awaitingUserConfirmation: true,
+        infoGateStatus: "passed",
+        designReviewStatus: "skipped",
+        planModeStatus: "skipped",
+        affectedFiles: ["src/controller/pipeline-controller.ts"],
+        batchSize: 3,
+        validationIntent: "standard",
+      },
     });
 
     const raw = readFileSync(join(root, "session.json"), "utf8");
     expect(raw).toContain("\"sessionId\":\"session-1\"");
+    const loaded = await store.load();
+    expect(loaded.proposal?.summary).toBe("build new dashboard");
   });
 });

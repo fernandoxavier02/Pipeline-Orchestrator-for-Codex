@@ -33,12 +33,12 @@ describe("reference-backed runtime", () => {
     try {
       await cp(sourceRefs, copiedRefs, { recursive: true });
       await writeFile(
-        join(copiedRefs, "pipelines", "implement-heavy.md"),
-        `---\nkind: pipeline-profile\nvariant: feature-heavy\ntype: Feature\ncomplexity: COMPLEXA\nintensity: heavy\nbatchSize: 1\nsummary: Feature work with a renamed heavy variant for runtime verification.\nchecklists:\n  - business-logic\n  - data-integrity\n  - error-handling\n  - input-validation\n---\n# feature-heavy\nRuntime proof variant.\n`,
+        join(copiedRefs, "pipelines", "implement-light.md"),
+        `---\nkind: pipeline-profile\nvariant: feature-light\ntype: Feature\ncomplexity: MEDIA\nintensity: light\nbatchSize: 3\nsummary: Feature work with a renamed light variant for runtime verification.\nchecklists:\n  - business-logic\n  - error-handling\n  - input-validation\n---\n# feature-light\nRuntime proof variant.\n`,
       );
       await writeFile(
         join(copiedRefs, "complexity-matrix.md"),
-        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: implement-light\n    heavy: feature-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
+        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
       );
       await writeFile(
         join(copiedRefs, "gates", "macro-gate-questions.md"),
@@ -48,8 +48,8 @@ describe("reference-backed runtime", () => {
       const runtime = createPipelineRuntime({ cwd: root, codexHome: "/codex-home" });
       const result = await runtime.controller.start("build new dashboard");
 
-      expect(result.variant).toBe("feature-heavy");
-      expect(result.proposal.variant).toBe("feature-heavy");
+      expect(result.variant).toBe("feature-light");
+      expect(result.proposal.variant).toBe("feature-light");
       expect(result.gates[0].questions).toEqual(
         expect.arrayContaining([
           "What outcome does the runtime bundle now control?",

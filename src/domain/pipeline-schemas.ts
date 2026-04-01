@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+const gateStatusSchema = z.enum(["passed", "blocked", "partial"]);
+const designReviewStatusSchema = z.enum(["passed", "partial", "skipped"]);
+const planModeStatusSchema = z.enum(["required", "optional", "skipped"]);
+const validationIntentSchema = z.enum(["standard", "reduced"]);
+const proposalConfirmationStatusSchema = z.enum(["APPROVED", "ADJUSTED", "REJECTED"]);
+
 export const orchestratorDecisionSchema = z.object({
   mode: z.string(),
   type: z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation"]),
@@ -13,7 +19,38 @@ export const proposalSchema = z.object({
   summary: z.string(),
   variant: z.string(),
   awaitingUserConfirmation: z.boolean(),
+  infoGateStatus: gateStatusSchema,
+  designReviewStatus: designReviewStatusSchema,
+  planModeStatus: planModeStatusSchema,
   affectedFiles: z.array(z.string()),
+  batchSize: z.number().int().positive(),
+  validationIntent: validationIntentSchema,
+});
+
+export const proposalConfirmationSchema = z.object({
+  kind: z.literal("PROPOSAL_CONFIRMATION"),
+  status: proposalConfirmationStatusSchema,
+  response: z.string(),
+});
+
+export const implementationPlanSchema = z.object({
+  kind: z.literal("IMPLEMENTATION_PLAN"),
+  status: proposalConfirmationStatusSchema,
+  summary: z.string(),
+  affectedFiles: z.array(z.string()),
+});
+
+export const designInterrogationSchema = z.object({
+  kind: z.literal("DESIGN_INTERROGATION"),
+  status: designReviewStatusSchema,
+  summary: z.string(),
+  questions: z.array(z.string()),
+});
+
+const controllerManagedTransitionSchema = z.object({
+  kind: z.literal("controller-managed-transition"),
+  from: z.literal("phase-1"),
+  to: z.literal("phase-1.5"),
 });
 
 export const sessionStateSchema = z.object({
@@ -22,6 +59,8 @@ export const sessionStateSchema = z.object({
   mode: z.string(),
   variant: z.string(),
   confidenceScore: z.number(),
+  proposal: proposalSchema.optional(),
+  approvalProof: controllerManagedTransitionSchema.optional(),
 });
 
 export const gateDecisionSchema = z.object({

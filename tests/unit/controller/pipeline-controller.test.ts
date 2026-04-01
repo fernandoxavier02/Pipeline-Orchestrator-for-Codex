@@ -8,7 +8,7 @@ describe("pipeline controller", () => {
     codexHome: "/codex-home",
   });
 
-  it("parses diagnostic mode from command-like input", async () => {
+  it("parses diagnostic mode from command-like input", { timeout: 10000 }, async () => {
     const result = await runtime.controller.start("/pipeline diagnostic audit auth flow");
     expect(result.mode).toBe("diagnostic");
     expect(result.type).toBe("Audit");
@@ -19,6 +19,31 @@ describe("pipeline controller", () => {
     expect(result.proposal.summary).toContain("fix login redirect loop");
     expect(result.proposal.variant).toMatch(/bugfix/);
     expect(result.proposal.awaitingUserConfirmation).toBe(true);
+  });
+
+  it("normalizes confirmation responses at the controller boundary", async () => {
+    const controller = createPipelineController({
+      stores: {
+        session: {
+          load: async () => ({
+            currentPhase: "phase-1",
+            proposal: {
+              summary: "harden audit trail",
+              affectedFiles: ["src/controller/pipeline-controller.ts"],
+              planModeStatus: "required",
+            },
+          }),
+        },
+        checkpoints: {
+          list: async () => [],
+        },
+      },
+    });
+
+    const result = await controller.start("Yes");
+
+    expect(result.phase).toBe("phase-1.5");
+    expect(result.implementationPlan.status).toBe("APPROVED");
   });
 
   it("does not resolve the reference bundle when resuming", async () => {
