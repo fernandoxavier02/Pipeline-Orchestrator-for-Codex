@@ -1,4 +1,5 @@
 import { createPipelineController } from "./controller/pipeline-controller.js";
+import { runRole } from "./dispatcher/run-role.js";
 import { PIPELINE_MODES, type RuntimeOptions } from "./domain/pipeline-types.js";
 import { createCheckpointStore } from "./state/checkpoint-store.js";
 import { createConfidenceScoreStore } from "./state/confidence-score.js";
@@ -16,6 +17,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
 
   return {
     controller: createPipelineController(),
+    dispatcher: { runRole },
     stateDir,
     supportedModes: [...PIPELINE_MODES],
     stores,
