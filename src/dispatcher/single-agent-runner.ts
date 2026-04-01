@@ -9,6 +9,7 @@ export async function runSingleAgentRole(
     output: {
       prompt: request.prompt,
       input: request.input,
+      freshContextRequired: request.role.includes("review"),
     },
   };
 }
