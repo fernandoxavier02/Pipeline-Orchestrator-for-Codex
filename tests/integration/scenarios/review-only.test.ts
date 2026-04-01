@@ -4,7 +4,7 @@ import { createPipelineRuntime } from "../../../src/index.js";
 describe("review-only mode", () => {
   it("runs review planning without entering implementation", async () => {
     const runtime = createPipelineRuntime({
-      cwd: "/repo",
+      cwd: process.cwd(),
       codexHome: "/codex-home",
     });
 

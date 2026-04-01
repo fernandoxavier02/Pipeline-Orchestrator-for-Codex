@@ -4,7 +4,7 @@ import { createPipelineRuntime } from "../../src/index.js";
 describe("bootstrap", () => {
   it("creates a runtime with default directories and mode support", () => {
     const runtime = createPipelineRuntime({
-      cwd: "/tmp/repo",
+      cwd: process.cwd(),
       codexHome: "/tmp/codex-home",
     });
 

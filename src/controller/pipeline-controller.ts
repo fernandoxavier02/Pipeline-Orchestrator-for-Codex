@@ -3,12 +3,14 @@ import { buildProposal } from "./build-proposal.js";
 import { classifyRequest } from "./classify-request.js";
 import { parseMode } from "./parse-mode.js";
 import { runInformationGate } from "../gates/information-gate.js";
+import type { ReferenceProfileIndex } from "../references/reference-profiles.js";
 
 export function createPipelineController(runtime?: {
   stores?: {
     session: { load: () => Promise<unknown> };
     checkpoints: { list: () => Promise<Array<{ name: string; status: string }>> };
   };
+  referenceIndex?: () => Promise<ReferenceProfileIndex>;
 }) {
   return {
     async start(input: string): Promise<any> {
@@ -29,11 +31,13 @@ export function createPipelineController(runtime?: {
         });
       }
 
-      const classification = classifyRequest(normalizedRequest);
+      const referenceIndex = await runtime?.referenceIndex?.();
+      const classification = classifyRequest(normalizedRequest, referenceIndex);
       const infoGate = runInformationGate({
         request: normalizedRequest,
         classification,
         knownFacts: [],
+        referenceIndex,
       });
       const proposal = buildProposal(normalizedRequest, classification);
 

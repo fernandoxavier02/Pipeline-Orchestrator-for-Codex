@@ -7,4 +7,5 @@ export interface GateResult {
   hardness: GateHardness;
   reason: string;
   questions: string[];
+  checklistIds?: string[];
 }

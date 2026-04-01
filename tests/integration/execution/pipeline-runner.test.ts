@@ -4,7 +4,7 @@ import { createPipelineRuntime } from "../../../src/index.js";
 describe("pipeline execution", () => {
   it("builds batches, runs review, and returns a closeout summary", async () => {
     const runtime = createPipelineRuntime({
-      cwd: "/repo",
+      cwd: process.cwd(),
       codexHome: "/codex-home",
     });
 

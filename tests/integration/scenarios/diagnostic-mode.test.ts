@@ -4,7 +4,7 @@ import { createPipelineRuntime } from "../../../src/index.js";
 describe("diagnostic mode", () => {
   it("stops after proposal and marks the run as non-executing", async () => {
     const runtime = createPipelineRuntime({
-      cwd: "/repo",
+      cwd: process.cwd(),
       codexHome: "/codex-home",
     });
 
