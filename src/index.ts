@@ -16,7 +16,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
   };
 
   return {
-    controller: createPipelineController(),
+    controller: createPipelineController({ stores }),
     dispatcher: { runRole },
     stateDir,
     supportedModes: [...PIPELINE_MODES],
