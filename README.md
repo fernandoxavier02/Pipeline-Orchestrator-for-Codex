@@ -20,3 +20,21 @@ It covers:
 - implementation blueprint
 - gap analysis
 - source inventory
+
+## Implementation Status
+
+- controller scaffold
+- persistent state
+- gates and hardness
+- dispatcher abstraction
+- prompt registry
+- continue mode
+- batch execution with adversarial review
+- final validation
+
+## Next Commands
+
+- `npm install`
+- `npm test`
+- inspect `docs/pipeline-orchestrator-codex/`
+- use `docs/superpowers/plans/2026-03-31-pipeline-orchestrator-codex-implementation.md` as the build authority

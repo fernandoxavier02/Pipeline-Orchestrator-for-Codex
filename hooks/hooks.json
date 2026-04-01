@@ -1,3 +1,14 @@
 {
-  "hooks": []
+  "hooks": [
+    {
+      "name": "pipeline-bootstrap",
+      "event": "beforeRun",
+      "action": "initialize-state"
+    },
+    {
+      "name": "pipeline-persist-phase",
+      "event": "afterRun",
+      "action": "persist-checkpoint"
+    }
+  ]
 }

@@ -16,7 +16,7 @@
   "interface": {
     "displayName": "Pipeline Orchestrator for Codex",
     "shortDescription": "Structured execution pipeline with gates and review",
-    "longDescription": "Functional Codex port of the original Claude Code Pipeline-Orchestrator.",
+    "longDescription": "Codex pipeline runtime with controller routing, persisted state, continue mode, batch review, and final validation.",
     "developerName": "Fernando Xavier - FX Studio AI",
     "category": "Coding",
     "capabilities": ["Interactive", "Write"],

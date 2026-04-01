@@ -37,6 +37,30 @@ export function createPipelineController(runtime?: {
       });
       const proposal = buildProposal(normalizedRequest, classification);
 
+      if (mode === "diagnostic") {
+        return {
+          mode,
+          type: classification.type,
+          complexity: classification.complexity,
+          variant: classification.variant,
+          proposal,
+          gates: [infoGate],
+          stoppedAfterProposal: true,
+        };
+      }
+
+      if (mode === "review-only") {
+        return {
+          mode,
+          type: classification.type,
+          complexity: classification.complexity,
+          variant: classification.variant,
+          proposal,
+          gates: [infoGate],
+          implementationSkipped: true,
+        };
+      }
+
       return {
         mode,
         type: classification.type,

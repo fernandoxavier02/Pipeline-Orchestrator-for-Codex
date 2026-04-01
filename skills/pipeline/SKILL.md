@@ -1,8 +1,16 @@
 ---
 name: pipeline
-description: Minimal scaffold for the Codex pipeline skill so plugin paths resolve from the first batch.
+description: Run the Codex pipeline with explicit phases, gates, state, and adversarial review.
 ---
 
 # Pipeline
 
-This minimal scaffold exists so the plugin manifest never points to a missing path during early batches.
+Use this skill when a task needs structured execution across multiple phases.
+
+Core runtime:
+- classify
+- show proposal
+- persist state
+- execute in batches
+- run adversarial review each batch
+- support continue mode
