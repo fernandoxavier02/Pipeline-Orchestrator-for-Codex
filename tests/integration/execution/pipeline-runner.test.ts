@@ -28,8 +28,15 @@ describe("pipeline execution", () => {
     const final = runFinalValidator({
       reviews: [review],
       confidenceScore: 0.91,
+      gateLog: [],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      validationIntent: "standard",
     });
 
-    expect(final.status).toBe("go");
+    expect(final.decision).toBe("GO");
   });
 });

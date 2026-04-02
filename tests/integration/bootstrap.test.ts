@@ -13,8 +13,12 @@ describe("bootstrap", () => {
     expect(runtime.supportedModes).toEqual(
       expect.arrayContaining(["full", "diagnostic", "continue", "review-only"]),
     );
+    expect(runtime.config.buildCommand).toBeDefined();
+    expect(runtime.closeout.finalize).toBeDefined();
     expect(runtime.stores.session).toBeDefined();
     expect(runtime.stores.checkpoints).toBeDefined();
+    expect("save" in runtime.stores.session).toBe(false);
+    expect("save" in runtime.stores.checkpoints).toBe(false);
     expect("gateLog" in runtime.stores).toBe(false);
     expect("confidence" in runtime.stores).toBe(false);
   });

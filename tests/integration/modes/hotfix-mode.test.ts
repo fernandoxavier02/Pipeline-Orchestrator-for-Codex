@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createPipelineController } from "../../../src/controller/pipeline-controller.js";
+import { createPipelineRuntime } from "../../../src/index.js";
 import { createCheckpointStore } from "../../../src/state/checkpoint-store.js";
+import { createGateLog } from "../../../src/state/gate-log.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
 import { runInformationGate } from "../../../src/gates/information-gate.js";
 import { runAdversarialReview } from "../../../src/review/adversarial-review.js";
@@ -95,5 +97,74 @@ describe("hotfix mode", () => {
 
     expect(result.required).toBe(true);
     expect(result.checklists).toEqual(["auth", "injection"]);
+  });
+
+  it("reduces final validation to build plus tests and logs reduced validation usage", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-hotfix-closeout-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+    await createCheckpointStore(runtime.stateDir).save({
+      name: "batch-1",
+      phase: "phase-2",
+      batchIndex: 0,
+      status: "completed",
+      timestamp: "2026-04-02T12:00:00.000Z",
+      detail: "Authoritative checkpoint proof",
+    });
+    await createSessionStore(runtime.stateDir).save({
+      sessionId: "hotfix-closeout-proof",
+      currentPhase: "phase-3",
+      phase: "phase-3",
+      batchIndex: 0,
+      mode: "--hotfix",
+      variant: "bugfix-heavy",
+      confidenceScore: 1,
+      unresolvedBlockers: [],
+      touchedFiles: ["src/index.ts"],
+      executionProof: {
+        approvedScenarios: ["tests/proof/batch-1.test.ts"],
+        tddApproval: "APPROVED",
+        redValidation: {
+          status: "approved",
+          reasons: ["Controller approved RED proof"],
+        },
+        checkpointEvidence: [
+          {
+            batchName: "batch-1",
+            requiredCheckpoints: 1,
+            verifiedCheckpoints: 1,
+            evidence: ["tests/proof/batch-1.test.ts"],
+          },
+        ],
+        fixAttempts: [],
+      },
+    });
+
+    const result = await runtime.closeout.finalize({
+      mode: "--hotfix",
+      validationIntent: "reduced",
+      reviews: [{ status: "approved" }],
+      batches: [{ name: "batch-1" }],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+      ],
+      confirmed: true,
+    });
+
+    const gateEntries = await createGateLog(runtime.stateDir).list();
+
+    expect(result.requiredEvidence).toEqual(["build", "tests"]);
+    expect(result.decision).toBe("GO");
+    expect(gateEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          gate: "REDUCED_VALIDATION_USAGE",
+          decision: "pass",
+        }),
+      ]),
+    );
   });
 });

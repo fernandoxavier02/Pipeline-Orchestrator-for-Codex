@@ -149,6 +149,14 @@ const GATE_REGISTRY: Record<string, GateDefinition> = {
     confidenceImpactOnSkip: -0.05,
     rollback: "none",
   },
+  REDUCED_VALIDATION_USAGE: {
+    gate: "REDUCED_VALIDATION_USAGE",
+    hardness: "SOFT",
+    phase: "phase-3",
+    defaultDecision: "pass",
+    confidenceImpactOnSkip: 0,
+    rollback: "none",
+  },
 };
 
 export function createGateRegistry() {

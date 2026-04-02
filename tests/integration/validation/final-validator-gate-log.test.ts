@@ -1,68 +1,122 @@
-import { mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { createGateLog } from "../../../src/state/gate-log.js";
-import { createGateRegistry } from "../../../src/gates/gate-registry.js";
-import { createConfidenceModel } from "../../../src/gates/confidence-model.js";
+import { runFinalValidator } from "../../../src/validation/final-validator.js";
 
-describe("gate log validation", () => {
-  it("persists the full SSOT gate log schema", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pipeline-gate-log-"));
-    const gateLog = createGateLog(root);
-
-    await gateLog.append({
-      gate: "STALE_CONTEXT",
-      hardness: "SOFT",
-      phase: "continue",
-      decision: "skip",
-      decided_by: "controller",
-      timestamp: "2026-04-01T12:00:00.000Z",
-      detail: "Run is old but user may still continue after revalidation",
-      confidence_impact: -0.1,
+describe("final validator gate-log decisions", () => {
+  it("returns GO with approved reviews, strong confidence, and full verification evidence", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.92,
+      gateLog: [],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      validationIntent: "standard",
     });
 
-    const raw = readFileSync(join(root, "gate-decisions.jsonl"), "utf8");
-    expect(raw).toContain('"gate":"STALE_CONTEXT"');
-    expect(raw).toContain('"confidence_impact":-0.1');
-
-    const entries = await gateLog.list();
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({
-      gate: "STALE_CONTEXT",
-      hardness: "SOFT",
-      phase: "continue",
-      decision: "skip",
-      decided_by: "controller",
-      timestamp: "2026-04-01T12:00:00.000Z",
-      detail: "Run is old but user may still continue after revalidation",
-      confidence_impact: -0.1,
-    });
+    expect(result.decision).toBe("GO");
+    expect(result.confidenceBand).toBe("high");
+    expect(result.requiredEvidence).toEqual(["build", "tests", "final-review"]);
+    expect(result.missingEvidence).toEqual([]);
+    expect(result.skippedSoftGates).toEqual([]);
   });
 
-  it("reduces confidence when a SOFT gate is skipped", () => {
-    const registry = createGateRegistry();
-    const model = createConfidenceModel();
-
-    const result = model.apply({
-      baseScore: 0.9,
-      gates: [
+  it("returns CONDITIONAL when only SOFT gates are skipped and confidence falls into the medium band", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.71,
+      gateLog: [
         {
-          gate: "ADVERSARIAL_GATE",
-          hardness: registry.get("ADVERSARIAL_GATE").hardness,
-          phase: "phase-2",
+          gate: "FINAL_ADVERSARIAL_GATE",
+          hardness: "SOFT",
+          phase: "phase-3",
           decision: "skip",
           decided_by: "user",
-          timestamp: "2026-04-01T12:00:00.000Z",
-          detail: "User skipped optional adversarial review",
-          confidence_impact: registry.get("ADVERSARIAL_GATE").confidenceImpactOnSkip,
+          timestamp: "2026-04-02T12:00:00.000Z",
+          detail: "Operator skipped optional final adversarial gate",
+          confidence_impact: -0.15,
         },
       ],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      validationIntent: "standard",
     });
 
-    expect(result.score).toBeCloseTo(0.75);
-    expect(result.band).toBe("medium");
-    expect(result.gate_penalty).toBeCloseTo(-0.15);
+    expect(result.decision).toBe("CONDITIONAL");
+    expect(result.confidenceBand).toBe("medium");
+    expect(result.skippedSoftGates).toEqual(["FINAL_ADVERSARIAL_GATE"]);
+    expect(result.blockingGates).toEqual([]);
+  });
+
+  it("returns NO-GO when a blocking gate is present and exposes the rollback hint", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.88,
+      gateLog: [
+        {
+          gate: "CHECKPOINT_FAIL",
+          hardness: "HARD",
+          phase: "phase-2",
+          decision: "block",
+          decided_by: "controller",
+          timestamp: "2026-04-02T12:00:00.000Z",
+          detail: "Checkpoint validation failed after execution",
+          confidence_impact: 0,
+        },
+      ],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      validationIntent: "standard",
+    });
+
+    expect(result.decision).toBe("NO-GO");
+    expect(result.blockingGates).toEqual(["CHECKPOINT_FAIL"]);
+    expect(result.rollbackHint).toBe("revalidate");
+  });
+
+  it("keeps a blocking gate effective even when a later duplicate entry says pass", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.95,
+      gateLog: [
+        {
+          gate: "CHECKPOINT_FAIL",
+          hardness: "HARD",
+          phase: "phase-2",
+          decision: "block",
+          decided_by: "controller",
+          timestamp: "2026-04-02T12:00:00.000Z",
+          detail: "Checkpoint failed",
+          confidence_impact: 0,
+        },
+        {
+          gate: "CHECKPOINT_FAIL",
+          hardness: "HARD",
+          phase: "phase-2",
+          decision: "pass",
+          decided_by: "controller",
+          timestamp: "2026-04-02T12:05:00.000Z",
+          detail: "Caller tried to overwrite the earlier block",
+          confidence_impact: 0,
+        },
+      ],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      validationIntent: "standard",
+    });
+
+    expect(result.decision).toBe("NO-GO");
+    expect(result.blockingGates).toEqual(["CHECKPOINT_FAIL"]);
   });
 });

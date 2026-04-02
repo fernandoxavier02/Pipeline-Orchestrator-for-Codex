@@ -27,14 +27,19 @@ It covers:
 - persistent state
 - gates and hardness
 - dispatcher abstraction
-- prompt registry
+- prompt registry with required-output contract validation
+- controller prompt-injection guard before controller consumption, including repository text that tries to supersede controller rules
 - continue mode
 - batch execution with adversarial review
-- final validation
+- config auto-detection from `.Codex/pipeline.local.md`, `package.json`, and common conventions
+- final validation with `GO` / `CONDITIONAL` / `NO-GO` decisions
+- runtime closeout helper with operator confirmation, controller-owned execution proof, gate-log evidence, and rollback hints
+- public runtime stores are read-only (`session.load`, `checkpoints.list`); controller-owned writers stay internal
 
 ## Next Commands
 
 - `npm install`
 - `npm test`
+- `npm run lint:types`
 - inspect `docs/pipeline-orchestrator-codex/`
-- use `docs/superpowers/plans/2026-03-31-pipeline-orchestrator-codex-implementation.md` as the build authority
+- use `docs/superpowers/plans/2026-04-01-pipeline-ssot-fidelity-plan.md` as the build authority

@@ -81,3 +81,14 @@ export function resolveAdversarialChecklists(input: {
 
   return [DEFAULT_CHECKLIST];
 }
+
+export function resolveFinalValidationEvidence(input: {
+  mode?: string;
+  validationIntent?: string;
+}) {
+  if (input.mode === "--hotfix" || input.validationIntent === "reduced") {
+    return ["build", "tests"];
+  }
+
+  return ["build", "tests", "final-review"];
+}
