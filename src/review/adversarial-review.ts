@@ -7,6 +7,7 @@ export async function runAdversarialReview(input: {
   changedFiles?: string[];
   changedDomains?: string[];
   mode?: string;
+  reviewOrchestrator?: ReturnType<typeof createReviewOrchestrator>;
 }) {
   const files = input.changedFiles?.length ? input.changedFiles : input.batch.files;
   const changedDomains = input.changedDomains?.length
@@ -23,7 +24,7 @@ export async function runAdversarialReview(input: {
         files,
         changedDomains,
       });
-  const reviewOrchestrator = createReviewOrchestrator();
+  const reviewOrchestrator = input.reviewOrchestrator ?? createReviewOrchestrator();
   const review =
     input.findings && input.findings.length > 0
       ? {

@@ -19,7 +19,7 @@ import { createControllerLockStore } from "../state/controller-lock.js";
 import { createConfidenceScoreStore } from "../state/confidence-score.js";
 import { createGateLog } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
-import { createExecutorController } from "../execution/executor-controller.js";
+import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../execution/executor-controller.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
 import type { ValidationIntent } from "./classification-overrides.js";
@@ -66,6 +66,7 @@ interface SessionProposalState {
 
 interface PipelineSessionState {
   sessionId?: string;
+  runStartedAt?: string;
   currentPhase?: string;
   phase?: string;
   batchIndex?: number;
@@ -99,6 +100,20 @@ interface PipelineSessionState {
       evidence: string[];
     }>;
     fixAttempts?: boolean[];
+  };
+  closeout?: {
+    decision: "GO" | "CONDITIONAL" | "NO-GO";
+    missingEvidence: string[];
+    blockingGates: string[];
+    skippedSoftGates: string[];
+    blockedReviews: number;
+    rollbackHint?: string | null;
+    verificationEvidence: Array<{
+      kind: string;
+      passed: boolean;
+      label?: string;
+    }>;
+    updatedAt: string;
   };
 }
 
@@ -295,6 +310,69 @@ async function executeApprovedContinuation(input: {
           phase: "phase-2",
           decision: "block",
           detail: `${blocker ?? executionStatus ?? "CHECKPOINT_FAIL"} halted execution during controller-managed phase 2`,
+        }),
+      ],
+      input.session.confidenceScore ?? 1,
+    );
+  }
+
+  const finalReviewStatus =
+    "finalReview" in executionPayload
+    && executionPayload.finalReview
+    && typeof executionPayload.finalReview === "object"
+    && "status" in executionPayload.finalReview
+    && typeof executionPayload.finalReview.status === "string"
+      ? executionPayload.finalReview.status
+      : undefined;
+  const finalReviewDecision =
+    "finalReview" in executionPayload
+    && executionPayload.finalReview
+    && typeof executionPayload.finalReview === "object"
+    && "finalDecision" in executionPayload.finalReview
+    && typeof executionPayload.finalReview.finalDecision === "string"
+      ? executionPayload.finalReview.finalDecision
+      : undefined;
+
+  if (
+    hasAuthoritativeFinalReviewResult(executionPayload)
+    && finalReviewStatus === "approved"
+    && finalReviewDecision === "approved"
+  ) {
+    await persistGateAndConfidence(
+      {
+        stores: {
+          gateLog: input.runtime?.stores?.gateLog,
+          confidence: input.runtime?.stores?.confidence,
+        },
+      },
+      [
+        toGateLogEntry({
+          gate: "FINAL_ADVERSARIAL_GATE",
+          hardness: "SOFT",
+          phase: "phase-3",
+          decision: "pass",
+          detail: "Final adversarial review completed successfully during controller-managed execution.",
+        }),
+      ],
+      input.session.confidenceScore ?? 1,
+    );
+  }
+
+  if (blocker === "FINAL_ADVERSARIAL_REWORK") {
+    await persistGateAndConfidence(
+      {
+        stores: {
+          gateLog: input.runtime?.stores?.gateLog,
+          confidence: input.runtime?.stores?.confidence,
+        },
+      },
+      [
+        toGateLogEntry({
+          gate: "FINAL_ADVERSARIAL_REWORK",
+          hardness: "HARD",
+          phase: "phase-3",
+          decision: "block",
+          detail: "Final adversarial review required rework before closeout.",
         }),
       ],
       input.session.confidenceScore ?? 1,
@@ -768,6 +846,7 @@ export function createPipelineController(runtime?: {
           ) {
             await runtime?.stores?.session?.save?.({
               sessionId: session.sessionId ?? `phase-1:${session.variant ?? "proposal"}`,
+              runStartedAt: session.runStartedAt ?? new Date().toISOString(),
               currentPhase: "phase-1.5",
               phase: "phase-1.5",
               batchIndex: session.batchIndex ?? 0,
@@ -1146,6 +1225,7 @@ export function createPipelineController(runtime?: {
 
       await runtime?.stores?.session?.save?.({
         sessionId: `${mode}:${normalizedRequest || "request"}`,
+        runStartedAt: new Date().toISOString(),
         currentPhase: "phase-1",
         phase: "phase-1",
         batchIndex: 0,

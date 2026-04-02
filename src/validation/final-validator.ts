@@ -19,6 +19,7 @@ type GateLogEntry = {
 };
 
 const LATEST_ONLY_GATES = new Set(["CLOSEOUT_CONFIRM"]);
+const STICKY_ROLLBACKS = new Set(["manual", "stop"]);
 
 function getConfidenceBand(score: number): "low" | "medium" | "high" {
   if (score >= 0.8) {
@@ -33,6 +34,7 @@ function getConfidenceBand(score: number): "low" | "medium" | "high" {
 }
 
 export function resolveEffectiveGateLog(entries: GateLogEntry[]) {
+  const gateRegistry = createGateRegistry();
   const entriesByGate = new Map<string, GateLogEntry[]>();
 
   for (const entry of entries) {
@@ -42,7 +44,20 @@ export function resolveEffectiveGateLog(entries: GateLogEntry[]) {
   }
 
   return [...entriesByGate.entries()].map(([, history]) => {
-    if (LATEST_ONLY_GATES.has(history[0]?.gate ?? "")) {
+    const gate = history[0]?.gate ?? "";
+    if (LATEST_ONLY_GATES.has(gate)) {
+      return history.at(-1) as GateLogEntry;
+    }
+
+    const rollback = gateRegistry.get(gate).rollback;
+    if (STICKY_ROLLBACKS.has(rollback)) {
+      const blockingEntry = history.find((entry) => entry.decision === "block");
+      if (blockingEntry) {
+        return blockingEntry;
+      }
+    }
+
+    if (rollback === "revalidate" || rollback === "replan") {
       return history.at(-1) as GateLogEntry;
     }
 

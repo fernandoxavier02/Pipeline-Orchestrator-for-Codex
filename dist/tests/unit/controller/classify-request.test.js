@@ -1,0 +1,24 @@
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { loadReferenceBundle } from "../../../src/references/load-reference-bundle.js";
+import { createReferenceProfileIndex } from "../../../src/references/reference-profiles.js";
+import { classifyRequest } from "../../../src/controller/classify-request.js";
+const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+describe("classifyRequest", () => {
+    it("keeps heavy variants aligned with the reference bundle complexity", async () => {
+        const bundle = await loadReferenceBundle(repoRoot);
+        const index = createReferenceProfileIndex(bundle);
+        const cases = [
+            { input: "fix checkout timeout", variant: "bugfix-heavy" },
+            { input: "audit auth flow", variant: "audit-heavy" },
+            { input: "build new dashboard", variant: "implement-light" },
+            { input: "story for onboarding flow", variant: "user-story-heavy" },
+        ];
+        for (const testCase of cases) {
+            const classification = classifyRequest(testCase.input);
+            const profile = index.getPipelineProfile(testCase.variant);
+            expect(classification.variant).toBe(testCase.variant);
+            expect(classification.complexity).toBe(profile.complexity);
+        }
+    });
+});

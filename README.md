@@ -29,10 +29,12 @@ It covers:
 - dispatcher abstraction
 - prompt registry with required-output contract validation
 - controller prompt-injection guard before controller consumption, including repository text that tries to supersede controller rules
+- runtime dispatcher consults validated prompt files for shipped executor and adversarial reviewer roles
 - continue mode
 - batch execution with adversarial review
 - config auto-detection from `.Codex/pipeline.local.md`, `package.json`, and common conventions
 - final validation with `GO` / `CONDITIONAL` / `NO-GO` decisions
+- recoverable `revalidate` / `replan` gate blocks can clear after later controller-authoritative resolution; terminal `stop` / `manual` gates stay sticky
 - runtime closeout helper with operator confirmation, controller-owned execution proof, gate-log evidence, and rollback hints
 - public runtime stores are read-only (`session.load`, `checkpoints.list`); controller-owned writers stay internal
 

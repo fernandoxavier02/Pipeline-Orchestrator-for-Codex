@@ -16,6 +16,8 @@ Core runtime:
 - support continue mode
 - auto-detect local pipeline config from `.Codex/pipeline.local.md`, `package.json`, or common conventions
 - validate controller prompt contracts before controller use
+- route shipped executor and adversarial reviewer roles through validated prompt files at runtime
 - reject repository prompt content that tries to override or supersede controller authority
 - provide runtime closeout finalization with confirmation logging, controller-owned proof validation, confidence-aware validation, and rollback hints
+- allow recoverable `revalidate` / `replan` gates to clear after later controller-authoritative resolution while keeping terminal gates sticky
 - expose only read-only runtime stores publicly; controller-authoritative writes remain internal

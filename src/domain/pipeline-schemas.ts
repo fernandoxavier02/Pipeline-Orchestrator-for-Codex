@@ -78,8 +78,26 @@ const executionProofSchema = z.object({
   fixAttempts: z.array(z.boolean()).default([]),
 });
 
+const closeoutEvidenceSchema = z.object({
+  kind: z.string(),
+  passed: z.boolean(),
+  label: z.string().optional(),
+});
+
+const closeoutSummarySchema = z.object({
+  decision: z.enum(["GO", "CONDITIONAL", "NO-GO"]),
+  missingEvidence: z.array(z.string()),
+  blockingGates: z.array(z.string()),
+  skippedSoftGates: z.array(z.string()),
+  blockedReviews: z.number().int().nonnegative(),
+  rollbackHint: z.string().nullable().optional(),
+  verificationEvidence: z.array(closeoutEvidenceSchema),
+  updatedAt: z.string(),
+});
+
 export const sessionStateSchema = z.object({
   sessionId: z.string(),
+  runStartedAt: z.string().optional(),
   currentPhase: pipelinePhaseSchema,
   phase: pipelinePhaseSchema.optional(),
   batchIndex: z.number().int().nonnegative().default(0),
@@ -89,6 +107,7 @@ export const sessionStateSchema = z.object({
   proposal: proposalSchema.optional(),
   approvalProof: controllerManagedTransitionSchema.optional(),
   executionProof: executionProofSchema.optional(),
+  closeout: closeoutSummarySchema.optional(),
   unresolvedBlockers: z.array(z.string()).default([]),
   pendingDecision: z.string().optional(),
   touchedFiles: z.array(z.string()).default([]),

@@ -5,17 +5,35 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { createPipelineRuntime } from "../../../src/index.js";
+import { createPipelineController } from "../../../src/controller/pipeline-controller.js";
+import { createExecutorController } from "../../../src/execution/executor-controller.js";
 import { createCheckpointStore } from "../../../src/state/checkpoint-store.js";
+import { createConfidenceScoreStore } from "../../../src/state/confidence-score.js";
 import { createGateLog } from "../../../src/state/gate-log.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
+
+type CloseoutGateLogEntry = {
+  gate: string;
+  hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT";
+  phase: string;
+  decision: "pass" | "block" | "skip" | "partial";
+  decided_by: "controller";
+  timestamp: string;
+  detail: string;
+  confidence_impact: number;
+};
 
 async function seedExecutionProof(input: {
   stateDir: string;
   batches: string[];
+  runStartedAt?: string;
   includeFinalReview?: boolean;
+  finalReviewTimestamp?: string;
+  gateLogEntries?: CloseoutGateLogEntry[];
 }) {
   await createSessionStore(input.stateDir).save({
     sessionId: "closeout-proof-session",
+    runStartedAt: input.runStartedAt,
     currentPhase: "phase-3",
     phase: "phase-3",
     batchIndex: Math.max(0, input.batches.length - 1),
@@ -41,6 +59,10 @@ async function seedExecutionProof(input: {
     },
   });
 
+  for (const entry of input.gateLogEntries ?? []) {
+    await createGateLog(input.stateDir).append(entry);
+  }
+
   if (input.includeFinalReview) {
     await createGateLog(input.stateDir).append({
       gate: "FINAL_ADVERSARIAL_GATE",
@@ -48,7 +70,7 @@ async function seedExecutionProof(input: {
       phase: "phase-3",
       decision: "pass",
       decided_by: "controller",
-      timestamp: "2026-04-02T12:30:00.000Z",
+      timestamp: input.finalReviewTimestamp ?? "2026-04-02T12:30:00.000Z",
       detail: "Controller recorded final adversarial approval.",
       confidence_impact: 0,
     });
@@ -212,6 +234,50 @@ describe("closeout confirmation", () => {
 
     expect(result.decision).toBe("NO-GO");
     expect(result.missingEvidence).toEqual(["build", "tests", "final-review"]);
+  });
+
+  it("persists the authoritative closeout verdict and missing evidence to session state", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-persisted-verdict-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      includeFinalReview: false,
+    });
+
+    const result = await runtime.closeout.finalize({
+      reviews: [{ status: "approved" }],
+      batches: [{ name: "batch-1" }],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      confirmed: true,
+    });
+    const persistedSession = await createSessionStore(runtime.stateDir).load() as {
+      closeout?: {
+        decision: string;
+        missingEvidence: string[];
+        verificationEvidence: Array<{ kind: string; passed: boolean }>;
+      };
+    };
+
+    expect(result.decision).toBe("NO-GO");
+    expect(persistedSession.closeout).toEqual(
+      expect.objectContaining({
+        decision: "NO-GO",
+        missingEvidence: ["final-review"],
+        verificationEvidence: expect.arrayContaining([
+          expect.objectContaining({ kind: "build", passed: true }),
+          expect.objectContaining({ kind: "tests", passed: true }),
+          expect.objectContaining({ kind: "final-review", passed: false }),
+        ]),
+      }),
+    );
   });
 
   it("refuses standard GO when checkpoint completion exists but controller-owned execution proof is absent", async () => {
@@ -434,8 +500,200 @@ describe("closeout confirmation", () => {
     expect(result.missingEvidence).toEqual(["build", "tests"]);
   });
 
-  it("keeps a blocking gate effective even when a later duplicate gate entry says pass", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-duplicate-gate-"));
+  it("rejects final-review evidence unless the recorded gate pass is controller-authoritative", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-non-controller-final-review-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+    await createCheckpointStore(runtime.stateDir).save({
+      name: "batch-1",
+      phase: "phase-2",
+      batchIndex: 0,
+      status: "completed",
+      timestamp: "2026-04-02T12:00:00.000Z",
+      detail: "Authoritative checkpoint proof",
+    });
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      includeFinalReview: false,
+    });
+    await createGateLog(runtime.stateDir).append({
+      gate: "FINAL_ADVERSARIAL_GATE",
+      hardness: "SOFT",
+      phase: "phase-3",
+      decision: "pass",
+      decided_by: "user",
+      timestamp: "2026-04-02T12:30:00.000Z",
+      detail: "User-supplied final review cannot authorize closeout",
+      confidence_impact: 0,
+    });
+
+    const result = await runtime.closeout.finalize({
+      reviews: [{ status: "approved" }],
+      batches: [{ name: "batch-1" }],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      confirmed: true,
+    });
+
+    expect(result.decision).toBe("NO-GO");
+    expect(result.missingEvidence).toEqual(["final-review"]);
+  });
+
+  it("does not inherit a stale final-review pass from an older run that shares the same stateDir", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-stale-pass-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      runStartedAt: "2026-04-01T12:00:00.000Z",
+      includeFinalReview: true,
+      finalReviewTimestamp: "2026-04-01T12:30:00.000Z",
+    });
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      runStartedAt: "2026-04-02T12:00:00.000Z",
+      includeFinalReview: false,
+    });
+
+    const result = await runtime.closeout.finalize({
+      reviews: [{ status: "approved" }],
+      batches: [{ name: "batch-1" }],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      confirmed: true,
+    });
+
+    expect(result.decision).toBe("NO-GO");
+    expect(result.missingEvidence).toEqual(["final-review"]);
+  });
+
+  it("does not inherit a stale blocking gate from an older run that shares the same stateDir", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-stale-block-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      runStartedAt: "2026-04-01T12:00:00.000Z",
+      gateLogEntries: [
+        {
+          gate: "CHECKPOINT_FAIL",
+          hardness: "HARD",
+          phase: "phase-2",
+          decision: "block",
+          decided_by: "controller",
+          timestamp: "2026-04-01T12:01:00.000Z",
+          detail: "Older run hit a checkpoint failure",
+          confidence_impact: 0,
+        },
+      ],
+    });
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      runStartedAt: "2026-04-02T12:00:00.000Z",
+      includeFinalReview: true,
+    });
+
+    const result = await runtime.closeout.finalize({
+      reviews: [{ status: "approved" }],
+      batches: [{ name: "batch-1" }],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      confirmed: true,
+    });
+
+    expect(result.decision).toBe("GO");
+    expect(result.blockingGates).toEqual([]);
+  });
+
+  it("isolates stale gate history for legacy sessions by deriving scope from current checkpoints", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-legacy-scope-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      runStartedAt: "2026-04-01T12:00:00.000Z",
+      includeFinalReview: false,
+      gateLogEntries: [
+        {
+          gate: "CHECKPOINT_FAIL",
+          hardness: "HARD",
+          phase: "phase-2",
+          decision: "block",
+          decided_by: "controller",
+          timestamp: "2026-04-01T12:10:00.000Z",
+          detail: "Legacy stale blocker from an older run",
+          confidence_impact: 0,
+        },
+        {
+          gate: "FINAL_ADVERSARIAL_GATE",
+          hardness: "SOFT",
+          phase: "phase-3",
+          decision: "pass",
+          decided_by: "controller",
+          timestamp: "2026-04-01T12:20:00.000Z",
+          detail: "Legacy stale final review from an older run",
+          confidence_impact: 0,
+        },
+      ],
+    });
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      includeFinalReview: false,
+    });
+    await createCheckpointStore(runtime.stateDir).save({
+      name: "batch-1",
+      phase: "phase-2",
+      batchIndex: 0,
+      status: "completed",
+      timestamp: "2026-04-02T12:10:00.000Z",
+      detail: "Current legacy-session checkpoint anchors closeout scope",
+    });
+
+    const result = await runtime.closeout.finalize({
+      reviews: [{ status: "approved" }],
+      batches: [{ name: "batch-1" }],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      confirmed: true,
+    });
+
+    expect(result.decision).toBe("NO-GO");
+    expect(result.blockingGates).toEqual([]);
+    expect(result.missingEvidence).toEqual(["final-review"]);
+  });
+
+  it("clears a recoverable checkpoint block when a later controller pass resolves the gate", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-recovered-gate-"));
     const runtime = createPipelineRuntime({
       cwd: root,
       codexHome: "/codex-home",
@@ -472,7 +730,7 @@ describe("closeout confirmation", () => {
       decision: "pass",
       decided_by: "controller",
       timestamp: "2026-04-02T12:05:00.000Z",
-      detail: "A later duplicate pass must not erase the block",
+      detail: "Controller revalidated the checkpoint successfully",
       confidence_impact: 0,
     });
 
@@ -487,7 +745,259 @@ describe("closeout confirmation", () => {
       confirmed: true,
     });
 
+    expect(result.decision).toBe("GO");
+    expect(result.blockingGates).toEqual([]);
+  });
+
+  it("reaches GO from the controller execution handoff after a successful final adversarial review without manual gate seeding", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-runtime-final-review-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+    const executionController = createExecutorController({
+      runBatch: (async () => ({
+        execution: {
+          mode: "single-agent",
+          role: "executor-implementer",
+          output: {
+            changedFiles: ["src/index.ts"],
+            verificationEvidence: {
+              scenarios: ["tests/proof/batch-1.test.ts"],
+            },
+          },
+        },
+        review: {
+          status: "approved",
+          findings: [],
+          batch: "batch-1",
+          files: ["src/index.ts"],
+          changedDomains: [],
+          checklists: [],
+          required: true,
+          gate: "ADVERSARIAL_GATE",
+          decision: "pass",
+          strategy: "approved-review",
+        },
+        changedFiles: ["src/index.ts"],
+        verificationEvidence: {
+          scenarios: ["tests/proof/batch-1.test.ts"],
+        },
+      })) as any,
+      preTester: {
+        collectFailures: () => [],
+        deriveExecutionProof: () => ({
+          approvedScenarios: ["tests/proof/batch-1.test.ts"],
+          tddApproval: "APPROVED",
+          redValidation: {
+            status: "approved",
+            reasons: ["Controller approved RED proof"],
+          },
+        }),
+        validateRedState: () => ({
+          status: "approved",
+          reasons: ["Controller approved RED proof"],
+        }),
+      },
+      checkpointValidator: {
+        reset() {},
+        validateCheckpoints: ({ checkpointName }) => ({
+          status: "passed",
+          consecutiveFailures: 0,
+          requiredCheckpoints: 1,
+          verifiedCheckpoints: 1,
+          coverage: 1,
+          checkpointName,
+        }),
+      },
+      finalAdversarialOrchestrator: async () => ({
+        status: "approved",
+        finalDecision: "approved",
+        findings: [],
+      }),
+    });
+    const controller = createPipelineController({
+      workspaceRoot: root,
+      stores: {
+        session: createSessionStore(runtime.stateDir),
+        checkpoints: createCheckpointStore(runtime.stateDir),
+        gateLog: createGateLog(runtime.stateDir),
+        confidence: createConfidenceScoreStore(runtime.stateDir),
+      },
+      executionController,
+    });
+
+    await createSessionStore(runtime.stateDir).save({
+      sessionId: "runtime-final-review-proof",
+      runStartedAt: new Date(Date.now() - 1_000).toISOString(),
+      currentPhase: "phase-1.5",
+      phase: "phase-1.5",
+      batchIndex: 0,
+      mode: "--complexa",
+      variant: "bugfix-heavy",
+      confidenceScore: 1,
+      proposal: {
+        summary: "stabilize closeout handoff",
+        variant: "bugfix-heavy",
+        awaitingUserConfirmation: true,
+        infoGateStatus: "passed",
+        designReviewStatus: "skipped",
+        planModeStatus: "required",
+        affectedFiles: ["src/index.ts"],
+        batchSize: 1,
+        validationIntent: "standard",
+      },
+      approvalProof: {
+        kind: "controller-managed-transition",
+        from: "phase-1",
+        to: "phase-1.5",
+      },
+      executionProof: {
+        approvedScenarios: ["tests/proof/batch-1.test.ts"],
+        tddApproval: "APPROVED",
+        redValidation: {
+          status: "approved",
+          reasons: ["Controller approved RED proof"],
+        },
+        checkpointEvidence: [],
+        fixAttempts: [],
+      },
+      unresolvedBlockers: [],
+      touchedFiles: ["src/index.ts"],
+    });
+
+    const executionResult = await controller.start("/pipeline continue");
+    const gateLogEntries = await createGateLog(runtime.stateDir).list();
+    const result = await runtime.closeout.finalize({
+      reviews: [{ status: "approved" }],
+      batches: [{ name: "batch-1" }],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      confirmed: true,
+    });
+
+    expect(executionResult.status).toBe("completed");
+    expect(gateLogEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          gate: "FINAL_ADVERSARIAL_GATE",
+          decision: "pass",
+        }),
+      ]),
+    );
+    expect(result.decision).toBe("GO");
+    expect(result.missingEvidence).toEqual([]);
+  });
+
+  it("does not let an injected non-authoritative execution controller mint final-review proof", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-spoofed-final-review-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+    const controller = createPipelineController({
+      workspaceRoot: root,
+      stores: {
+        session: createSessionStore(runtime.stateDir),
+        checkpoints: createCheckpointStore(runtime.stateDir),
+        gateLog: createGateLog(runtime.stateDir),
+        confidence: createConfidenceScoreStore(runtime.stateDir),
+      },
+      executionController: {
+        executeApprovedWork: async () => ({
+          status: "completed",
+          proof: {
+            approvedScenarios: ["tests/proof/batch-1.test.ts"],
+            tddApproval: "APPROVED",
+            redValidation: {
+              status: "approved",
+              reasons: ["Controller approved RED proof"],
+            },
+            checkpointEvidence: [
+              {
+                batchName: "batch-1",
+                requiredCheckpoints: 1,
+                verifiedCheckpoints: 1,
+                evidence: ["tests/proof/batch-1.test.ts"],
+              },
+            ],
+            fixAttempts: [],
+          },
+          batches: [{ name: "batch-1", tasks: ["src/index.ts"] }],
+          finalReview: {
+            status: "approved",
+            finalDecision: "approved",
+            findings: [],
+          },
+        }),
+      },
+    });
+
+    await createSessionStore(runtime.stateDir).save({
+      sessionId: "spoofed-final-review-proof",
+      runStartedAt: new Date(Date.now() - 1_000).toISOString(),
+      currentPhase: "phase-1.5",
+      phase: "phase-1.5",
+      batchIndex: 0,
+      mode: "--complexa",
+      variant: "bugfix-heavy",
+      confidenceScore: 1,
+      proposal: {
+        summary: "reject spoofed final-review authority",
+        variant: "bugfix-heavy",
+        awaitingUserConfirmation: true,
+        infoGateStatus: "passed",
+        designReviewStatus: "skipped",
+        planModeStatus: "required",
+        affectedFiles: ["src/index.ts"],
+        batchSize: 1,
+        validationIntent: "standard",
+      },
+      approvalProof: {
+        kind: "controller-managed-transition",
+        from: "phase-1",
+        to: "phase-1.5",
+      },
+      executionProof: {
+        approvedScenarios: ["tests/proof/batch-1.test.ts"],
+        tddApproval: "APPROVED",
+        redValidation: {
+          status: "approved",
+          reasons: ["Controller approved RED proof"],
+        },
+        checkpointEvidence: [],
+        fixAttempts: [],
+      },
+      unresolvedBlockers: [],
+      touchedFiles: ["src/index.ts"],
+    });
+
+    const executionResult = await controller.start("/pipeline continue");
+    const gateLogEntries = await createGateLog(runtime.stateDir).list();
+    const result = await runtime.closeout.finalize({
+      reviews: [{ status: "approved" }],
+      batches: [{ name: "batch-1" }],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      confirmed: true,
+    });
+
+    expect(executionResult.status).toBe("completed");
+    expect(gateLogEntries).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          gate: "FINAL_ADVERSARIAL_GATE",
+          decision: "pass",
+        }),
+      ]),
+    );
     expect(result.decision).toBe("NO-GO");
-    expect(result.blockingGates).toEqual(["CHECKPOINT_FAIL"]);
+    expect(result.missingEvidence).toEqual(["final-review"]);
   });
 });

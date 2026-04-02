@@ -12,6 +12,8 @@ type ExecutionBatch = {
   files: string[];
 };
 
+const authoritativeFinalReviewResultSymbol = Symbol("authoritative-final-review-result");
+
 function normalizeFiles(files: unknown) {
   if (!Array.isArray(files)) {
     return [];
@@ -188,6 +190,19 @@ function deriveControllerVerificationEvidence(input: {
   };
 }
 
+function markAuthoritativeFinalReviewResult<T extends object>(result: T): T {
+  Object.defineProperty(result, authoritativeFinalReviewResultSymbol, {
+    value: true,
+    enumerable: false,
+  });
+
+  return result;
+}
+
+export function hasAuthoritativeFinalReviewResult(result: unknown) {
+  return !!result && typeof result === "object" && authoritativeFinalReviewResultSymbol in result;
+}
+
 export interface ExecuteApprovedWorkInput {
   batch?: ExecutionBatch;
   mode?: string;
@@ -242,7 +257,13 @@ export interface ExecutorControllerDependencies {
   };
 }
 
-export function createExecutorController(dependencies: ExecutorControllerDependencies = {}) {
+export function createExecutorController(dependencies: ExecutorControllerDependencies = {}): {
+  executeApprovedWork: (input: ExecuteApprovedWorkInput) => Promise<any>;
+  runFixLoop: (input: {
+    strategy: string;
+    attemptFix: (input: { attempt: number; strategy: string }) => Promise<boolean> | boolean;
+  }) => Promise<{ status: "FIXED"; attempts: number; strategy: string } | { status: "FIX_LOOP_EXHAUSTED"; attempts: number; strategyChangeRequired: boolean }>;
+} {
   const runBatch = dependencies.runBatch ?? ((batch: ExecutionBatch) => defaultRunBatch(batch, {
     runRole: dependencies.runRole,
     adversarialReview: dependencies.adversarialReview,
@@ -591,8 +612,8 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
         };
       }
 
-      return {
-        status: "completed",
+      return markAuthoritativeFinalReviewResult({
+        status: "completed" as const,
         batchSize: planned.batchSize,
         regressionProofs: planned.regressionProofs,
         execution: lastResult
@@ -614,7 +635,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
         },
         batches: planned.batches,
         results: batchResults,
-      };
+      });
     },
     runFixLoop,
   };

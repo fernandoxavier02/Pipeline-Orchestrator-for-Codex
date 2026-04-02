@@ -82,7 +82,7 @@ describe("final validator gate-log decisions", () => {
     expect(result.rollbackHint).toBe("revalidate");
   });
 
-  it("keeps a blocking gate effective even when a later duplicate entry says pass", () => {
+  it("clears a recoverable revalidation gate when a later controller-authoritative pass resolves it", () => {
     const result = runFinalValidator({
       reviews: [{ status: "approved" }],
       confidenceScore: 0.95,
@@ -104,7 +104,45 @@ describe("final validator gate-log decisions", () => {
           decision: "pass",
           decided_by: "controller",
           timestamp: "2026-04-02T12:05:00.000Z",
-          detail: "Caller tried to overwrite the earlier block",
+          detail: "Controller revalidated the checkpoint successfully",
+          confidence_impact: 0,
+        },
+      ],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      validationIntent: "standard",
+    });
+
+    expect(result.decision).toBe("GO");
+    expect(result.blockingGates).toEqual([]);
+  });
+
+  it("keeps a terminal stop gate sticky even when a later duplicate entry says pass", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.95,
+      gateLog: [
+        {
+          gate: "STOP_RULE",
+          hardness: "CIRCUIT_BREAKER",
+          phase: "phase-2",
+          decision: "block",
+          decided_by: "controller",
+          timestamp: "2026-04-02T12:00:00.000Z",
+          detail: "Execution hit the stop rule",
+          confidence_impact: 0,
+        },
+        {
+          gate: "STOP_RULE",
+          hardness: "CIRCUIT_BREAKER",
+          phase: "phase-2",
+          decision: "pass",
+          decided_by: "controller",
+          timestamp: "2026-04-02T12:05:00.000Z",
+          detail: "A later duplicate pass must not erase the stop gate",
           confidence_impact: 0,
         },
       ],
@@ -117,6 +155,6 @@ describe("final validator gate-log decisions", () => {
     });
 
     expect(result.decision).toBe("NO-GO");
-    expect(result.blockingGates).toEqual(["CHECKPOINT_FAIL"]);
+    expect(result.blockingGates).toEqual(["STOP_RULE"]);
   });
 });
