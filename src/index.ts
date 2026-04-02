@@ -34,7 +34,11 @@ export function createPipelineRuntime(options: RuntimeOptions) {
   })();
 
   return {
-    controller: createPipelineController({ stores: controllerStores, referenceIndex: getReferenceIndex }),
+    controller: createPipelineController({
+      workspaceRoot: options.cwd,
+      stores: controllerStores,
+      referenceIndex: getReferenceIndex,
+    }),
     dispatcher: { runRole },
     stateDir,
     supportedModes: [...PIPELINE_MODES],

@@ -5,6 +5,7 @@ const designReviewStatusSchema = z.enum(["passed", "partial", "skipped"]);
 const planModeStatusSchema = z.enum(["required", "optional", "skipped"]);
 const validationIntentSchema = z.enum(["standard", "reduced"]);
 const proposalConfirmationStatusSchema = z.enum(["APPROVED", "ADJUSTED", "REJECTED"]);
+const redValidationStatusSchema = z.enum(["approved", "blocked"]);
 const pipelinePhaseSchema = z.enum(["phase-0", "phase-1", "phase-1.5", "phase-2", "phase-3"]);
 const gateHardnessSchema = z.enum(["MANDATORY", "HARD", "CIRCUIT_BREAKER", "SOFT"]);
 const gateDecisionValueSchema = z.enum(["pass", "block", "skip", "partial"]);
@@ -57,6 +58,26 @@ const controllerManagedTransitionSchema = z.object({
   to: z.literal("phase-1.5"),
 });
 
+const redValidationSchema = z.object({
+  status: redValidationStatusSchema,
+  reasons: z.array(z.string()),
+});
+
+const checkpointEvidenceSchema = z.object({
+  batchName: z.string(),
+  requiredCheckpoints: z.number().int().positive(),
+  verifiedCheckpoints: z.number().int().nonnegative(),
+  evidence: z.array(z.string()),
+});
+
+const executionProofSchema = z.object({
+  approvedScenarios: z.array(z.string()).default([]),
+  tddApproval: proposalConfirmationStatusSchema.optional(),
+  redValidation: redValidationSchema.optional(),
+  checkpointEvidence: z.array(checkpointEvidenceSchema).default([]),
+  fixAttempts: z.array(z.boolean()).default([]),
+});
+
 export const sessionStateSchema = z.object({
   sessionId: z.string(),
   currentPhase: pipelinePhaseSchema,
@@ -67,6 +88,7 @@ export const sessionStateSchema = z.object({
   confidenceScore: z.number(),
   proposal: proposalSchema.optional(),
   approvalProof: controllerManagedTransitionSchema.optional(),
+  executionProof: executionProofSchema.optional(),
   unresolvedBlockers: z.array(z.string()).default([]),
   pendingDecision: z.string().optional(),
   touchedFiles: z.array(z.string()).default([]),

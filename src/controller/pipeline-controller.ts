@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { resumePipeline } from "../continue/resume-pipeline.js";
 import { findLatestRun } from "../continue/find-latest-run.js";
 import { buildProposal } from "./build-proposal.js";
@@ -16,7 +18,10 @@ import { createControllerLockStore } from "../state/controller-lock.js";
 import { createConfidenceScoreStore } from "../state/confidence-score.js";
 import { createGateLog } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
+import { createExecutorController } from "../execution/executor-controller.js";
+import type { ValidationIntent } from "./classification-overrides.js";
 import type { ReferenceProfileIndex } from "../references/reference-profiles.js";
+import ts from "typescript";
 
 type SessionStore = {
   root?: string;
@@ -42,10 +47,18 @@ type ConfidenceStore = {
   load?: () => Promise<unknown>;
 };
 
+type ExecutionController = {
+  executeApprovedWork: (input: any) => Promise<any>;
+  runFixLoop?: (input: any) => Promise<any>;
+};
+
 interface SessionProposalState {
   summary?: string;
+  variant?: string;
   affectedFiles?: string[];
   planModeStatus?: string;
+  validationIntent?: string;
+  batchSize?: number;
 }
 
 interface PipelineSessionState {
@@ -69,6 +82,41 @@ interface PipelineSessionState {
     from: "phase-1";
     to: "phase-1.5";
   };
+  executionProof?: {
+    approvedScenarios?: string[];
+    tddApproval?: "APPROVED" | "ADJUSTED" | "REJECTED";
+    redValidation?: {
+      status: "approved" | "blocked";
+      reasons: string[];
+    };
+    checkpointEvidence?: Array<{
+      batchName: string;
+      requiredCheckpoints: number;
+      verifiedCheckpoints: number;
+      evidence: string[];
+    }>;
+    fixAttempts?: boolean[];
+  };
+}
+
+function resolveExecutionComplexity(session: PipelineSessionState, mode: string): "SIMPLES" | "MEDIA" | "COMPLEXA" {
+  if (mode === "--hotfix" || mode === "--complexa" || mode === "--plan") {
+    return "COMPLEXA";
+  }
+
+  if (mode === "--simples") {
+    return "SIMPLES";
+  }
+
+  if (mode === "--media") {
+    return "MEDIA";
+  }
+
+  if (session.variant?.endsWith("heavy")) {
+    return "COMPLEXA";
+  }
+
+  return "MEDIA";
 }
 
 function shouldAdvanceLegacyPlanningSession(session: PipelineSessionState) {
@@ -88,6 +136,386 @@ function getStateRoot(runtime?: { stores?: { session?: SessionStore; checkpoints
     ?? runtime?.stores?.checkpoints?.root
     ?? runtime?.stores?.gateLog?.root
     ?? runtime?.stores?.confidence?.root;
+}
+
+function getExecutionController(runtime?: { executionController?: ExecutionController }) {
+  return runtime?.executionController ?? createExecutorController();
+}
+
+function getWorkspaceRoot(runtime?: { workspaceRoot?: string }) {
+  return runtime?.workspaceRoot ?? process.cwd();
+}
+
+function resolvePendingRollback(session: PipelineSessionState) {
+  const pendingDecision = session.pendingDecision;
+  if (
+    pendingDecision !== "stop"
+    && pendingDecision !== "revalidate"
+    && pendingDecision !== "replan"
+    && pendingDecision !== "manual"
+  ) {
+    return null;
+  }
+
+  const rollbackGate = session.unresolvedBlockers?.[0] ?? (pendingDecision === "stop" ? "STOP_RULE" : undefined);
+  if (!rollbackGate) {
+    return null;
+  }
+
+  try {
+    createGateRegistry().get(rollbackGate);
+  } catch {
+    return null;
+  }
+
+  return {
+    phase: session.currentPhase,
+    resumeBlocked: true,
+    rollbackGate,
+    rollbackRoute: pendingDecision,
+    rollbackDecision: "block" as const,
+    revalidationRequired: pendingDecision === "revalidate",
+  };
+}
+
+async function executeApprovedContinuation(input: {
+  runtime?: {
+    workspaceRoot?: string;
+    stores?: {
+      session?: SessionStore;
+      checkpoints?: CheckpointStore;
+      gateLog?: GateLogStore;
+      confidence?: ConfidenceStore;
+    };
+    executionController?: ExecutionController;
+  };
+  session: PipelineSessionState;
+  mode: string;
+}) {
+  if (
+    input.session.pendingDecision === "phase-1.5-approval-required"
+    || input.session.pendingDecision === "phase-1.5-reapproval-required"
+  ) {
+    const proof = revokeExecutionApproval(input.session.executionProof);
+
+    await input.runtime?.stores?.session?.save?.({
+      ...input.session,
+      currentPhase: input.session.currentPhase,
+      phase: input.session.phase ?? input.session.currentPhase,
+      executionProof: proof,
+      touchedFiles: input.session.touchedFiles ?? input.session.proposal?.affectedFiles ?? [],
+    });
+
+    return {
+      status: "blocked",
+      blockedBy: "TDD_APPROVAL",
+      proof,
+      mode: input.mode,
+      phase: input.session.currentPhase,
+    };
+  }
+
+  const executionController = getExecutionController(input.runtime);
+  const validationIntent = (input.session.proposal?.validationIntent ?? "standard") as ValidationIntent;
+  const authoritativeExecutionProof = approveExecutionScenarios({
+    executionProof: input.session.executionProof,
+    proposal: input.session.proposal,
+    cwd: getWorkspaceRoot(input.runtime),
+  });
+  const proposal = input.session.proposal
+    ? {
+        summary: input.session.proposal.summary ?? "",
+        affectedFiles: input.session.proposal.affectedFiles ?? [],
+        validationIntent,
+        batchSize: input.session.proposal.batchSize ?? Math.max(1, (input.session.proposal.affectedFiles ?? []).length),
+      }
+    : undefined;
+  const executionResult = await executionController.executeApprovedWork({
+    phase: input.session.currentPhase,
+    mode: input.session.mode ?? input.mode,
+    complexity: resolveExecutionComplexity(input.session, input.session.mode ?? input.mode),
+    variant: input.session.variant ?? input.session.proposal?.variant ?? "implement-light",
+    proposal,
+    tasks: input.session.proposal?.affectedFiles ?? input.session.touchedFiles ?? [],
+    approvedScenarios: authoritativeExecutionProof.approvedScenarios,
+    workingDirectory: getWorkspaceRoot(input.runtime),
+    stores: input.runtime?.stores,
+  });
+
+  const executionPayload = executionResult && typeof executionResult === "object"
+    ? executionResult
+    : {};
+
+  const executionStatus =
+    "status" in executionPayload && typeof executionPayload.status === "string"
+      ? executionPayload.status
+      : undefined;
+  const isCircuitBreaker =
+    executionStatus === "STOP_RULE" || executionStatus === "FIX_LOOP_EXHAUSTED";
+  const isCheckpointFailure = executionStatus === "failed";
+  const nextPhase = executionStatus === "blocked" ? "phase-1.5" : "phase-2";
+  const pendingDecision =
+    executionStatus === "blocked"
+      ? "phase-2-proof-required"
+      : isCircuitBreaker
+        ? "stop"
+        : isCheckpointFailure
+          ? "revalidate"
+        : undefined;
+  const blocker =
+    executionStatus === "blocked"
+      ? (("blockedBy" in executionPayload && typeof executionPayload.blockedBy === "string")
+          ? executionPayload.blockedBy
+          : "phase-2-blocked")
+      : isCircuitBreaker
+        ? executionStatus
+        : isCheckpointFailure
+          ? "CHECKPOINT_FAIL"
+        : undefined;
+
+  if (isCircuitBreaker || isCheckpointFailure) {
+    await persistGateAndConfidence(
+      {
+        stores: {
+          gateLog: input.runtime?.stores?.gateLog,
+          confidence: input.runtime?.stores?.confidence,
+        },
+      },
+      [
+        toGateLogEntry({
+          gate: blocker ?? executionStatus ?? "CHECKPOINT_FAIL",
+          hardness: isCircuitBreaker ? "CIRCUIT_BREAKER" : "HARD",
+          phase: "phase-2",
+          decision: "block",
+          detail: `${blocker ?? executionStatus ?? "CHECKPOINT_FAIL"} halted execution during controller-managed phase 2`,
+        }),
+      ],
+      input.session.confidenceScore ?? 1,
+    );
+  }
+
+  await input.runtime?.stores?.session?.save?.({
+    ...input.session,
+    currentPhase: nextPhase,
+    phase: nextPhase,
+    batchIndex: executionStatus === "blocked" ? input.session.batchIndex ?? 0 : (input.session.batchIndex ?? 0) + 1,
+    unresolvedBlockers: blocker ? [blocker] : [],
+    pendingDecision,
+    executionProof:
+      "proof" in executionPayload && executionPayload.proof && typeof executionPayload.proof === "object"
+        ? executionPayload.proof
+        : input.session.executionProof,
+    touchedFiles: input.session.touchedFiles ?? input.session.proposal?.affectedFiles ?? [],
+  });
+
+  if (isCheckpointFailure) {
+    return {
+      ...executionPayload,
+      status: "blocked",
+      blockedBy: blocker,
+      mode: input.mode,
+      phase: nextPhase,
+    };
+  }
+
+  return {
+    ...executionPayload,
+    mode: input.mode,
+    phase: nextPhase,
+  };
+}
+
+function createInitialExecutionProof() {
+  return {
+    approvedScenarios: [],
+    tddApproval: "REJECTED" as const,
+    redValidation: {
+      status: "blocked" as const,
+      reasons: ["RED validation proof is required before implementation"],
+    },
+    checkpointEvidence: [],
+    fixAttempts: [],
+  };
+}
+
+function resolveScenarioWorkspaceRoot(preferredRoot?: string) {
+  if (preferredRoot && existsSync(join(preferredRoot, "tests"))) {
+    return preferredRoot;
+  }
+
+  return process.cwd();
+}
+
+function revokeExecutionApproval(input?: PipelineSessionState["executionProof"]) {
+  return {
+    approvedScenarios: [],
+    tddApproval: "REJECTED" as const,
+    redValidation: {
+      status: "blocked" as const,
+      reasons: ["RED validation proof is required before implementation"],
+    },
+    checkpointEvidence: input?.checkpointEvidence ?? [],
+    fixAttempts: input?.fixAttempts ?? [],
+  };
+}
+
+function collectScenarioCandidates(root: string): string[] {
+  if (!existsSync(root)) {
+    return [];
+  }
+
+  const entries = readdirSync(root, {
+    withFileTypes: true,
+  });
+
+  return entries.flatMap((entry) => {
+    const fullPath = join(root, entry.name);
+    if (entry.isDirectory()) {
+      return collectScenarioCandidates(fullPath);
+    }
+
+    if (!entry.isFile() || !/\.test\.ts$/i.test(entry.name)) {
+      return [];
+    }
+
+    return [fullPath];
+  });
+}
+
+function normalizeComparablePath(path: string) {
+  return path
+    .replace(/\\/g, "/")
+    .replace(/\.(?:d\.ts|[cm]?ts|tsx|[cm]?js|jsx)$/iu, "");
+}
+
+function createScenarioCompilerOptions(cwd: string) {
+  const defaults = {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    esModuleInterop: true,
+    skipLibCheck: true,
+  } satisfies ts.CompilerOptions;
+  const configPath = ts.findConfigFile(cwd, ts.sys.fileExists, "tsconfig.json");
+  if (!configPath) {
+    return defaults;
+  }
+
+  const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (configFile.error) {
+    return defaults;
+  }
+
+  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, cwd);
+  return {
+    ...defaults,
+    ...parsed.options,
+  } satisfies ts.CompilerOptions;
+}
+
+function collectReferencedSourceFiles(input: {
+  scenarioFile: string;
+  cwd: string;
+  compilerOptions: ts.CompilerOptions;
+}) {
+  const sourceText = readFileSync(input.scenarioFile, "utf8");
+  const sourceFile = ts.createSourceFile(input.scenarioFile, sourceText, ts.ScriptTarget.Latest, true);
+  const referencedFiles = new Set<string>();
+
+  const appendResolvedModule = (moduleName: string) => {
+    const resolvedModule = ts.resolveModuleName(
+      moduleName,
+      input.scenarioFile,
+      input.compilerOptions,
+      ts.sys,
+    ).resolvedModule;
+
+    if (!resolvedModule?.resolvedFileName) {
+      return;
+    }
+
+    const normalizedResolvedPath = normalizeComparablePath(resolvedModule.resolvedFileName);
+    const normalizedWorkspaceRoot = `${input.cwd.replace(/\\/g, "/")}/`;
+
+    if (!normalizedResolvedPath.startsWith(normalizeComparablePath(normalizedWorkspaceRoot))) {
+      return;
+    }
+
+    referencedFiles.add(normalizedResolvedPath);
+  };
+
+  const visit = (node: ts.Node) => {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+      && node.moduleSpecifier
+      && ts.isStringLiteralLike(node.moduleSpecifier)
+    ) {
+      appendResolvedModule(node.moduleSpecifier.text);
+    }
+
+    if (
+      ts.isCallExpression(node)
+      && node.arguments.length === 1
+      && ts.isStringLiteralLike(node.arguments[0])
+      && (
+        (ts.isIdentifier(node.expression) && node.expression.text === "require")
+        || node.expression.kind === ts.SyntaxKind.ImportKeyword
+      )
+    ) {
+      appendResolvedModule(node.arguments[0].text);
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+
+  return referencedFiles;
+}
+
+function resolveApprovedScenarioFiles(affectedFiles: string[], cwd = process.cwd()) {
+  const scenarioFiles = collectScenarioCandidates(join(cwd, "tests"));
+  const compilerOptions = createScenarioCompilerOptions(cwd);
+  const comparableAffectedFiles = new Set(
+    affectedFiles.map((affectedFile) => normalizeComparablePath(resolve(cwd, affectedFile))),
+  );
+  const matchedScenarios = new Set<string>();
+
+  for (const scenarioFile of scenarioFiles) {
+    const referencedFiles = collectReferencedSourceFiles({
+      scenarioFile,
+      cwd,
+      compilerOptions,
+    });
+
+    for (const referencedFile of referencedFiles) {
+      if (comparableAffectedFiles.has(referencedFile)) {
+        matchedScenarios.add(scenarioFile.replace(/\\/g, "/").replace(`${cwd.replace(/\\/g, "/")}/`, ""));
+        break;
+      }
+    }
+  }
+
+  return [...matchedScenarios].sort();
+}
+
+function approveExecutionScenarios(input: {
+  executionProof?: PipelineSessionState["executionProof"];
+  proposal?: SessionProposalState;
+  cwd?: string;
+}) {
+  const scenarioRoot = resolveScenarioWorkspaceRoot(input.cwd);
+
+  return {
+    approvedScenarios: resolveApprovedScenarioFiles(input.proposal?.affectedFiles ?? [], scenarioRoot),
+    tddApproval: "REJECTED" as const,
+    redValidation: {
+      status: "blocked" as const,
+      reasons: ["RED validation proof is required before implementation"],
+    },
+    checkpointEvidence: input.executionProof?.checkpointEvidence ?? [],
+    fixAttempts: input.executionProof?.fixAttempts ?? [],
+  };
 }
 
 type PersistedGateLogEntry = {
@@ -237,6 +665,7 @@ async function persistGateAndConfidence(
 }
 
 export function createPipelineController(runtime?: {
+  workspaceRoot?: string;
   stores?: {
     session?: SessionStore;
     checkpoints?: CheckpointStore;
@@ -244,6 +673,7 @@ export function createPipelineController(runtime?: {
     confidence?: ConfidenceStore;
   };
   referenceIndex?: () => Promise<ReferenceProfileIndex>;
+  executionController?: ExecutionController;
 }) {
   return {
     async start(input: string): Promise<any> {
@@ -273,13 +703,14 @@ export function createPipelineController(runtime?: {
               confidenceScore: session.confidenceScore ?? 1,
               proposal: session.proposal,
               unresolvedBlockers: session.unresolvedBlockers ?? [],
-              pendingDecision: undefined,
+              pendingDecision: "phase-1.5-approval-required",
               touchedFiles: session.touchedFiles ?? session.proposal?.affectedFiles ?? [],
               approvalProof: {
                 kind: "controller-managed-transition",
                 from: "phase-1",
                 to: "phase-1.5",
               },
+              executionProof: createInitialExecutionProof(),
             });
 
             return {
@@ -303,6 +734,22 @@ export function createPipelineController(runtime?: {
             throw new Error("phase-1.5 session is missing controller-managed transition proof");
           }
 
+          await runtime?.stores?.session?.save?.({
+            ...session,
+            currentPhase: "phase-1.5",
+            phase: "phase-1.5",
+            pendingDecision: normalizedResponse === "yes" ? undefined : "phase-1.5-reapproval-required",
+            touchedFiles: session.touchedFiles ?? session.proposal?.affectedFiles ?? [],
+              executionProof:
+                normalizedResponse === "yes"
+                ? approveExecutionScenarios({
+                    executionProof: session.executionProof,
+                    proposal: session.proposal,
+                    cwd: getWorkspaceRoot(runtime),
+                  })
+                : revokeExecutionApproval(session.executionProof),
+          });
+
           return {
             phase: session.currentPhase,
             implementationPlan: createImplementationPlan({
@@ -321,12 +768,28 @@ export function createPipelineController(runtime?: {
             throw new Error("Session is missing current phase");
           }
 
-          if (session.currentPhase === "phase-1") {
-            throw new Error("Cannot continue while proposal confirmation is pending");
-          }
+        if (session.currentPhase === "phase-1") {
+          throw new Error("Cannot continue while proposal confirmation is pending");
+        }
+
+        const pendingRollback = resolvePendingRollback(session);
+        if (pendingRollback) {
+          return {
+            mode,
+            ...pendingRollback,
+          };
+        }
 
           if (session.currentPhase === "phase-1.5" && !hasControllerManagedPhaseOnePointFiveTransition(session)) {
             throw new Error("phase-1.5 session is missing controller-managed transition proof");
+          }
+
+          if (session.currentPhase === "phase-1.5" && hasControllerManagedPhaseOnePointFiveTransition(session)) {
+            return executeApprovedContinuation({
+              runtime,
+              session,
+              mode,
+            });
           }
 
           const checkpoints = await runtime?.stores?.checkpoints?.list?.() ?? [];
@@ -352,6 +815,16 @@ export function createPipelineController(runtime?: {
 
         if (session.currentPhase === "phase-1") {
           throw new Error("Cannot continue while proposal confirmation is pending");
+        }
+
+        const pendingRollback = resolvePendingRollback(session);
+        if (pendingRollback) {
+          return {
+            mode,
+            ...pendingRollback,
+            latestRun: runDir,
+            gateLogEntries: latestRun ? await runStores.gateLog.list() : [],
+          };
         }
 
         if (session.currentPhase === "phase-1.5" && !hasControllerManagedPhaseOnePointFiveTransition(session)) {
@@ -456,6 +929,23 @@ export function createPipelineController(runtime?: {
             latestRun: runDir,
             gateLogEntries,
           };
+        }
+
+        if (session.currentPhase === "phase-1.5" && hasControllerManagedPhaseOnePointFiveTransition(session)) {
+          return executeApprovedContinuation({
+            runtime: {
+              workspaceRoot: runtime?.workspaceRoot,
+              stores: {
+                session: runStores.session,
+                checkpoints: runStores.checkpoints,
+                gateLog: runStores.gateLog,
+                confidence: runStores.confidence,
+              },
+              executionController: runtime?.executionController,
+            },
+            session,
+            mode,
+          });
         }
 
         const checkpoints = await runStores.checkpoints.list();
