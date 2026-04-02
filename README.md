@@ -38,6 +38,12 @@ It covers:
 - runtime closeout helper with operator confirmation, controller-owned execution proof, gate-log evidence, and rollback hints
 - public runtime stores are read-only (`session.load`, `checkpoints.list`); controller-owned writers stay internal
 
+## Command Surface
+
+- `/pipeline` is published from [`commands/pipeline.md`](./commands/pipeline.md)
+- the command is intended to be the canonical entrypoint for this plugin
+- it must not rely on a separate global `pipeline` skill installation
+
 ## Next Commands
 
 - `npm install`
