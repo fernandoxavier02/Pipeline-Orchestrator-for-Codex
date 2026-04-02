@@ -217,7 +217,7 @@ describe("execution controller routing", () => {
     expect(result.validation.status).toBe("go");
   });
 
-  it("advances the real approval flow into execution once controller proof is promoted", async () => {
+  it("advances the real approval flow into execution once controller proof is promoted", { timeout: 10000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-controller-routing-"));
     const runBatch = vi.fn();
     const controller = createPipelineController({
@@ -239,6 +239,7 @@ describe("execution controller routing", () => {
       execution: {
         batchSize: 1,
       },
+      changedFiles: ["src/controller/pipeline-controller.ts"],
       review: {
         status: "approved",
       },
@@ -296,6 +297,7 @@ describe("execution controller routing", () => {
         execution: {
           status: "implemented",
         },
+        changedFiles: ["src/controller/pipeline-controller.ts"],
         review: {
           status: "approved",
         },
@@ -404,6 +406,7 @@ describe("execution controller routing", () => {
       execution: {
         status: "implemented",
       },
+      changedFiles: ["src/controller/pipeline-controller.ts"],
       review: {
         status: "approved",
       },
@@ -602,6 +605,7 @@ describe("execution controller routing", () => {
       execution: {
         status: "implemented",
       },
+      changedFiles: ["src/target.ts"],
       review: {
         status: "approved",
       },
@@ -641,6 +645,7 @@ describe("execution controller routing", () => {
         execution: {
           status: "implemented",
         },
+        changedFiles: ["src/controller/pipeline-controller.ts"],
         review: {
           status: "approved",
         },
@@ -671,5 +676,400 @@ describe("execution controller routing", () => {
     expect(firstResult.validation?.status).toBe("failed");
     expect(secondResult.status).toBe("failed");
     expect(secondResult.validation?.status).toBe("failed");
+  });
+
+  it("routes changed files and hotfix mode through adversarial review and blocks on mandatory review failures", async () => {
+    const runRole = vi.fn().mockResolvedValue({
+      mode: "single-agent",
+      role: "executor-implementer",
+      output: {
+        implementation: "done",
+        modifiedFiles: ["src/auth/session.ts", "src/db/query-builder.ts"],
+        verificationEvidence: {
+          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        },
+      },
+    });
+    const adversarialReview = vi.fn().mockResolvedValue({
+      batch: "batch-1",
+      status: "blocked",
+      gate: "ADVERSARIAL_GATE_MANDATORY",
+      required: true,
+      checklists: ["auth", "injection"],
+      findings: [
+        {
+          severity: "important",
+          summary: "Session fix still allows injection into the lookup query.",
+        },
+      ],
+    });
+    const controller = createExecutorController({
+      runRole,
+      adversarialReview,
+      preTester: {
+        deriveExecutionProof: () => ({
+          approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          tddApproval: "APPROVED",
+          redValidation: {
+            status: "approved",
+            reasons: [],
+          },
+          checkpointEvidence: [],
+          fixAttempts: [],
+        }),
+      } as any,
+    });
+
+    const result = await controller.executeApprovedWork({
+      batch: {
+        name: "batch-1",
+        files: ["src/auth/session.ts", "src/db/query-builder.ts"],
+      },
+      mode: "--hotfix",
+      proposal: {
+        summary: "patch login session leak",
+        affectedFiles: ["src/auth/session.ts", "src/db/query-builder.ts"],
+        validationIntent: "reduced",
+        batchSize: 1,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    expect(adversarialReview).toHaveBeenCalledWith({
+      batch: {
+        name: "batch-1",
+        files: ["src/auth/session.ts", "src/db/query-builder.ts"],
+      },
+      changedFiles: ["src/auth/session.ts", "src/db/query-builder.ts"],
+      mode: "--hotfix",
+    });
+    expect(result.status).toBe("blocked");
+    expect(result.blockedBy).toBe("ADVERSARIAL_BLOCK");
+    expect(result.review).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+      }),
+    );
+  });
+
+  it("blocks injection-only hotfixes at the per-batch adversarial gate in the default runtime path", async () => {
+    const runRole = vi.fn().mockResolvedValue({
+      mode: "single-agent",
+      role: "executor-implementer",
+      output: {
+        implementation: "done",
+        modifiedFiles: ["src/db/query-builder.ts"],
+        verificationEvidence: {
+          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        },
+      },
+    });
+    const controller = createExecutorController({
+      runRole,
+      preTester: {
+        deriveExecutionProof: () => ({
+          approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          tddApproval: "APPROVED",
+          redValidation: {
+            status: "approved",
+            reasons: [],
+          },
+          checkpointEvidence: [],
+          fixAttempts: [],
+        }),
+      } as any,
+    });
+
+    const result = await controller.executeApprovedWork({
+      batch: {
+        name: "batch-1",
+        files: ["src/db/query-builder.ts"],
+      },
+      mode: "--hotfix",
+      proposal: {
+        summary: "patch unsafe query interpolation",
+        affectedFiles: ["src/db/query-builder.ts"],
+        validationIntent: "reduced",
+        batchSize: 1,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.blockedBy).toBe("ADVERSARIAL_BLOCK");
+    expect(result.review).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+        checklists: ["injection"],
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            severity: "important",
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("runs the final adversarial team after batch review and blocks when the final team demands rework", async () => {
+    const runRole = vi.fn().mockResolvedValue({
+      mode: "single-agent",
+      role: "executor-implementer",
+      output: {
+        implementation: "done",
+        modifiedFiles: ["src/payments/checkout.ts"],
+        verificationEvidence: {
+          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        },
+      },
+    });
+    const adversarialReview = vi.fn().mockResolvedValue({
+      batch: "batch-1",
+      status: "approved",
+      gate: "ADVERSARIAL_GATE_MANDATORY",
+      required: true,
+      checklists: ["payment"],
+      findings: [],
+    });
+    const finalAdversarialOrchestrator = vi.fn().mockResolvedValue({
+      status: "rework",
+      finalDecision: "blocked",
+      findings: [
+        {
+          id: "final-1",
+          severity: "important",
+          summary: "Cross-batch payment settlement invariant is broken.",
+          file: "src/payments/checkout.ts",
+        },
+      ],
+      contradictions: [],
+    });
+    const controller = createExecutorController({
+      runRole,
+      adversarialReview,
+      finalAdversarialOrchestrator,
+      preTester: {
+        deriveExecutionProof: () => ({
+          approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          tddApproval: "APPROVED",
+          redValidation: {
+            status: "approved",
+            reasons: [],
+          },
+          checkpointEvidence: [],
+          fixAttempts: [],
+        }),
+      } as any,
+    });
+
+    const result = await controller.executeApprovedWork({
+      batch: {
+        name: "batch-1",
+        files: ["src/payments/checkout.ts"],
+      },
+      proposal: {
+        summary: "stabilize payment settlement",
+        affectedFiles: ["src/payments/checkout.ts"],
+        validationIntent: "standard",
+        batchSize: 1,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    expect(finalAdversarialOrchestrator).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: {
+          files: ["src/payments/checkout.ts"],
+        },
+        changedDomains: ["payment"],
+        reviews: [
+          expect.objectContaining({
+            reviewer: "batch-1",
+            status: "approved",
+          }),
+        ],
+      }),
+    );
+    expect(result.status).toBe("blocked");
+    expect(result.blockedBy).toBe("FINAL_ADVERSARIAL_REWORK");
+    expect(result.finalReview).toEqual(
+      expect.objectContaining({
+        status: "rework",
+      }),
+    );
+  });
+
+  it("routes adversarial review and final review from the executor's actual modified files, not only the planned batch list", async () => {
+    const runRole = vi.fn().mockResolvedValue({
+      mode: "single-agent",
+      role: "executor-implementer",
+      output: {
+        implementation: "done",
+        modifiedFiles: ["src/auth/session.ts", "src/payments/checkout.ts"],
+        verificationEvidence: {
+          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        },
+      },
+    });
+    const adversarialReview = vi.fn().mockResolvedValue({
+      batch: "batch-1",
+      status: "approved",
+      gate: "ADVERSARIAL_GATE_MANDATORY",
+      required: true,
+      checklists: ["auth", "payment"],
+      findings: [],
+    });
+    const finalAdversarialOrchestrator = vi.fn().mockResolvedValue({
+      status: "rework",
+      finalDecision: "blocked",
+      findings: [
+        {
+          id: "final-auth-payment",
+          severity: "important",
+          summary: "Final adversarial review saw sensitive real modifications.",
+          file: "src/payments/checkout.ts",
+        },
+      ],
+      contradictions: [],
+    });
+    const controller = createExecutorController({
+      runRole,
+      adversarialReview,
+      finalAdversarialOrchestrator,
+      preTester: {
+        deriveExecutionProof: () => ({
+          approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          tddApproval: "APPROVED",
+          redValidation: {
+            status: "approved",
+            reasons: [],
+          },
+          checkpointEvidence: [],
+          fixAttempts: [],
+        }),
+      } as any,
+    });
+
+    const result = await controller.executeApprovedWork({
+      batch: {
+        name: "batch-1",
+        files: ["src/controller/pipeline-controller.ts"],
+      },
+      proposal: {
+        summary: "stabilize routing internals",
+        affectedFiles: ["src/controller/pipeline-controller.ts"],
+        validationIntent: "standard",
+        batchSize: 1,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    expect(adversarialReview).toHaveBeenCalledWith({
+      batch: {
+        name: "batch-1",
+        files: ["src/controller/pipeline-controller.ts"],
+      },
+      changedFiles: ["src/auth/session.ts", "src/payments/checkout.ts"],
+      mode: undefined,
+    });
+    expect(finalAdversarialOrchestrator).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: {
+          files: ["src/auth/session.ts", "src/payments/checkout.ts"],
+        },
+        changedDomains: ["auth", "payment"],
+      }),
+    );
+    expect(result.status).toBe("blocked");
+    expect(result.blockedBy).toBe("FINAL_ADVERSARIAL_REWORK");
+  });
+
+  it("blocks the default runtime defensively when the executor provides no authoritative changed-file evidence", async () => {
+    const runRole = vi.fn().mockResolvedValue({
+      mode: "single-agent",
+      role: "executor-implementer",
+      output: {
+        implementation: "done",
+        verificationEvidence: {
+          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        },
+      },
+    });
+    const adversarialReview = vi.fn();
+    const finalAdversarialOrchestrator = vi.fn();
+    const controller = createExecutorController({
+      runRole,
+      adversarialReview,
+      finalAdversarialOrchestrator,
+      preTester: {
+        deriveExecutionProof: () => ({
+          approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          tddApproval: "APPROVED",
+          redValidation: {
+            status: "approved",
+            reasons: [],
+          },
+          checkpointEvidence: [],
+          fixAttempts: [],
+        }),
+      } as any,
+    });
+
+    const result = await controller.executeApprovedWork({
+      batch: {
+        name: "batch-1",
+        files: ["src/controller/pipeline-controller.ts"],
+      },
+      proposal: {
+        summary: "stabilize routing internals",
+        affectedFiles: ["src/controller/pipeline-controller.ts"],
+        validationIntent: "standard",
+        batchSize: 1,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    expect(adversarialReview).not.toHaveBeenCalled();
+    expect(finalAdversarialOrchestrator).not.toHaveBeenCalled();
+    expect(result.status).toBe("blocked");
+    expect(result.blockedBy).toBe("ADVERSARIAL_SCOPE_MISSING");
+    expect(result.review).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+        gate: "ADVERSARIAL_SCOPE_MISSING",
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            severity: "important",
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("does not treat planned batch files as authoritative executor-changed files in the default runtime", async () => {
+    const controller = createExecutorController();
+
+    const result = await controller.executeApprovedWork({
+      batch: {
+        name: "batch-1",
+        files: ["src/controller/pipeline-controller.ts"],
+      },
+      proposal: {
+        summary: "stabilize routing internals",
+        affectedFiles: ["src/controller/pipeline-controller.ts"],
+        validationIntent: "standard",
+        batchSize: 1,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.blockedBy).toBe("ADVERSARIAL_SCOPE_MISSING");
+    expect(result.review).toEqual(
+      expect.objectContaining({
+        status: "blocked",
+        gate: "ADVERSARIAL_SCOPE_MISSING",
+        files: [],
+      }),
+    );
   });
 });

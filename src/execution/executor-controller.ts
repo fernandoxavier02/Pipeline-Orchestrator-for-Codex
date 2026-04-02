@@ -1,4 +1,6 @@
 import { runAdversarialReview } from "../review/adversarial-review.js";
+import { createFinalAdversarialOrchestrator } from "../review/final-adversarial-orchestrator.js";
+import { detectChangedDomains } from "../review/domain-checklists.js";
 import { runRole } from "../dispatcher/run-role.js";
 import type { PipelineComplexity, ValidationIntent } from "../controller/classification-overrides.js";
 import { createCheckpointValidator, type CheckpointValidationResult } from "./checkpoint-validator.js";
@@ -10,22 +12,108 @@ type ExecutionBatch = {
   files: string[];
 };
 
-async function defaultRunBatch(batch: ExecutionBatch) {
-  const execution = await runRole({
+function normalizeFiles(files: unknown) {
+  if (!Array.isArray(files)) {
+    return [];
+  }
+
+  return files
+    .filter((file): file is string => typeof file === "string" && file.length > 0)
+    .map((file) => file.replace(/\\/g, "/"))
+    .filter((file, index, values) => values.indexOf(file) === index);
+}
+
+function extractExecutionChangedFiles(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const candidateKeys = ["changedFiles", "modifiedFiles", "touchedFiles", "affectedFiles", "files"] as const;
+  for (const key of candidateKeys) {
+    if (key in payload) {
+      const files = normalizeFiles((payload as Record<string, unknown>)[key]);
+      if (files.length > 0) {
+        return files;
+      }
+    }
+  }
+
+  if ("output" in payload && payload.output && typeof payload.output === "object") {
+    return extractExecutionChangedFiles(payload.output);
+  }
+
+  return [];
+}
+
+function createMissingChangedFilesReview(batch: ExecutionBatch) {
+  return {
+    batch: batch.name,
+    files: [],
+    changedDomains: [],
+    checklists: [],
+    required: true,
+    gate: "ADVERSARIAL_SCOPE_MISSING",
+    decision: "block",
+    status: "blocked",
+    findings: [
+      {
+        severity: "important",
+        summary: `Executor changed-file evidence is required before adversarial review can validate ${batch.name}.`,
+        file: batch.files[0] ?? "unknown-file",
+      },
+    ],
+    strategy: "missing-changed-file-evidence",
+  };
+}
+
+async function defaultRunBatch(
+  batch: ExecutionBatch,
+  dependencies?: {
+    runRole?: typeof runRole;
+    adversarialReview?: typeof runAdversarialReview;
+    mode?: string;
+  },
+) {
+  const executeRole = dependencies?.runRole ?? runRole;
+  const adversarialReview = dependencies?.adversarialReview ?? runAdversarialReview;
+  const execution = await executeRole({
     mode: "single-agent",
     role: "executor-implementer",
     prompt: "Implement only the current batch.",
     input: { batch },
   });
+  const changedFiles = extractExecutionChangedFiles(execution) ?? [];
 
-  const review = await runAdversarialReview({
+  if (changedFiles.length === 0) {
+    return {
+      execution,
+      review: createMissingChangedFilesReview(batch),
+      changedFiles: [],
+      verificationEvidence:
+        execution.output
+        && typeof execution.output === "object"
+        && "verificationEvidence" in execution.output
+          ? execution.output.verificationEvidence
+          : undefined,
+    };
+  }
+
+  const review = await adversarialReview({
     batch,
-    findings: [],
+    changedFiles,
+    mode: dependencies?.mode,
   });
 
   return {
     execution,
     review,
+    changedFiles,
+    verificationEvidence:
+      execution.output
+      && typeof execution.output === "object"
+      && "verificationEvidence" in execution.output
+        ? execution.output.verificationEvidence
+        : undefined,
   };
 }
 
@@ -132,6 +220,13 @@ export interface ExecuteApprovedWorkInput {
 
 export interface ExecutorControllerDependencies {
   runBatch?: typeof defaultRunBatch;
+  runRole?: typeof runRole;
+  adversarialReview?: typeof runAdversarialReview;
+  finalAdversarialOrchestrator?: (input: {
+    scope: { files: string[] };
+    changedDomains?: string[];
+    reviews?: Array<{ reviewer: string; status: string; findings: Array<{ severity: string }> }>;
+  }) => Promise<any>;
   qualityGateRouter?: ReturnType<typeof createQualityGateRouter>;
   preTester?: ReturnType<typeof createPreTester>;
   checkpointValidator?: ReturnType<typeof createCheckpointValidator> | {
@@ -148,9 +243,17 @@ export interface ExecutorControllerDependencies {
 }
 
 export function createExecutorController(dependencies: ExecutorControllerDependencies = {}) {
-  const runBatch = dependencies.runBatch ?? defaultRunBatch;
+  const runBatch = dependencies.runBatch ?? ((batch: ExecutionBatch) => defaultRunBatch(batch, {
+    runRole: dependencies.runRole,
+    adversarialReview: dependencies.adversarialReview,
+    mode: currentExecutionMode,
+  }));
   const qualityGateRouter = dependencies.qualityGateRouter ?? createQualityGateRouter();
   const preTester = dependencies.preTester ?? createPreTester();
+  const finalAdversarialOrchestrator = dependencies.finalAdversarialOrchestrator
+    ?? ((input: { scope: { files: string[] }; changedDomains?: string[] }) =>
+      createFinalAdversarialOrchestrator().reviewFinal(input));
+  let currentExecutionMode: string | undefined;
   const runFixLoop = async (input: {
     strategy: string;
     attemptFix: (input: { attempt: number; strategy: string }) => Promise<boolean> | boolean;
@@ -181,6 +284,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
 
   return {
     async executeApprovedWork(input: ExecuteApprovedWorkInput) {
+      currentExecutionMode = input.mode;
       const checkpointValidator = dependencies.checkpointValidator ?? createCheckpointValidator();
       checkpointValidator.reset?.();
       const tasks = input.batch?.files ?? input.tasks ?? input.proposal?.affectedFiles ?? [];
@@ -240,6 +344,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
 
       const batchResults: Array<{
         batch: PlannedBatch;
+        changedFiles: string[];
         execution: unknown;
         review: unknown;
         checkpoint: CheckpointValidationResult;
@@ -253,7 +358,9 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
       const appliedFixAttempts: boolean[] = [];
 
       for (const [index, batch] of planned.batches.entries()) {
-        const batchResult = await runBatch(toExecutionBatch(batch));
+        const executionBatch = toExecutionBatch(batch);
+        const batchResult = await runBatch(executionBatch);
+        const actualChangedFiles = extractExecutionChangedFiles(batchResult);
         const verificationEvidence = deriveControllerVerificationEvidence({
           approvedScenarios: proof.approvedScenarios,
           regressionProofs: planned.regressionProofs,
@@ -274,14 +381,69 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           evidence: verificationEvidence?.evidence ?? [],
         });
 
+        if (actualChangedFiles.length === 0) {
+          const missingEvidenceReview = createMissingChangedFilesReview(executionBatch);
+          batchResults.push({
+            batch,
+            changedFiles: [],
+            execution: batchResult.execution && typeof batchResult.execution === "object"
+              ? batchResult.execution
+              : {},
+            review: missingEvidenceReview,
+            checkpoint,
+          });
+
+          return {
+            status: "blocked",
+            blockedBy: "ADVERSARIAL_SCOPE_MISSING",
+            batchSize: planned.batchSize,
+            regressionProofs: planned.regressionProofs,
+            execution: batchResult.execution,
+            review: missingEvidenceReview,
+            validation: checkpoint,
+            proof: {
+              ...proof,
+              checkpointEvidence,
+              fixAttempts: appliedFixAttempts,
+            },
+            batches: planned.batches,
+            results: batchResults,
+          };
+        }
+
         batchResults.push({
           batch,
+          changedFiles: actualChangedFiles,
           execution: batchResult.execution && typeof batchResult.execution === "object"
             ? batchResult.execution
             : {},
           review: batchResult.review,
           checkpoint,
         });
+
+        if (
+          batchResult.review
+          && typeof batchResult.review === "object"
+          && "status" in batchResult.review
+          && batchResult.review.status === "blocked"
+        ) {
+          return {
+            status: "blocked",
+            blockedBy: "ADVERSARIAL_BLOCK",
+            batchSize: planned.batchSize,
+            regressionProofs: planned.regressionProofs,
+            execution: batchResult.execution,
+            review: batchResult.review,
+            validation: checkpoint,
+            proof: {
+              ...proof,
+              checkpointEvidence,
+              fixAttempts: appliedFixAttempts,
+            },
+            batches: planned.batches,
+            results: batchResults,
+          };
+        }
 
         await input.stores?.checkpoints?.save?.({
           name: batch.name,
@@ -384,6 +546,50 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
       }
 
       const lastResult = batchResults.at(-1);
+      const finalScopeFiles = normalizeFiles(batchResults.flatMap((result) => result.changedFiles));
+      const finalReview = await finalAdversarialOrchestrator({
+        scope: {
+          files: finalScopeFiles.length > 0 ? finalScopeFiles : tasks,
+        },
+        changedDomains: detectChangedDomains(finalScopeFiles.length > 0 ? finalScopeFiles : tasks),
+        reviews: batchResults.map((result) => ({
+          reviewer: result.batch.name,
+          status:
+            result.review
+            && typeof result.review === "object"
+            && "status" in result.review
+            && typeof result.review.status === "string"
+              ? result.review.status
+              : "approved",
+          findings:
+            result.review
+            && typeof result.review === "object"
+            && "findings" in result.review
+            && Array.isArray(result.review.findings)
+              ? result.review.findings
+              : [],
+        })),
+      });
+
+      if (finalReview.status === "rework" || finalReview.finalDecision === "blocked") {
+        return {
+          status: "blocked",
+          blockedBy: "FINAL_ADVERSARIAL_REWORK",
+          batchSize: planned.batchSize,
+          regressionProofs: planned.regressionProofs,
+          execution: lastResult?.execution ?? null,
+          review: lastResult?.review ?? null,
+          finalReview,
+          validation: lastResult?.checkpoint ?? null,
+          proof: {
+            ...proof,
+            checkpointEvidence,
+            fixAttempts: appliedFixAttempts,
+          },
+          batches: planned.batches,
+          results: batchResults,
+        };
+      }
 
       return {
         status: "completed",
@@ -399,6 +605,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
             }
           : null,
         review: lastResult?.review ?? null,
+        finalReview,
         validation: lastResult?.checkpoint ?? null,
         proof: {
           ...proof,

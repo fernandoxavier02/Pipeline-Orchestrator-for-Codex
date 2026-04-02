@@ -5,6 +5,8 @@ export interface DispatchRequest {
   role: string;
   prompt: string;
   input: Record<string, unknown>;
+  freshContext?: boolean;
+  reviewOnly?: boolean;
 }
 
 export interface DispatchResult {

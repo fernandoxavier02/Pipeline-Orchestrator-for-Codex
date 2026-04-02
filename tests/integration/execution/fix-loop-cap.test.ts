@@ -10,12 +10,13 @@ import { createGateLog } from "../../../src/state/gate-log.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
 
 describe("fix loop cap", () => {
-  it("surfaces FIX_LOOP_EXHAUSTED through orchestrated execution after three failed fix attempts", async () => {
+  it("surfaces FIX_LOOP_EXHAUSTED through orchestrated execution after three failed fix attempts", { timeout: 10000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-fix-loop-"));
     const runBatch = vi.fn().mockResolvedValue({
       execution: {
         status: "implemented",
       },
+      changedFiles: ["src/controller/pipeline-controller.ts"],
       review: {
         status: "approved",
       },

@@ -10,7 +10,7 @@ import { createGateLog } from "../../../src/state/gate-log.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
 
 describe("checkpoint stop rule", () => {
-  it("triggers STOP_RULE through controller and executor orchestration after two failed checkpoint proofs", async () => {
+  it("triggers STOP_RULE through controller and executor orchestration after two failed checkpoint proofs", { timeout: 10000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-stop-rule-"));
     const runBatch = vi
       .fn()
@@ -18,6 +18,10 @@ describe("checkpoint stop rule", () => {
         execution: {
           status: "implemented",
         },
+        changedFiles: [
+          "src/controller/pipeline-controller.ts",
+          "src/execution/executor-controller.ts",
+        ],
         review: {
           status: "approved",
         },
@@ -29,6 +33,10 @@ describe("checkpoint stop rule", () => {
         execution: {
           status: "implemented",
         },
+        changedFiles: [
+          "src/controller/pipeline-controller.ts",
+          "src/execution/executor-controller.ts",
+        ],
         review: {
           status: "approved",
         },

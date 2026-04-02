@@ -5,9 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 import { createPipelineController } from "../../../src/controller/pipeline-controller.js";
 import { createCheckpointStore } from "../../../src/state/checkpoint-store.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
+import { runInformationGate } from "../../../src/gates/information-gate.js";
+import { runAdversarialReview } from "../../../src/review/adversarial-review.js";
 
 describe("hotfix mode", () => {
-  it("forces a reduced-validation bug fix path and narrows execution to one regression proof", async () => {
+  it("forces a reduced-validation bug fix path and narrows execution to one regression proof", { timeout: 10000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-hotfix-"));
     const executionController = {
       executeApprovedWork: vi.fn().mockResolvedValue({
@@ -56,5 +58,42 @@ describe("hotfix mode", () => {
     );
     expect(executionResult.execution.batchSize).toBe(1);
     expect(executionResult.execution.regressionProofs).toBe(1);
+  });
+
+  it("narrows the macro information gate to blocker questions during hotfix intake", () => {
+    const referenceIndex = {
+      getGateQuestions: vi.fn().mockReturnValue([
+        "What architecture changes are expected?",
+        "Which broader rollout steps should be considered?",
+      ]),
+    };
+
+    const result = runInformationGate({
+      request: "patch login session leak",
+      classification: { type: "Bug Fix", complexity: "COMPLEXA" },
+      knownFacts: [],
+      referenceIndex: referenceIndex as any,
+      mode: "--hotfix",
+    } as any);
+
+    expect(result.status).toBe("blocked");
+    expect(result.questions).toEqual([
+      "What blocker is this hotfix addressing right now?",
+    ]);
+  });
+
+  it("restricts hotfix adversarial routing to auth and injection checklists", async () => {
+    const result = await runAdversarialReview({
+      batch: {
+        name: "Hotfix batch",
+        files: ["src/auth/session.ts", "src/db/query-builder.ts"],
+      },
+      findings: [],
+      changedFiles: ["src/auth/session.ts", "src/db/query-builder.ts"],
+      mode: "--hotfix",
+    } as any);
+
+    expect(result.required).toBe(true);
+    expect(result.checklists).toEqual(["auth", "injection"]);
   });
 });

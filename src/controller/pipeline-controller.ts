@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resumePipeline } from "../continue/resume-pipeline.js";
@@ -19,6 +20,8 @@ import { createConfidenceScoreStore } from "../state/confidence-score.js";
 import { createGateLog } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
 import { createExecutorController } from "../execution/executor-controller.js";
+import { createReviewOrchestrator } from "../review/review-orchestrator.js";
+import { detectChangedDomains } from "../review/domain-checklists.js";
 import type { ValidationIntent } from "./classification-overrides.js";
 import type { ReferenceProfileIndex } from "../references/reference-profiles.js";
 import ts from "typescript";
@@ -140,6 +143,10 @@ function getStateRoot(runtime?: { stores?: { session?: SessionStore; checkpoints
 
 function getExecutionController(runtime?: { executionController?: ExecutionController }) {
   return runtime?.executionController ?? createExecutorController();
+}
+
+function getReviewOrchestrator(runtime?: { reviewOrchestrator?: { reviewBatch: (input: any) => Promise<any> } }) {
+  return runtime?.reviewOrchestrator ?? createReviewOrchestrator();
 }
 
 function getWorkspaceRoot(runtime?: { workspaceRoot?: string }) {
@@ -344,6 +351,69 @@ function resolveScenarioWorkspaceRoot(preferredRoot?: string) {
   }
 
   return process.cwd();
+}
+
+function resolveChangedFilesFromGit(root: string) {
+  try {
+    const raw = execFileSync("git", ["status", "--porcelain"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    return raw
+      .split(/\r?\n/u)
+      .map((line) => line.trimEnd())
+      .filter((line) => line.length >= 4 && !line.startsWith("!!"))
+      .flatMap((line) => {
+        const status = line.slice(0, 2);
+        if (status.includes("D")) {
+          return [];
+        }
+
+        const rawPath = line.slice(3).trim();
+        const nextPath = rawPath.includes(" -> ")
+          ? rawPath.split(" -> ").at(-1) ?? rawPath
+          : rawPath;
+        return [nextPath.replace(/\\/g, "/")];
+      })
+      .filter((file, index, files) => files.indexOf(file) === index);
+  } catch {
+    return [];
+  }
+}
+
+function createReviewOnlyNoDiffResult(input: {
+  mode: string;
+  classification: {
+    type: string;
+    complexity: string;
+    variant: string;
+  };
+  proposal: ReturnType<typeof buildProposal>;
+  gates: unknown[];
+}) {
+  return {
+    mode: input.mode,
+    type: input.classification.type,
+    complexity: input.classification.complexity,
+    variant: input.classification.variant,
+    proposal: {
+      ...input.proposal,
+      affectedFiles: [],
+    },
+    gates: input.gates,
+    implementationSkipped: true,
+    review: {
+      status: "blocked",
+      findings: [
+        {
+          severity: "important",
+          summary: "No real uncommitted git diff was found, so review-only refused to fabricate a whole-diff scope.",
+        },
+      ],
+    },
+  };
 }
 
 function revokeExecutionApproval(input?: PipelineSessionState["executionProof"]) {
@@ -674,6 +744,9 @@ export function createPipelineController(runtime?: {
   };
   referenceIndex?: () => Promise<ReferenceProfileIndex>;
   executionController?: ExecutionController;
+  reviewOrchestrator?: {
+    reviewBatch: (input: any) => Promise<any>;
+  };
 }) {
   return {
     async start(input: string): Promise<any> {
@@ -966,6 +1039,7 @@ export function createPipelineController(runtime?: {
         classification: classificationResult.classification,
         knownFacts: [],
         referenceIndex,
+        mode,
       });
       const designInterrogation = runDesignInterrogation({
         mode,
@@ -973,6 +1047,9 @@ export function createPipelineController(runtime?: {
         complexity: classificationResult.classification.complexity,
       });
       const planModeStatus = getPlanModeStatus(mode, classificationResult.classification.complexity);
+      const reviewOnlyChangedFiles = mode === "review-only"
+        ? resolveChangedFilesFromGit(getWorkspaceRoot(runtime))
+        : [];
       const proposal = buildProposal({
         request: normalizedRequest,
         classification: classificationResult.classification,
@@ -981,7 +1058,14 @@ export function createPipelineController(runtime?: {
         planModeStatus,
         batchSize: classificationResult.profile.batchSize,
         validationIntent: classificationResult.validationIntent,
+        affectedFiles: reviewOnlyChangedFiles,
       });
+      const authoritativeProposal = mode === "review-only"
+        ? {
+            ...proposal,
+            affectedFiles: reviewOnlyChangedFiles,
+          }
+        : proposal;
 
       const gateEntries = [
         toGateLogEntry({
@@ -1004,35 +1088,61 @@ export function createPipelineController(runtime?: {
         }),
       ];
 
-      await persistGateAndConfidence(
-        runtime ?? {},
-        gateEntries,
-        1,
-      );
-
       if (mode === "diagnostic") {
+        await persistGateAndConfidence(
+          runtime ?? {},
+          gateEntries,
+          1,
+        );
+
         return {
           mode,
           type: classificationResult.classification.type,
           complexity: classificationResult.classification.complexity,
           variant: classificationResult.classification.variant,
-          proposal,
+          proposal: authoritativeProposal,
           gates: [infoGate, designInterrogation],
           stoppedAfterProposal: true,
         };
       }
 
       if (mode === "review-only") {
+        const changedFiles = authoritativeProposal.affectedFiles ?? [];
+        if (changedFiles.length === 0) {
+          return createReviewOnlyNoDiffResult({
+            mode,
+            classification: classificationResult.classification,
+            proposal: authoritativeProposal,
+            gates: [infoGate, designInterrogation],
+          });
+        }
+        const changedDomains = detectChangedDomains(changedFiles);
+        const review = await getReviewOrchestrator(runtime).reviewBatch({
+          batch: {
+            name: "whole-diff-review",
+            files: changedFiles,
+          },
+          changedFiles,
+          changedDomains,
+        });
+
         return {
           mode,
           type: classificationResult.classification.type,
           complexity: classificationResult.classification.complexity,
           variant: classificationResult.classification.variant,
-          proposal,
+          proposal: authoritativeProposal,
           gates: [infoGate, designInterrogation],
           implementationSkipped: true,
+          review,
         };
       }
+
+      await persistGateAndConfidence(
+        runtime ?? {},
+        gateEntries,
+        1,
+      );
 
       await runtime?.stores?.session?.save?.({
         sessionId: `${mode}:${normalizedRequest || "request"}`,
@@ -1043,12 +1153,12 @@ export function createPipelineController(runtime?: {
         variant: classificationResult.classification.variant,
         confidenceScore: 1,
         proposal: {
-          ...proposal,
+          ...authoritativeProposal,
           awaitingUserConfirmation: true,
         },
         unresolvedBlockers: infoGate.status === "blocked" ? [infoGate.reason] : [],
         pendingDecision: "proposal-confirmation",
-        touchedFiles: proposal.affectedFiles,
+        touchedFiles: authoritativeProposal.affectedFiles,
       });
 
       return {
@@ -1056,7 +1166,7 @@ export function createPipelineController(runtime?: {
         type: classificationResult.classification.type,
         complexity: classificationResult.classification.complexity,
         variant: classificationResult.classification.variant,
-        proposal,
+        proposal: authoritativeProposal,
         gates: [infoGate, designInterrogation],
         planModeStatus,
       };

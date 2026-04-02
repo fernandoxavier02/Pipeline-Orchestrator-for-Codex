@@ -7,8 +7,10 @@ export function runInformationGate(input: {
   classification: { type: string; complexity: string };
   knownFacts: string[];
   referenceIndex?: ReferenceProfileIndex;
+  mode?: string;
 }): GateResult {
-  const referenceQuestions = input.referenceIndex?.getGateQuestions("macro") ?? [];
+  const hotfixLike = input.mode === "--hotfix";
+  const referenceQuestions = hotfixLike ? [] : input.referenceIndex?.getGateQuestions("macro") ?? [];
   const needsReproduction =
     input.classification.type === "Bug Fix" && input.knownFacts.length === 0;
 
@@ -18,7 +20,9 @@ export function runInformationGate(input: {
       status: "blocked",
       hardness: classifyGateHardness({ blocker: true, severity: "high" }),
       reason: "Missing reproduction steps",
-      questions: ["What are the reproduction steps for this bug?", ...referenceQuestions],
+      questions: hotfixLike
+        ? ["What blocker is this hotfix addressing right now?"]
+        : ["What are the reproduction steps for this bug?", ...referenceQuestions],
     };
   }
 
