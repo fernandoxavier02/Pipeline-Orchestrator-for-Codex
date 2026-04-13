@@ -162,7 +162,7 @@ DO NOT execute any phase inline. DO NOT write audit reports, classifications, or
 DO NOT say "I chose the conservative approach" to skip spawning.
 
 YOUR FIRST ACTION must be:
-1. Find the agents directory: find ~/.codex/plugins/cache -path "*/pipeline-orchestrator-for-codex/*/agents" -type d
+1. Find the agents directory using \${CLAUDE_PLUGIN_ROOT}/agents/ (or: find ~/.codex/plugins/cache -path "*/pipeline-orchestrator-for-codex/*/agents" -type d)
 2. Read agents/core/task-orchestrator.md
 3. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>)
 4. Wait for the agent to return CLASSIFICATION output

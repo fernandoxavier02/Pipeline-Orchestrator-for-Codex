@@ -39,8 +39,47 @@ model_reasoning_effort = "high"
 
 ### Install
 
+**Option 1: From Codex Plugin Registry** (if published)
+
 ```bash
 codex install fx-studio-ai/pipeline-orchestrator-for-codex
+```
+
+**Option 2: From GitHub** (recommended for portable use)
+
+```bash
+# Clone the repo
+git clone https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git
+
+# Install into Codex plugins cache
+mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.2.0
+cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.2.0/
+
+# Optional: Install Node.js dependencies (only needed for TypeScript development/testing)
+# The plugin works WITHOUT npm install — hooks use only Node.js builtins (fs, path)
+# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.2.0
+# npm install --production
+```
+
+**Option 3: Symlink for development**
+
+```bash
+git clone https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git
+cd Pipeline-Orchestrator-for-Codex
+npm install
+
+# Create a symlink in the plugins cache
+mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex
+ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.2.0
+```
+
+### Verify Installation
+
+```bash
+# Check the plugin is detected
+ls ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/*/skills/pipeline/SKILL.md
+
+# Should output: SKILL.md path with version number
 ```
 
 ### Usage
@@ -260,6 +299,40 @@ If absent, the orchestrator auto-detects from `package.json`, `Makefile`, or com
 | Hooks | 3 |
 | Pipeline phases | 4 |
 | Execution modes | 6 |
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|:---|:---|:---|
+| `/pipeline` not recognized | Plugin not in Codex cache | Follow "Install from GitHub" steps above |
+| `spawn_agent` not available | `multi_agent = false` | Set `multi_agent = true` in `~/.codex/config.toml` |
+| Hook errors on startup | Unexpected — hooks use only Node.js builtins | Check Node.js >= 20 is installed |
+| "agents directory not found" | Plugin not installed correctly | Verify `~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/*/agents/` exists |
+| Wall-of-text, no phases | GPT executing inline instead of spawning | Ensure hooks are registered — check `hooks/hooks.json` exists and `plugin.json` points to it |
+| Wrong skill loaded | Duplicate command/skill entries | Select the SKILL.md entry (not commands/) in skill picker |
+| `CLAUDE_PLUGIN_ROOT` undefined | Plugin not installed via standard path | Reinstall plugin into `~/.codex/plugins/cache/` |
+
+### Requirements
+
+- **Node.js >= 20** (for hooks — they use CommonJS `.cjs` format)
+- **Codex CLI** with `multi_agent = true` enabled
+- **`model_reasoning_effort = "high"`** recommended in `~/.codex/config.toml`
+
+### Files That Matter for Runtime
+
+The plugin does NOT require a build step for normal use. The runtime components are:
+
+| Component | Files | Dependencies |
+|:---|:---|:---|
+| Skill (instructions) | `skills/pipeline/SKILL.md` | None |
+| Agents (prompts) | `agents/**/*.md` (36 files) | None |
+| Hooks (enforcement) | `hooks/*.cjs` (3 files) | Node.js builtins only (fs, path) |
+| Manifest | `.codex-plugin/plugin.json` | None |
+| References | `references/**/*.md` | None |
+
+The `src/`, `dist/`, and `tests/` directories are for development only and are NOT required for the plugin to function.
 
 ---
 

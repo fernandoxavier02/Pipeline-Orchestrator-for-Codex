@@ -45,15 +45,17 @@ For EVERY agent dispatch in the phases below:
 
 If `spawn_agent` fails or is unavailable, tell the user: "spawn_agent is not available in this session. The pipeline requires multi-agent support. Check that multi_agent = true in ~/.codex/config.toml."
 
-The agent prompt files live inside this plugin. To find them, run:
+The agent prompt files live inside this plugin's `agents/` directory. To find them dynamically, run:
 ```bash
+# Method 1: Use CLAUDE_PLUGIN_ROOT (set automatically by Codex when plugin is installed)
+ls "${CLAUDE_PLUGIN_ROOT}/agents/" 2>/dev/null
+
+# Method 2: Dynamic discovery (fallback)
 find ~/.codex/plugins/cache -path "*/pipeline-orchestrator-for-codex/*/agents" -type d 2>/dev/null | head -1
 ```
 That directory contains `core/`, `executor/`, and `quality/` subdirectories with the agent .md files.
 
-Fallback path: `~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.1.0/agents/`
-
-Fallback path: `~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.1.0/agents/`
+**Preferred:** Use `${CLAUDE_PLUGIN_ROOT}/agents/` — this resolves automatically regardless of install location or version.
 
 ---
 
