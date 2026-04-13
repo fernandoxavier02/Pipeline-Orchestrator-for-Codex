@@ -70,156 +70,166 @@ function formatDiagnosticMessage(diagnostic: ts.Diagnostic) {
   return ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
 }
 
-export function createPreTester() {
-  const collectFailures = (input: {
-    approvedScenarios: string[];
-    cwd?: string;
-  }): RedValidationFailure[] => {
-    const cwd = input.cwd ?? process.cwd();
-    const approvedScenarioPaths = toAbsoluteScenarioPaths(input.approvedScenarios, cwd);
-    const compilerOptions = resolveCompilerOptions(cwd);
-    const failures: RedValidationFailure[] = [];
-    const seenFailures = new Set<string>();
+export function collectPreTesterFailures(input: {
+  approvedScenarios: string[];
+  cwd?: string;
+}): RedValidationFailure[] {
+  const cwd = input.cwd ?? process.cwd();
+  const approvedScenarioPaths = toAbsoluteScenarioPaths(input.approvedScenarios, cwd);
+  const compilerOptions = resolveCompilerOptions(cwd);
+  const failures: RedValidationFailure[] = [];
+  const seenFailures = new Set<string>();
 
-    const appendFailure = (failure: RedValidationFailure) => {
-      const key = `${failure.kind}:${failure.file}:${failure.message}`;
-      if (seenFailures.has(key)) {
-        return;
-      }
+  const appendFailure = (failure: RedValidationFailure) => {
+    const key = `${failure.kind}:${failure.file}:${failure.message}`;
+    if (seenFailures.has(key)) {
+      return;
+    }
 
-      seenFailures.add(key);
-      failures.push(failure);
-    };
+    seenFailures.add(key);
+    failures.push(failure);
+  };
 
-    for (const scenarioPath of approvedScenarioPaths) {
-      if (!existsSync(scenarioPath)) {
-        appendFailure({
-          kind: "test",
-          file: scenarioPath,
-          message: "Approved scenario does not exist",
-        });
-        continue;
-      }
-
-      if (!isProofScenarioPath(scenarioPath, cwd)) {
-        appendFailure({
-          kind: "test",
-          file: scenarioPath,
-          message: "Approved scenario is not a real test proof input",
-        });
-        continue;
-      }
-
-      const sourceText = readFileSync(scenarioPath, "utf8");
-      if (!containsTestDeclaration(sourceText)) {
-        appendFailure({
-          kind: "test",
-          file: scenarioPath,
-          message: "Approved scenario does not declare a runnable test",
-        });
-        continue;
-      }
-
-      const transpileResult = ts.transpileModule(sourceText, {
-        compilerOptions,
-        fileName: scenarioPath,
-        reportDiagnostics: true,
+  for (const scenarioPath of approvedScenarioPaths) {
+    if (!existsSync(scenarioPath)) {
+      appendFailure({
+        kind: "test",
+        file: scenarioPath,
+        message: "Approved scenario does not exist",
       });
+      continue;
+    }
 
-      for (const diagnostic of transpileResult.diagnostics ?? []) {
+    if (!isProofScenarioPath(scenarioPath, cwd)) {
+      appendFailure({
+        kind: "test",
+        file: scenarioPath,
+        message: "Approved scenario is not a real test proof input",
+      });
+      continue;
+    }
+
+    const sourceText = readFileSync(scenarioPath, "utf8");
+    if (!containsTestDeclaration(sourceText)) {
+      appendFailure({
+        kind: "test",
+        file: scenarioPath,
+        message: "Approved scenario does not declare a runnable test",
+      });
+      continue;
+    }
+
+    const transpileResult = ts.transpileModule(sourceText, {
+      compilerOptions,
+      fileName: scenarioPath,
+      reportDiagnostics: true,
+    });
+
+    for (const diagnostic of transpileResult.diagnostics ?? []) {
+      appendFailure({
+        kind: "syntax",
+        file: scenarioPath,
+        message: formatDiagnosticMessage(diagnostic),
+      });
+    }
+
+    const imports = ts.preProcessFile(sourceText, true, true);
+    for (const importedFile of imports.importedFiles) {
+      if (!importedFile.fileName.startsWith(".")) {
+        continue;
+      }
+
+      const resolvedModule = ts.resolveModuleName(
+        importedFile.fileName,
+        scenarioPath,
+        compilerOptions,
+        ts.sys,
+      ).resolvedModule;
+
+      if (!resolvedModule) {
         appendFailure({
-          kind: "syntax",
+          kind: "import",
           file: scenarioPath,
-          message: formatDiagnosticMessage(diagnostic),
+          message: `Cannot find module '${importedFile.fileName}'`,
         });
       }
-
-      const imports = ts.preProcessFile(sourceText, true, true);
-      for (const importedFile of imports.importedFiles) {
-        if (!importedFile.fileName.startsWith(".")) {
-          continue;
-        }
-
-        const resolvedModule = ts.resolveModuleName(
-          importedFile.fileName,
-          scenarioPath,
-          compilerOptions,
-          ts.sys,
-        ).resolvedModule;
-
-        if (!resolvedModule) {
-          appendFailure({
-            kind: "import",
-            file: scenarioPath,
-            message: `Cannot find module '${importedFile.fileName}'`,
-          });
-        }
-      }
     }
+  }
 
-    return failures;
-  };
+  return failures;
+}
 
-  const validateRedState = (input: {
-    approvedScenarios: string[];
-    failures: RedValidationFailure[];
-  }): RedValidationResult => {
-    const reasons: string[] = [];
+export function validatePreTesterRedState(input: {
+  approvedScenarios: string[];
+  failures: RedValidationFailure[];
+}): RedValidationResult {
+  const reasons: string[] = [];
 
-      if (input.approvedScenarios.length === 0) {
-        reasons.push("No approved test scenarios were supplied");
-      }
+  if (input.approvedScenarios.length === 0) {
+    reasons.push("No approved test scenarios were supplied");
+  }
 
-      for (const failure of input.failures) {
-        if (failure.kind === "syntax" || failure.kind === "import" || failure.kind === "test") {
-          reasons.push(`${failure.kind} failure in ${failure.file}: ${failure.message}`);
-        }
-      }
-
-    if (reasons.length > 0) {
-      return {
-        status: "blocked",
-        reasons,
-      };
+  for (const failure of input.failures) {
+    if (failure.kind === "syntax" || failure.kind === "import" || failure.kind === "test") {
+      reasons.push(`${failure.kind} failure in ${failure.file}: ${failure.message}`);
     }
+  }
 
+  if (reasons.length > 0) {
     return {
-      status: "approved",
-      reasons: ["RED validation passed for approved scenarios"],
+      status: "blocked",
+      reasons,
     };
-  };
+  }
 
   return {
-    collectFailures,
-    validateRedState,
+    status: "approved",
+    reasons: ["RED validation passed for approved scenarios"],
+  };
+}
+
+export function derivePreTesterExecutionProof(input: {
+  approvedScenarios: string[];
+  cwd?: string;
+  failures?: RedValidationFailure[];
+}): DerivedExecutionProof {
+  const approvedScenarios = [...input.approvedScenarios];
+  const failures = input.failures ?? collectPreTesterFailures({
+    approvedScenarios,
+    cwd: input.cwd,
+  });
+  const redValidation = validatePreTesterRedState({
+    approvedScenarios,
+    failures,
+  });
+  const workingDirectory = input.cwd ?? process.cwd();
+  const validScenarioPaths = toAbsoluteScenarioPaths(approvedScenarios, workingDirectory).filter((scenarioPath) => {
+    if (!existsSync(scenarioPath) || !isProofScenarioPath(scenarioPath, workingDirectory)) {
+      return false;
+    }
+
+    return containsTestDeclaration(readFileSync(scenarioPath, "utf8"));
+  });
+  const normalizedValidScenarios = validScenarioPaths.map((scenarioPath) =>
+    scenarioPath.replace(/\\/g, "/").replace(`${workingDirectory.replace(/\\/g, "/")}/`, ""));
+
+  return {
+    approvedScenarios: normalizedValidScenarios,
+    tddApproval: normalizedValidScenarios.length > 0 ? "APPROVED" : "REJECTED",
+    redValidation,
+  };
+}
+
+export function createPreTester() {
+  return {
+    collectFailures: collectPreTesterFailures,
+    validateRedState: validatePreTesterRedState,
     deriveExecutionProof(input: {
       approvedScenarios: string[];
       cwd?: string;
       failures?: RedValidationFailure[];
     }): DerivedExecutionProof {
-      const approvedScenarios = [...input.approvedScenarios];
-      const failures = input.failures ?? collectFailures({
-        approvedScenarios,
-        cwd: input.cwd,
-      });
-      const redValidation = validateRedState({
-        approvedScenarios,
-        failures,
-      });
-      const validScenarioPaths = toAbsoluteScenarioPaths(approvedScenarios, input.cwd ?? process.cwd()).filter((scenarioPath) => {
-        if (!existsSync(scenarioPath) || !isProofScenarioPath(scenarioPath, input.cwd ?? process.cwd())) {
-          return false;
-        }
-
-        return containsTestDeclaration(readFileSync(scenarioPath, "utf8"));
-      });
-      const normalizedValidScenarios = validScenarioPaths.map((scenarioPath) => scenarioPath.replace(/\\/g, "/").replace(`${(input.cwd ?? process.cwd()).replace(/\\/g, "/")}/`, ""));
-
-      return {
-        approvedScenarios: normalizedValidScenarios,
-        tddApproval: normalizedValidScenarios.length > 0 ? "APPROVED" : "REJECTED",
-        redValidation,
-      };
+      return derivePreTesterExecutionProof(input);
     },
   };
 }

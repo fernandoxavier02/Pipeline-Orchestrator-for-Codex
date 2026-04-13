@@ -69,5 +69,12 @@ describe("force level modes", () => {
 
     expect(result.mode).toBe("--grill");
     expect(result.proposal.designReviewStatus).toBe("partial");
+    expect(result.gates[1]).toMatchObject({
+      kind: "DESIGN_INTERROGATION",
+      questions: expect.arrayContaining([
+        "Which user-visible trade-off are we optimizing for first?",
+        "What evidence will tell us this design decision worked?",
+      ]),
+    });
   });
 });

@@ -9,8 +9,23 @@ function isMissingFile(error: unknown) {
 const REQUIRED_OUTPUT_BLOCKS: Record<string, string[]> = {
   "controller/pipeline-controller": ["MODE", "TYPE", "COMPLEXITY", "VARIANT", "PROPOSAL"],
   "core/information-gate": ["GATE", "STATUS", "QUESTION"],
+  "core/checkpoint-validator": ["CHECKPOINT_RESULT", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+  "core/sanity-checker": ["SANITY_CHECK", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+  "core/final-validator": ["PA_DE_CAL", "DECISION", "BLOCKERS", "ROLLBACK"],
+  "core/sentinel": ["SENTINEL_DECISION", "STATUS", "EXPECTED_NEXT", "ACTION"],
+  "executor/executor-fix": ["FIX_RESULT", "CHANGES", "TESTS", "NEXT_ACTION"],
+  "executor/executor-spec-reviewer": ["SPEC_REVIEW_RESULT", "STATUS", "EVIDENCE", "NEXT_ACTION"],
   "executor/executor-implementer": ["CHANGES", "TESTS", "RISKS"],
+  "quality/quality-gate-router": ["QUALITY_GATE_PLAN", "STATUS", "EVIDENCE", "NEXT_ACTION"],
   "quality/adversarial-reviewer": ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"],
+  "quality/design-interrogator": ["DESIGN_INTERROGATION", "STATUS", "DECISIONS", "QUESTION"],
+  "quality/plan-architect": ["IMPLEMENTATION_PLAN", "TASKS", "FILES", "RISKS"],
+  "quality/pre-tester": ["PRE_TESTER_RESULT", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+  "quality/review-orchestrator": ["STATUS", "FINDINGS", "REVIEWERS", "STRATEGY"],
+  "quality/final-adversarial-orchestrator": ["STATUS", "FINDINGS", "REVIEWERS", "STRATEGY"],
+  "quality/quality-reviewer": ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"],
+  "quality/security-reviewer": ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"],
+  "quality/architecture-reviewer": ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"],
 };
 
 function normalizePromptName(name: string) {

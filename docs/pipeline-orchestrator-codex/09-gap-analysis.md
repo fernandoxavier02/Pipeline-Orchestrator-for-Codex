@@ -58,18 +58,18 @@ Claude can model this through separate agents and context boundaries. Codex can 
 
 Risk level: high
 
-## Gap Type 3: No Exact Equivalent
+## Gap Type 3: Historically Hard Equivalents
 
 These areas do not have a clean one-to-one Codex primitive.
 
 ### Named multi-agent orchestration as a default runtime assumption
 
-The original repository is designed around many named agents. In this Codex environment, using subagents requires explicit permission from the user.
+The original repository is designed around many named agents. In this Codex port, controller-owned multi-agent orchestration now exists in the dispatcher layer, but the environment still differs from Claude-native agent semantics.
 
 Implication:
 
-- the port must support a single-agent compatibility mode
-- prompt design must make role separation durable without actual fan-out
+- controller-owned fan-out still needs durable prompt contracts and explicit scope control
+- review independence should remain a first-class test target
 
 Risk level: high
 
@@ -92,6 +92,13 @@ Implication:
 - the Codex port cannot rely only on file names
 - it must derive some behaviors from orchestration text and examples
 
+Current mitigation:
+
+- central prompt artifacts now exist locally for sentinel, checkpoint-validator, pre-tester, quality-gate-router, sanity-checker, final-validator, design-interrogator, and plan-architect
+- controller startup now preloads the shipped prompt bundle to fail fast on broken prompt contracts
+- Phase 2 and Phase 3 now use explicit runtime roles for checkpoint validation, pre-testing, quality-gate routing, sanity checks, and final validation
+- controller sovereignty is now narrower: phase transitions, gate decisions, rollback routing, session/checkpoint/gate-log/confidence/sentinel persistence, and closeout authority
+
 ### Mixed source-of-truth problem
 
 Behavior is split across:
@@ -107,6 +114,11 @@ Implication:
 
 - the port needs an explicit authority order
 - otherwise behavior drift will happen quickly
+
+Current mitigation:
+
+- runtime-first execution now pushes role behavior into prompt-backed dispatchers instead of relying only on controller-inlined logic
+- continue-state interpretation has been extracted so blocked continuation and resume routing share a dedicated boundary
 
 ### Product claims exceed hard implementation in places
 
@@ -195,5 +207,7 @@ The hardest part is not the phase graph. The hardest part is preserving governan
 - explicit gates
 - durable resumability
 - evidence-based final decisions
+
+The remaining implementation gaps are now concentrated in controller slimming for continuation and final closeout boundaries, plus keeping docs and inventories synchronized as the runtime roles continue to mature.
 
 If the Codex port gets those right, the remaining differences in packaging and tooling are manageable.

@@ -9,11 +9,43 @@ describe("reference bundle", () => {
         const bundle = await loadReferenceBundle(process.cwd());
         const index = createReferenceProfileIndex(bundle);
         const profile = index.getPipelineProfile("bugfix-heavy");
-        expect(Object.keys(bundle.pipelineProfiles)).toHaveLength(10);
+        expect(Object.keys(bundle.pipelineProfiles)).toHaveLength(12);
         expect(profile.variant).toBe("bugfix-heavy");
         expect(profile.type).toBe("Bug Fix");
         expect(profile.complexity).toBe("COMPLEXA");
         expect(profile.checklists).toEqual(expect.arrayContaining(["data-integrity", "error-handling", "input-validation"]));
+        expect(bundle.pipelineProfiles["adversarial-light"]).toMatchObject({
+            type: "Audit",
+            intensity: "light",
+            complexity: "MEDIA",
+        });
+        expect(bundle.pipelineProfiles["adversarial-heavy"]).toMatchObject({
+            type: "Audit",
+            intensity: "heavy",
+            complexity: "COMPLEXA",
+        });
+    });
+    it("loads the team registry and exposes the adversarial team composition", async () => {
+        const bundle = await loadReferenceBundle(process.cwd());
+        const adversarialHeavy = bundle.teamRegistry.routes.find((route) => route.profile === "adversarial-heavy");
+        const adversarialLight = bundle.teamRegistry.routes.find((route) => route.profile === "adversarial-light");
+        expect(adversarialHeavy).toMatchObject({
+            type: "Audit",
+            intensity: "heavy",
+            mode: "review-fix",
+            parallelGroups: [["adversarial-security-scanner", "adversarial-architecture-critic"]],
+        });
+        expect(adversarialHeavy?.agents).toEqual(expect.arrayContaining([
+            "adversarial-review-coordinator",
+            "adversarial-security-scanner",
+            "adversarial-architecture-critic",
+        ]));
+        expect(adversarialLight).toMatchObject({
+            type: "Audit",
+            intensity: "light",
+            mode: "review-fix",
+            skipInLight: ["adversarial-architecture-critic"],
+        });
     });
     it("loads gate question banks and checklist selection by touched domain", async () => {
         const bundle = await loadReferenceBundle(process.cwd());
@@ -54,6 +86,45 @@ describe("reference bundle", () => {
             const bundle = await loadReferenceBundle(root);
             expect(bundle.pipelineProfiles["implement-heavy"].sourcePath).toContain("feature-heavy.md");
             expect(bundle.checklists.auth.sourcePath).toContain("access-control.md");
+        }
+        finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+    it("resolves a matrix-backed team route even when the base variant name changes", async () => {
+        const root = await mkdtemp(join(tmpdir(), "pipeline-refs-"));
+        const sourceRefs = join(process.cwd(), "references");
+        const copiedRefs = join(root, "references");
+        try {
+            await cp(sourceRefs, copiedRefs, { recursive: true });
+            await writeFile(join(copiedRefs, "pipelines", "implement-light.md"), `---\nkind: pipeline-profile\nvariant: feature-light\ntype: Feature\ncomplexity: MEDIA\nintensity: light\nbatchSize: 3\nsummary: Feature work with a renamed light variant for team-route resolution.\nchecklists:\n  - business-logic\n  - error-handling\n  - input-validation\n---\n# feature-light\nRuntime proof variant.\n`);
+            await writeFile(join(copiedRefs, "complexity-matrix.md"), `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`);
+            const bundle = await loadReferenceBundle(root);
+            const index = createReferenceProfileIndex(bundle);
+            const route = index.getTeamRoute("feature-light");
+            expect(route).toMatchObject({
+                type: "Feature",
+                intensity: "light",
+                mode: "code-changing",
+            });
+            expect(route.agents).toEqual(expect.arrayContaining([
+                "feature-vertical-slice-planner",
+                "feature-implementer",
+                "feature-integration-validator",
+            ]));
+        }
+        finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+    it("still fails when a sub-routed profile is renamed without updating the team registry", async () => {
+        const root = await mkdtemp(join(tmpdir(), "pipeline-refs-"));
+        const sourceRefs = join(process.cwd(), "references");
+        const copiedRefs = join(root, "references");
+        try {
+            await cp(sourceRefs, copiedRefs, { recursive: true });
+            await writeFile(join(copiedRefs, "pipelines", "adversarial-light.md"), `---\nkind: pipeline-profile\nvariant: adversarial-experimental\ntype: Audit\ncomplexity: MEDIA\nintensity: light\nbatchSize: 1\nsummary: Review-fix routing under a renamed sub-route profile.\nchecklists:\n  - business-logic\n  - error-handling\n---\n# adversarial-experimental\nRenamed sub-route variant.\n`);
+            await expect(loadReferenceBundle(root)).rejects.toThrow('Team registry references unknown profile "adversarial-light"');
         }
         finally {
             await rm(root, { recursive: true, force: true });

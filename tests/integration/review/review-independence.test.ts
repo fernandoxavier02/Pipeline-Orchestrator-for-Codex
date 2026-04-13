@@ -4,8 +4,8 @@ describe("review independence", () => {
   it("dispatches batch review from fresh context using only batch metadata and file lists", async () => {
     const { createReviewOrchestrator } = await import("../../../src/review/review-orchestrator.js");
     const runRole = vi.fn().mockResolvedValue({
-      mode: "single-agent",
-      role: "batch-reviewer",
+      mode: "multi-agent",
+      role: "review-orchestrator",
       output: {
         findings: [],
       },
@@ -25,23 +25,100 @@ describe("review independence", () => {
     const request = runRole.mock.calls[0]?.[0];
     expect(request).toEqual(
       expect.objectContaining({
-        mode: "single-agent",
+        mode: "multi-agent",
         role: expect.stringContaining("review"),
+        filesInScope: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
+        authorityLevel: "controller",
       }),
     );
-    expect(request.prompt).toContain("fresh context");
-    expect(request.prompt).toContain("review only");
-    expect(request.input).toEqual({
-      batch: {
-        name: "Batch 4",
-        files: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
-      },
-      files: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
-      changedDomains: ["auth"],
-      reviewOnly: true,
-    });
+    expect(request.team).toEqual([
+      expect.objectContaining({
+        role: "batch-reviewer",
+        filesInScope: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
+        authorityLevel: "reviewer",
+      }),
+      expect.objectContaining({
+        role: "executor-spec-reviewer",
+        filesInScope: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
+        authorityLevel: "reviewer",
+      }),
+      expect.objectContaining({
+        role: "quality-reviewer",
+        filesInScope: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
+        authorityLevel: "reviewer",
+      }),
+    ]);
     expect(request.input).not.toHaveProperty("implementationSummary");
     expect(request.prompt).not.toContain("session handling");
+  });
+
+  it("returns parsed reviewer outputs so downstream execution can consume direct review decisions", async () => {
+    const { createReviewOrchestrator } = await import("../../../src/review/review-orchestrator.js");
+    const runRole = vi.fn().mockResolvedValue({
+      mode: "multi-agent",
+      role: "review-orchestrator",
+      output: {
+        status: "blocked",
+        findings: [],
+        agents: [
+          {
+            role: "executor-spec-reviewer",
+            output: {
+              status: "blocked",
+              findings: [
+                {
+                  severity: "important",
+                  summary: "Spec reviewer found missing rollback coverage.",
+                  file: "src/controller/pipeline-controller.ts",
+                },
+              ],
+            },
+          },
+          {
+            role: "quality-reviewer",
+            output: {
+              status: "blocked",
+              findings: [
+                {
+                  severity: "minor",
+                  summary: "Quality reviewer found missing continue regression proof.",
+                  file: "src/controller/pipeline-controller.ts",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const orchestrator = createReviewOrchestrator({ runRole });
+
+    const result = await orchestrator.reviewBatch({
+      batch: {
+        name: "Batch direct-review-inputs",
+        files: ["src/controller/pipeline-controller.ts"],
+      },
+    });
+
+    expect(result.reviews).toEqual([
+      expect.objectContaining({
+        reviewer: "executor-spec-reviewer",
+        status: "blocked",
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            summary: "Spec reviewer found missing rollback coverage.",
+          }),
+        ]),
+      }),
+      expect.objectContaining({
+        reviewer: "quality-reviewer",
+        status: "blocked",
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            summary: "Quality reviewer found missing continue regression proof.",
+          }),
+        ]),
+      }),
+    ]);
   });
 
   it.each([
@@ -142,31 +219,24 @@ describe("review independence", () => {
     const runRole = vi
       .fn()
       .mockResolvedValueOnce({
-        mode: "single-agent",
-        role: "security-reviewer",
+        mode: "multi-agent",
+        role: "final-adversarial-orchestrator",
         output: {
-          findings: [],
-        },
-      })
-      .mockResolvedValueOnce({
-        mode: "single-agent",
-        role: "architecture-reviewer",
-        output: {
+          agents: [
+            { role: "security-reviewer", output: { findings: [] } },
+            { role: "architecture-reviewer", output: { findings: [] } },
+            { role: "quality-reviewer", output: { findings: [] } },
+          ],
           findings: [
             {
               id: "arch-1",
               severity: "important",
               summary: "Cross-batch invariant is unguarded.",
               file: "src/payments/checkout.ts",
+              reviewer: "architecture-reviewer",
             },
           ],
-        },
-      })
-      .mockResolvedValueOnce({
-        mode: "single-agent",
-        role: "quality-reviewer",
-        output: {
-          findings: [],
+          status: "blocked",
         },
       });
     const orchestrator = createFinalAdversarialOrchestrator({ runRole });
@@ -178,13 +248,20 @@ describe("review independence", () => {
       changedDomains: ["payment"],
     });
 
-    expect(runRole).toHaveBeenCalledTimes(3);
-    expect(runRole.mock.calls.map((call) => call[0].role)).toEqual([
-      "security-reviewer",
-      "architecture-reviewer",
-      "quality-reviewer",
-    ]);
-    expect(runRole.mock.calls.every((call) => !("implementationSummary" in call[0].input))).toBe(true);
+    expect(runRole).toHaveBeenCalledTimes(1);
+    expect(runRole.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        mode: "multi-agent",
+        role: "final-adversarial-orchestrator",
+        authorityLevel: "controller",
+        filesInScope: ["src/payments/checkout.ts"],
+        team: [
+          expect.objectContaining({ role: "security-reviewer" }),
+          expect.objectContaining({ role: "architecture-reviewer" }),
+          expect.objectContaining({ role: "quality-reviewer" }),
+        ],
+      }),
+    );
     expect(result.finalDecision).toBe("blocked");
     expect(result.reviews.map((review: { reviewer: string }) => review.reviewer)).toEqual([
       "security",

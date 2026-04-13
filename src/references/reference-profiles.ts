@@ -3,6 +3,7 @@ export type ComplexityLabel = "SIMPLES" | "MEDIA" | "COMPLEXA";
 export type PipelineIntensity = "light" | "heavy";
 export type ChecklistId = string;
 export type PipelineVariant = string;
+export type TeamRouteMode = "code-changing" | "report-only" | "review-fix";
 
 export interface ReferenceComplexityEntry {
   type: PipelineTypeLabel;
@@ -37,6 +38,24 @@ export interface ReferencePipelineProfile {
   sourcePath: string;
 }
 
+export interface ReferenceTeamRoute {
+  profile: PipelineVariant;
+  type: PipelineTypeLabel;
+  intensity: PipelineIntensity;
+  mode: TeamRouteMode;
+  agents: string[];
+  parallelGroups: string[][];
+  skipInLight: string[];
+  subRouteCondition?: string;
+  sourcePath: string;
+}
+
+export interface ReferenceTeamRegistry {
+  kind: "team-registry";
+  routes: ReferenceTeamRoute[];
+  sourcePath: string;
+}
+
 export interface ReferenceBundle {
   rootDir: string;
   complexityMatrix: ReferenceComplexityEntry[];
@@ -46,11 +65,13 @@ export interface ReferenceBundle {
     micro: ReferenceGateBank;
   };
   checklists: Record<string, ReferenceChecklist>;
+  teamRegistry: ReferenceTeamRegistry;
 }
 
 export interface ReferenceProfileIndex {
   getPipelineProfile(variant: PipelineVariant): ReferencePipelineProfile;
   getPipelineProfileForRoute(type: PipelineTypeLabel, intensity: PipelineIntensity): ReferencePipelineProfile;
+  getTeamRoute(profile: PipelineVariant): ReferenceTeamRoute;
   getGateQuestions(kind: "macro" | "micro"): string[];
   selectChecklistIdsForTouchedPaths(paths: string[]): ChecklistId[];
   selectChecklistsForTouchedPaths(paths: string[]): ReferenceChecklist[];
@@ -94,6 +115,16 @@ export function getReferenceGateQuestions(bundle: ReferenceBundle, kind: "macro"
   return bundle.gates[kind].questions;
 }
 
+export function resolveTeamRoute(bundle: ReferenceBundle, profile: PipelineVariant) {
+  const route = bundle.teamRegistry.routes.find((entry) => entry.profile === profile);
+  if (!route) {
+    const supported = bundle.teamRegistry.routes.map((entry) => entry.profile).join(", ");
+    throw new Error(`Unknown team route "${profile}". Supported profiles: ${supported}`);
+  }
+
+  return route;
+}
+
 export function selectChecklistIdsForTouchedPaths(
   bundle: ReferenceBundle,
   paths: string[],
@@ -123,6 +154,9 @@ export function createReferenceProfileIndex(bundle: ReferenceBundle): ReferenceP
     },
     getPipelineProfileForRoute(type, intensity) {
       return resolveReferenceProfileForRoute(bundle, type, intensity);
+    },
+    getTeamRoute(profile) {
+      return resolveTeamRoute(bundle, profile);
     },
     getGateQuestions(kind) {
       return getReferenceGateQuestions(bundle, kind);

@@ -3,11 +3,14 @@ import type { ReferenceProfileIndex, ReferencePipelineProfile } from "../referen
 
 export type PipelineComplexity = "SIMPLES" | "MEDIA" | "COMPLEXA";
 export type ValidationIntent = "standard" | "reduced";
+export type RouteFamily = "standard" | "adversarial";
 
 export interface PipelineClassification {
   type: "Feature" | "Bug Fix" | "User Story" | "Audit" | "UX Simulation";
   complexity: PipelineComplexity;
   variant: string;
+  routeFamily?: RouteFamily;
+  adversarialRequested?: boolean;
 }
 
 export interface ClassificationOverrideResult {
@@ -198,6 +201,8 @@ export function applyClassificationOverrides(
       type: nextType,
       complexity: nextComplexity,
       variant: profile.variant,
+      routeFamily: classification.routeFamily,
+      adversarialRequested: classification.adversarialRequested,
     },
     profile,
     validationIntent,

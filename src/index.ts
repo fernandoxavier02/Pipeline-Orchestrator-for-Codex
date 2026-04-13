@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { loadPipelineConfig } from "./config/load-pipeline-config.js";
+import { buildPersistedCloseout, type PersistedCloseout } from "./closeout/persisted-closeout.js";
 import { renderCloseout } from "./closeout/render-closeout.js";
 import { createPipelineController } from "./controller/pipeline-controller.js";
 import { findLatestRun } from "./continue/find-latest-run.js";
@@ -18,6 +19,7 @@ import { createCheckpointStore } from "./state/checkpoint-store.js";
 import { createConfidenceScoreStore } from "./state/confidence-score.js";
 import { createGateLog } from "./state/gate-log.js";
 import { createSessionStore } from "./state/session-store.js";
+import { createSentinelStateStore } from "./sentinel/sentinel-state.js";
 import { resolveEffectiveGateLog, runFinalValidator } from "./validation/final-validator.js";
 
 type CloseoutGateEntry = {
@@ -34,17 +36,15 @@ type CloseoutGateEntry = {
 type CloseoutSessionState = {
   runStartedAt?: string;
   closeout?: {
-    decision: "GO" | "CONDITIONAL" | "NO-GO";
+    decision: PersistedCloseout["decision"];
+    confidenceScore: number;
+    confidenceBand: PersistedCloseout["confidenceBand"];
     missingEvidence: string[];
     blockingGates: string[];
     skippedSoftGates: string[];
     blockedReviews: number;
     rollbackHint?: string | null;
-    verificationEvidence: Array<{
-      kind: string;
-      passed: boolean;
-      label?: string;
-    }>;
+    verificationEvidence: PersistedCloseout["verificationEvidence"];
     updatedAt: string;
   };
   executionProof?: {
@@ -174,15 +174,170 @@ function resolveRuntimePromptName(role: string) {
     return "executor/executor-implementer";
   }
 
+  if (role === "executor-fix") {
+    return "executor/executor-fix";
+  }
+
+  if (role === "executor-spec-reviewer") {
+    return "executor/executor-spec-reviewer";
+  }
+
+  if (role === "pre-tester") {
+    return "quality/pre-tester";
+  }
+
+  if (role === "quality-gate-router") {
+    return "quality/quality-gate-router";
+  }
+
   if (role === "batch-reviewer") {
     return "quality/adversarial-reviewer";
+  }
+
+  if (role === "review-orchestrator") {
+    return "quality/review-orchestrator";
+  }
+
+  if (role === "final-adversarial-orchestrator") {
+    return "quality/final-adversarial-orchestrator";
+  }
+
+  if (role === "quality-reviewer") {
+    return "quality/quality-reviewer";
+  }
+
+  if (role === "security-reviewer") {
+    return "quality/security-reviewer";
+  }
+
+  if (role === "architecture-reviewer") {
+    return "quality/architecture-reviewer";
   }
 
   if (role === "information-gate") {
     return "core/information-gate";
   }
 
+  if (role === "sanity-checker") {
+    return "core/sanity-checker";
+  }
+
+  if (role === "final-validator") {
+    return "core/final-validator";
+  }
+
   return undefined;
+}
+
+function parseSanityCheckerResult(output: unknown): { status: "approved" | "blocked"; evidence: string[]; missingEvidence: string[] } | undefined {
+  if (!output || typeof output !== "object") {
+    return undefined;
+  }
+
+  const candidate = output as Record<string, unknown>;
+  const status = candidate.status ?? candidate.STATUS;
+  const evidence = Array.isArray(candidate.evidence)
+    ? candidate.evidence.filter((entry): entry is string => typeof entry === "string")
+    : Array.isArray(candidate.EVIDENCE)
+      ? candidate.EVIDENCE.filter((entry): entry is string => typeof entry === "string")
+      : [];
+  const missingEvidence = Array.isArray(candidate.missingEvidence)
+    ? candidate.missingEvidence.filter((entry): entry is string => typeof entry === "string")
+    : [];
+
+  if (status !== "approved" && status !== "blocked") {
+    return undefined;
+  }
+
+  return {
+    status,
+    evidence,
+    missingEvidence,
+  };
+}
+
+function parseFinalValidatorResult(output: unknown): {
+  decision: "GO" | "CONDITIONAL" | "NO-GO";
+  confidenceScore: number;
+  confidenceBand: "low" | "medium" | "high";
+  requiredEvidence: string[];
+  missingEvidence: string[];
+  verificationEvidence: Array<{ kind: string; passed: boolean; label?: string }>;
+  blockingGates: string[];
+  skippedSoftGates: string[];
+  blockedReviews: number;
+  rollbackHint?: string;
+} | undefined {
+  if (!output || typeof output !== "object") {
+    return undefined;
+  }
+
+  const candidate = output as Record<string, unknown>;
+  const decision = candidate.decision ?? candidate.DECISION;
+  const confidenceScore = candidate.confidenceScore;
+  const confidenceBand = candidate.confidenceBand;
+  const requiredEvidence = Array.isArray(candidate.requiredEvidence)
+    ? candidate.requiredEvidence.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+  const missingEvidence = Array.isArray(candidate.missingEvidence)
+    ? candidate.missingEvidence.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+  const verificationEvidence = Array.isArray(candidate.verificationEvidence)
+    ? candidate.verificationEvidence
+      .filter((entry): entry is { kind: string; passed: boolean; label?: string } =>
+        !!entry
+        && typeof entry === "object"
+        && typeof (entry as { kind?: unknown }).kind === "string"
+        && typeof (entry as { passed?: unknown }).passed === "boolean",
+      )
+      .map((entry) => ({
+        kind: entry.kind,
+        passed: entry.passed,
+        label: typeof entry.label === "string" ? entry.label : undefined,
+      }))
+    : undefined;
+  const blockingGates = Array.isArray(candidate.blockingGates)
+    ? candidate.blockingGates.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+  const skippedSoftGates = Array.isArray(candidate.skippedSoftGates)
+    ? candidate.skippedSoftGates.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+  const blockedReviews = candidate.blockedReviews;
+  const rollbackHint = typeof candidate.rollbackHint === "string" ? candidate.rollbackHint : undefined;
+
+  if (
+    decision !== "GO"
+    && decision !== "CONDITIONAL"
+    && decision !== "NO-GO"
+  ) {
+    return undefined;
+  }
+
+  if (
+    typeof confidenceScore !== "number"
+    || (confidenceBand !== "low" && confidenceBand !== "medium" && confidenceBand !== "high")
+    || !requiredEvidence
+    || !missingEvidence
+    || !verificationEvidence
+    || !blockingGates
+    || !skippedSoftGates
+    || typeof blockedReviews !== "number"
+  ) {
+    return undefined;
+  }
+
+  return {
+    decision,
+    confidenceScore,
+    confidenceBand,
+    requiredEvidence,
+    missingEvidence,
+    verificationEvidence,
+    blockingGates,
+    skippedSoftGates,
+    blockedReviews,
+    rollbackHint,
+  };
 }
 
 async function loadCloseoutSession(input: {
@@ -211,6 +366,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
   const checkpointStore = createCheckpointStore(stateDir);
   const gateLogStore = createGateLog(stateDir);
   const confidenceStore = createConfidenceScoreStore(stateDir);
+  const sentinelStore = createSentinelStateStore(stateDir);
   const promptRegistry = createPromptRegistry(options.cwd, {
     fallbackRoots: [bundledPromptRoot],
   });
@@ -219,6 +375,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
     checkpoints: checkpointStore,
     gateLog: gateLogStore,
     confidence: confidenceStore,
+    sentinel: sentinelStore,
   };
   const publicStores = {
     session: {
@@ -237,17 +394,32 @@ export function createPipelineRuntime(options: RuntimeOptions) {
     };
   })();
   const runtimeRunRole = async (request: DispatchRequest) => {
-    const promptName = resolveRuntimePromptName(request.role);
-    const prompt = promptName
-      ? [
-          await promptRegistry.load(promptName),
-          request.prompt,
-        ].filter((part) => part.length > 0).join("\n\n")
-      : request.prompt;
+    const withRuntimePrompt = async (role: string, prompt: string) => {
+      const promptName = resolveRuntimePromptName(role);
+      if (!promptName) {
+        return prompt;
+      }
+
+      return [
+        await promptRegistry.load(promptName),
+        prompt,
+      ].filter((part) => part.length > 0).join("\n\n");
+    };
+
+    const prompt = await withRuntimePrompt(request.role, request.prompt);
+    const team = request.team
+      ? await Promise.all(
+          request.team.map(async (member) => ({
+            ...member,
+            prompt: await withRuntimePrompt(member.role, member.prompt),
+          })),
+        )
+      : undefined;
 
     return runRole({
       ...request,
       prompt,
+      team,
     });
   };
   const runtimeReviewOrchestrator = createReviewOrchestrator({
@@ -272,6 +444,23 @@ export function createPipelineRuntime(options: RuntimeOptions) {
     await promptRegistry.preload([
       "controller/pipeline-controller",
       "core/information-gate",
+      "core/checkpoint-validator",
+      "core/final-validator",
+      "core/sanity-checker",
+      "core/sentinel",
+      "executor/executor-fix",
+      "executor/executor-implementer",
+      "executor/executor-spec-reviewer",
+      "quality/adversarial-reviewer",
+      "quality/architecture-reviewer",
+      "quality/design-interrogator",
+      "quality/final-adversarial-orchestrator",
+      "quality/plan-architect",
+      "quality/pre-tester",
+      "quality/quality-gate-router",
+      "quality/quality-reviewer",
+      "quality/review-orchestrator",
+      "quality/security-reviewer",
     ]);
   };
 
@@ -295,6 +484,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
       checkpoints: createCheckpointStore(runDir),
       gateLog: createGateLog(runDir),
       confidence: createConfidenceScoreStore(runDir),
+      sentinel: createSentinelStateStore(runDir),
     };
   }
 
@@ -412,39 +602,86 @@ export function createPipelineRuntime(options: RuntimeOptions) {
           label: getEvidenceLabel(evidence),
           passed: evidence.passed && authoritativeEvidenceKinds.has(evidence.kind),
         }));
+        const sanityDispatch = await runtimeRunRole({
+          mode: "single-agent",
+          role: "sanity-checker",
+          prompt: "Run final proportional verification before the final decision.",
+          input: {
+            verificationEvidence,
+            validationIntent: input.validationIntent,
+            mode: input.mode,
+          },
+          filesInScope: [],
+          authorityLevel: "controller",
+          freshContext: true,
+          reviewOnly: false,
+        });
+        const sanityCheck = parseSanityCheckerResult(
+          sanityDispatch && typeof sanityDispatch === "object" && "output" in sanityDispatch
+            ? sanityDispatch.output
+            : undefined,
+        );
+        if (!sanityCheck) {
+          throw new Error("sanity-checker returned an invalid runtime result");
+        }
         const gateLog: Array<{
           gate: string;
           hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT";
           decision: "pass" | "block" | "skip" | "partial";
           phase?: string;
         }> = effectiveGateLog;
-        const validation = runFinalValidator({
-          reviews: input.reviews,
+        const validationInput = {
+          reviews:
+            sanityCheck.status === "approved"
+              ? input.reviews
+              : [...input.reviews, { status: "blocked" }],
           confidenceScore: nextConfidence.score,
           gateLog,
           verificationEvidence,
           validationIntent: input.validationIntent,
           mode: input.mode,
+        };
+        const finalValidatorDispatch = await runtimeRunRole({
+          mode: "single-agent",
+          role: "final-validator",
+          prompt: "Issue the final GO, CONDITIONAL, or NO-GO decision from authoritative evidence.",
+          input: validationInput,
+          filesInScope: [],
+          authorityLevel: "controller",
+          freshContext: true,
+          reviewOnly: false,
+        });
+        const validation = parseFinalValidatorResult(
+          finalValidatorDispatch && typeof finalValidatorDispatch === "object" && "output" in finalValidatorDispatch
+            ? finalValidatorDispatch.output
+            : undefined,
+        );
+        if (!validation) {
+          throw new Error("final-validator returned an invalid runtime result");
+        }
+        const closeoutPackage = buildPersistedCloseout({
+          validation,
+          verificationEvidence,
+          batches: input.batches,
+          validationIntent: input.validationIntent,
+          updatedAt: new Date().toISOString(),
         });
         if (session) {
           await closeoutStores.session.save({
             ...session,
-            closeout: {
-              decision: validation.decision,
-              missingEvidence: validation.missingEvidence,
-              blockingGates: validation.blockingGates,
-              skippedSoftGates: validation.skippedSoftGates,
-              blockedReviews: validation.blockedReviews,
-              rollbackHint: validation.rollbackHint,
-              verificationEvidence,
-              updatedAt: new Date().toISOString(),
-            },
+            closeout: closeoutPackage.closeout,
           });
+          const text = renderCloseout({
+            ...closeoutPackage.renderInput,
+          });
+
+          return {
+            ...validation,
+            text,
+          };
         }
         const text = renderCloseout({
-          ...validation,
-          batches: input.batches,
-          validationIntent: input.validationIntent,
+          ...closeoutPackage.renderInput,
         });
 
         return {

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createPipelineRuntime } from "../../../src/index.js";
 import { createPipelineController } from "../../../src/controller/pipeline-controller.js";
@@ -11,6 +11,7 @@ import { createCheckpointStore } from "../../../src/state/checkpoint-store.js";
 import { createConfidenceScoreStore } from "../../../src/state/confidence-score.js";
 import { createGateLog } from "../../../src/state/gate-log.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
+import * as dispatchRunRoleModule from "../../../src/dispatcher/run-role.js";
 
 type CloseoutGateLogEntry = {
   gate: string;
@@ -78,6 +79,138 @@ async function seedExecutionProof(input: {
 }
 
 describe("closeout confirmation", () => {
+  it("dispatches sanity-checker before final closeout decision and honors a blocked structured result", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-sanity-checker-runtime-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+    await createCheckpointStore(runtime.stateDir).save({
+      name: "batch-1",
+      phase: "phase-2",
+      batchIndex: 0,
+      status: "completed",
+      timestamp: "2026-04-02T12:00:00.000Z",
+      detail: "Authoritative checkpoint proof",
+    });
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      includeFinalReview: true,
+    });
+
+    const originalRunRole = dispatchRunRoleModule.runRole;
+    const runRoleSpy = vi.spyOn(dispatchRunRoleModule, "runRole").mockImplementation(async (request) => {
+      if (request.role === "sanity-checker") {
+        return {
+          mode: "single-agent",
+          role: "sanity-checker",
+          output: {
+            SANITY_CHECK: "final-proof-rejected",
+            STATUS: "blocked",
+            EVIDENCE: ["final proof drift detected"],
+            NEXT_ACTION: "stop-closeout",
+            status: "blocked",
+          },
+        };
+      }
+
+      return originalRunRole(request);
+    });
+
+    try {
+      const result = await runtime.closeout.finalize({
+        reviews: [{ status: "approved" }],
+        batches: [{ name: "batch-1" }],
+        verificationEvidence: [
+          { kind: "build", passed: true, label: "npm run build" },
+          { kind: "tests", passed: true, label: "npm test" },
+          { kind: "final-review", passed: true, label: "final adversarial review" },
+        ],
+        confirmed: true,
+      });
+
+      const sanityCheckerCalls = runRoleSpy.mock.calls.filter(([request]) => request.role === "sanity-checker");
+      expect(sanityCheckerCalls).toHaveLength(1);
+      expect(result.decision).toBe("NO-GO");
+    } finally {
+      runRoleSpy.mockRestore();
+    }
+  });
+
+  it("dispatches final-validator as a runtime step and consumes its structured verdict", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-final-validator-runtime-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+    await createCheckpointStore(runtime.stateDir).save({
+      name: "batch-1",
+      phase: "phase-2",
+      batchIndex: 0,
+      status: "completed",
+      timestamp: "2026-04-02T12:00:00.000Z",
+      detail: "Authoritative checkpoint proof",
+    });
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      includeFinalReview: true,
+    });
+
+    const originalRunRole = dispatchRunRoleModule.runRole;
+    const runRoleSpy = vi.spyOn(dispatchRunRoleModule, "runRole").mockImplementation(async (request) => {
+      if (request.role === "final-validator") {
+        return {
+          mode: "single-agent",
+          role: "final-validator",
+          output: {
+            PA_DE_CAL: "final-verdict-issued",
+            DECISION: "NO-GO",
+            BLOCKERS: ["runtime final validator blocked release"],
+            ROLLBACK: "revalidate",
+            decision: "NO-GO",
+            confidenceScore: 1,
+            confidenceBand: "high",
+            requiredEvidence: ["build", "tests", "final-review"],
+            missingEvidence: [],
+            verificationEvidence: [
+              { kind: "build", passed: true, label: "npm run build" },
+              { kind: "tests", passed: true, label: "npm test" },
+              { kind: "final-review", passed: true, label: "final adversarial review" },
+            ],
+            blockingGates: ["runtime final validator blocked release"],
+            skippedSoftGates: [],
+            blockedReviews: 0,
+            rollbackHint: "revalidate",
+          },
+        };
+      }
+
+      return originalRunRole(request);
+    });
+
+    try {
+      const result = await runtime.closeout.finalize({
+        reviews: [{ status: "approved" }],
+        batches: [{ name: "batch-1" }],
+        verificationEvidence: [
+          { kind: "build", passed: true, label: "npm run build" },
+          { kind: "tests", passed: true, label: "npm test" },
+          { kind: "final-review", passed: true, label: "final adversarial review" },
+        ],
+        confirmed: true,
+      });
+
+      const finalValidatorCalls = runRoleSpy.mock.calls.filter(([request]) => request.role === "final-validator");
+      expect(finalValidatorCalls).toHaveLength(1);
+      expect(result.decision).toBe("NO-GO");
+      expect(result.rollbackHint).toBe("revalidate");
+    } finally {
+      runRoleSpy.mockRestore();
+    }
+  });
+
   it("logs CLOSEOUT_CONFIRM as a skipped SOFT gate when operator confirmation is omitted", async () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-skip-"));
     const runtime = createPipelineRuntime({
@@ -261,6 +394,8 @@ describe("closeout confirmation", () => {
     const persistedSession = await createSessionStore(runtime.stateDir).load() as {
       closeout?: {
         decision: string;
+        confidenceScore: number;
+        confidenceBand: string;
         missingEvidence: string[];
         verificationEvidence: Array<{ kind: string; passed: boolean }>;
       };
@@ -270,6 +405,8 @@ describe("closeout confirmation", () => {
     expect(persistedSession.closeout).toEqual(
       expect.objectContaining({
         decision: "NO-GO",
+        confidenceScore: 1,
+        confidenceBand: "high",
         missingEvidence: ["final-review"],
         verificationEvidence: expect.arrayContaining([
           expect.objectContaining({ kind: "build", passed: true }),

@@ -11,7 +11,7 @@ describe('plugin command surface', () => {
     const commandDoc = await readFile(commandPath, 'utf8');
 
     expect(commandDoc).toContain('# /pipeline');
-    expect(commandDoc).toContain('Use a skill `pipeline`');
+    expect(commandDoc).toContain('Use a skill `pipeline-orchestrator-for-codex:pipeline`');
     expect(commandDoc).toContain('Nao dependa de skills globais legadas');
     expect(commandDoc).toContain('quality gate');
     expect(commandDoc).toContain('final validation');

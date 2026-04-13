@@ -25,6 +25,14 @@ export function resolveReferenceProfileForRoute(bundle, type, intensity) {
 export function getReferenceGateQuestions(bundle, kind) {
     return bundle.gates[kind].questions;
 }
+export function resolveTeamRoute(bundle, profile) {
+    const route = bundle.teamRegistry.routes.find((entry) => entry.profile === profile);
+    if (!route) {
+        const supported = bundle.teamRegistry.routes.map((entry) => entry.profile).join(", ");
+        throw new Error(`Unknown team route "${profile}". Supported profiles: ${supported}`);
+    }
+    return route;
+}
 export function selectChecklistIdsForTouchedPaths(bundle, paths) {
     const selected = new Set();
     for (const checklist of Object.values(bundle.checklists)) {
@@ -44,6 +52,9 @@ export function createReferenceProfileIndex(bundle) {
         },
         getPipelineProfileForRoute(type, intensity) {
             return resolveReferenceProfileForRoute(bundle, type, intensity);
+        },
+        getTeamRoute(profile) {
+            return resolveTeamRoute(bundle, profile);
         },
         getGateQuestions(kind) {
             return getReferenceGateQuestions(bundle, kind);

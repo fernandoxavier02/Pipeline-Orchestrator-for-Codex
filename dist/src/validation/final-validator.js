@@ -86,3 +86,23 @@ export function runFinalValidator(input) {
         rollbackHint,
     };
 }
+export function runSanityChecker(input) {
+    const requiredEvidence = resolveFinalValidationEvidence({
+        mode: input.mode,
+        validationIntent: input.validationIntent,
+    });
+    const passedEvidenceKinds = new Set(input.verificationEvidence
+        .filter((evidence) => evidence.passed)
+        .map((evidence) => evidence.kind));
+    const missingEvidence = requiredEvidence.filter((kind) => !passedEvidenceKinds.has(kind));
+    const evidence = input.verificationEvidence
+        .filter((entry) => entry.passed)
+        .map((entry) => entry.label ?? entry.kind);
+    return {
+        status: missingEvidence.length === 0 ? "approved" : "blocked",
+        requiredEvidence,
+        missingEvidence,
+        evidence,
+        nextAction: missingEvidence.length === 0 ? "proceed-to-final-validator" : "stop-closeout",
+    };
+}

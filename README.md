@@ -27,16 +27,21 @@ It covers:
 - persistent state
 - gates and hardness
 - dispatcher abstraction
+- multi-agent dispatcher for batch review and final adversarial review
+- sentinel state persistence and sequence enforcement hooks
 - prompt registry with required-output contract validation
 - controller prompt-injection guard before controller consumption, including repository text that tries to supersede controller rules
-- runtime dispatcher consults validated prompt files for shipped executor and adversarial reviewer roles
+- runtime dispatcher consults validated prompt files for shipped executor, review orchestrator, final adversarial orchestrator, and reviewer roles
+- phase 2 and phase 3 runtime roles now also exist for checkpoint-validator, pre-tester, quality-gate-router, sanity-checker, and final-validator
+- central prompt artifacts now also exist for sentinel, checkpoint-validator, design-interrogator, plan-architect, pre-tester, quality-gate-router, sanity-checker, and final-validator
+- controller startup now preloads the shipped prompt bundle so central prompt contracts fail fast before execution
 - continue mode
 - batch execution with adversarial review
 - config auto-detection from `.Codex/pipeline.local.md`, `package.json`, and common conventions
 - final validation with `GO` / `CONDITIONAL` / `NO-GO` decisions
 - recoverable `revalidate` / `replan` gate blocks can clear after later controller-authoritative resolution; terminal `stop` / `manual` gates stay sticky
-- runtime closeout helper with operator confirmation, controller-owned execution proof, gate-log evidence, and rollback hints
-- public runtime stores are read-only (`session.load`, `checkpoints.list`); controller-owned writers stay internal
+- runtime closeout assembles a persisted closeout result from runtime outputs; the controller remains sovereign over confirmation, gate persistence, rollback routing, and final closeout authority
+- public runtime stores are read-only (`session.load`, `checkpoints.list`); controller-owned writers stay internal for session, checkpoint, gate-log, confidence, and sentinel persistence
 
 ## Command Surface
 

@@ -95,10 +95,21 @@ export function createFinalAdversarialOrchestrator(dependencies = {}) {
                     prompt: "Perform a final adversarial quality review from fresh context using only the provided scope.",
                 },
             ];
-            const dispatchedReviews = await Promise.all(reviewerSpecs.map(async (spec) => normalizeReviewerResult({
-                reviewer: spec.reviewer,
-                dispatch: await runRole({
-                    mode: "single-agent",
+            const dispatch = await runRole({
+                mode: "multi-agent",
+                role: "final-adversarial-orchestrator",
+                prompt: "Coordinate the independent final adversarial review team.",
+                input: {
+                    scope: {
+                        files: [...files],
+                    },
+                    files: [...files],
+                    changedDomains: [...changedDomains],
+                    reviewOnly: true,
+                },
+                filesInScope: [...files],
+                authorityLevel: "controller",
+                team: reviewerSpecs.map((spec) => ({
                     role: spec.role,
                     prompt: spec.prompt,
                     input: {
@@ -109,10 +120,52 @@ export function createFinalAdversarialOrchestrator(dependencies = {}) {
                         changedDomains: [...changedDomains],
                         reviewOnly: true,
                     },
+                    filesInScope: [...files],
+                    authorityLevel: "reviewer",
                     freshContext: true,
                     reviewOnly: true,
-                }),
-            })));
+                })),
+                freshContext: true,
+                reviewOnly: true,
+            });
+            const agentOutputs = dispatch.output
+                && typeof dispatch.output === "object"
+                && "agents" in dispatch.output
+                && Array.isArray(dispatch.output.agents)
+                ? dispatch.output.agents
+                : [];
+            const aggregateFindings = dispatch.output
+                && typeof dispatch.output === "object"
+                && "findings" in dispatch.output
+                && Array.isArray(dispatch.output.findings)
+                ? dispatch.output.findings
+                : [];
+            const dispatchedReviews = reviewerSpecs.map((spec) => {
+                const agentDispatch = agentOutputs.find((agent) => agent.role === spec.role);
+                const fallbackFindings = aggregateFindings.filter((finding) => finding.reviewer === spec.role || finding.reviewer === spec.reviewer);
+                const agentOutput = agentDispatch?.output ?? {};
+                const agentFindings = "findings" in agentOutput && Array.isArray(agentOutput.findings)
+                    ? agentOutput.findings
+                    : [];
+                const mergedFindings = [...agentFindings, ...fallbackFindings];
+                const fallbackStatus = mergedFindings.some((finding) => severityRank(finding.severity) <= 1)
+                    ? "blocked"
+                    : "approved";
+                return normalizeReviewerResult({
+                    reviewer: spec.reviewer,
+                    dispatch: {
+                        mode: "single-agent",
+                        role: spec.role,
+                        output: {
+                            ...agentOutput,
+                            findings: mergedFindings,
+                            status: typeof agentOutput.status === "string"
+                                ? agentOutput.status
+                                : fallbackStatus,
+                        },
+                    },
+                });
+            });
             return aggregateFinalReviews({
                 scope: input.scope,
                 reviews: dispatchedReviews,

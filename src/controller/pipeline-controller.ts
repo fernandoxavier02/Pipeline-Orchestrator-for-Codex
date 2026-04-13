@@ -10,6 +10,10 @@ import { confirmProposal } from "./confirm-proposal.js";
 import { runDesignInterrogation } from "./design-interrogator.js";
 import { getPlanModeStatus, createImplementationPlan } from "./plan-mode.js";
 import { parseMode } from "./parse-mode.js";
+import { deriveContinuationOutcome } from "./continuation-outcome.js";
+import {
+  resolveContinueRollbackState,
+} from "./continue-state.js";
 import { runInformationGate } from "../gates/information-gate.js";
 import { createConfidenceModel } from "../gates/confidence-model.js";
 import { assessStaleContext } from "../gates/stale-context.js";
@@ -19,11 +23,13 @@ import { createControllerLockStore } from "../state/controller-lock.js";
 import { createConfidenceScoreStore } from "../state/confidence-score.js";
 import { createGateLog } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
+import { createSentinelStateStore } from "../sentinel/sentinel-state.js";
 import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../execution/executor-controller.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
 import type { ValidationIntent } from "./classification-overrides.js";
 import type { ReferenceProfileIndex } from "../references/reference-profiles.js";
+import type { SentinelState } from "../sentinel/sentinel-state.js";
 import ts from "typescript";
 
 type SessionStore = {
@@ -48,6 +54,12 @@ type ConfidenceStore = {
   root?: string;
   save: (snapshot: unknown) => Promise<void>;
   load?: () => Promise<unknown>;
+};
+
+type SentinelStore = {
+  root?: string;
+  save: (state: unknown) => Promise<void>;
+  load?: () => Promise<SentinelState>;
 };
 
 type ExecutionController = {
@@ -149,11 +161,12 @@ function hasControllerManagedPhaseOnePointFiveTransition(session: PipelineSessio
     && session.approvalProof.to === "phase-1.5";
 }
 
-function getStateRoot(runtime?: { stores?: { session?: SessionStore; checkpoints?: CheckpointStore; gateLog?: GateLogStore; confidence?: ConfidenceStore } }) {
+function getStateRoot(runtime?: { stores?: { session?: SessionStore; checkpoints?: CheckpointStore; gateLog?: GateLogStore; confidence?: ConfidenceStore; sentinel?: SentinelStore } }) {
   return runtime?.stores?.session?.root
     ?? runtime?.stores?.checkpoints?.root
     ?? runtime?.stores?.gateLog?.root
-    ?? runtime?.stores?.confidence?.root;
+    ?? runtime?.stores?.confidence?.root
+    ?? runtime?.stores?.sentinel?.root;
 }
 
 function getExecutionController(runtime?: { executionController?: ExecutionController }) {
@@ -168,36 +181,42 @@ function getWorkspaceRoot(runtime?: { workspaceRoot?: string }) {
   return runtime?.workspaceRoot ?? process.cwd();
 }
 
-function resolvePendingRollback(session: PipelineSessionState) {
-  const pendingDecision = session.pendingDecision;
-  if (
-    pendingDecision !== "stop"
-    && pendingDecision !== "revalidate"
-    && pendingDecision !== "replan"
-    && pendingDecision !== "manual"
-  ) {
-    return null;
-  }
-
-  const rollbackGate = session.unresolvedBlockers?.[0] ?? (pendingDecision === "stop" ? "STOP_RULE" : undefined);
-  if (!rollbackGate) {
-    return null;
-  }
-
-  try {
-    createGateRegistry().get(rollbackGate);
-  } catch {
-    return null;
-  }
-
-  return {
-    phase: session.currentPhase,
-    resumeBlocked: true,
-    rollbackGate,
-    rollbackRoute: pendingDecision,
-    rollbackDecision: "block" as const,
-    revalidationRequired: pendingDecision === "revalidate",
+async function loadSentinelState(runtime?: {
+  stores?: {
+    sentinel?: SentinelStore;
   };
+}) {
+  try {
+    return await runtime?.stores?.sentinel?.load?.();
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
+
+    throw error;
+  }
+}
+
+async function saveSentinelState(
+  runtime: {
+    stores?: {
+      sentinel?: SentinelStore;
+    };
+  } | undefined,
+  input: Omit<SentinelState, "updatedAt">,
+) {
+  await runtime?.stores?.sentinel?.save?.({
+    ...input,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function getExpectedSentinelToken(session?: PipelineSessionState) {
+  if (session?.currentPhase === "phase-1.5") {
+    return "phase-1.5-response";
+  }
+
+  return "proposal-response";
 }
 
 async function executeApprovedContinuation(input: {
@@ -208,6 +227,7 @@ async function executeApprovedContinuation(input: {
       checkpoints?: CheckpointStore;
       gateLog?: GateLogStore;
       confidence?: ConfidenceStore;
+      sentinel?: SentinelStore;
     };
     executionController?: ExecutionController;
   };
@@ -272,28 +292,17 @@ async function executeApprovedContinuation(input: {
     "status" in executionPayload && typeof executionPayload.status === "string"
       ? executionPayload.status
       : undefined;
-  const isCircuitBreaker =
-    executionStatus === "STOP_RULE" || executionStatus === "FIX_LOOP_EXHAUSTED";
-  const isCheckpointFailure = executionStatus === "failed";
-  const nextPhase = executionStatus === "blocked" ? "phase-1.5" : "phase-2";
-  const pendingDecision =
-    executionStatus === "blocked"
-      ? "phase-2-proof-required"
-      : isCircuitBreaker
-        ? "stop"
-        : isCheckpointFailure
-          ? "revalidate"
-        : undefined;
-  const blocker =
-    executionStatus === "blocked"
-      ? (("blockedBy" in executionPayload && typeof executionPayload.blockedBy === "string")
-          ? executionPayload.blockedBy
-          : "phase-2-blocked")
-      : isCircuitBreaker
-        ? executionStatus
-        : isCheckpointFailure
-          ? "CHECKPOINT_FAIL"
-        : undefined;
+  const continuationOutcome = deriveContinuationOutcome({
+    executionResult: executionPayload,
+  });
+  const {
+    blocker,
+    nextPhase,
+    pendingDecision,
+    checkpointFailure: isCheckpointFailure,
+    circuitBreaker: isCircuitBreaker,
+  } = continuationOutcome;
+  const isFinalAdversarialRework = blocker === "FINAL_ADVERSARIAL_REWORK";
 
   if (isCircuitBreaker || isCheckpointFailure) {
     await persistGateAndConfidence(
@@ -683,6 +692,7 @@ function createRunStores(runDir: string) {
     checkpoints: createCheckpointStore(runDir),
     gateLog: createGateLog(runDir),
     confidence: createConfidenceScoreStore(runDir),
+    sentinel: createSentinelStateStore(runDir),
   };
 }
 
@@ -819,6 +829,7 @@ export function createPipelineController(runtime?: {
     checkpoints?: CheckpointStore;
     gateLog?: GateLogStore;
     confidence?: ConfidenceStore;
+    sentinel?: SentinelStore;
   };
   referenceIndex?: () => Promise<ReferenceProfileIndex>;
   executionController?: ExecutionController;
@@ -835,6 +846,25 @@ export function createPipelineController(runtime?: {
 
       if (normalizedResponse === "yes" || normalizedResponse === "no" || normalizedResponse === "adjust") {
         const session = (await runtime?.stores?.session?.load?.()) as PipelineSessionState | undefined;
+        const sentinelState = await loadSentinelState(runtime);
+        const expectedToken = getExpectedSentinelToken(session);
+
+        if (
+          sentinelState?.pipelineActive
+          && sentinelState.expectedNext.length > 0
+          && !sentinelState.expectedNext.includes(expectedToken)
+        ) {
+          const entry = toGateLogEntry({
+            gate: "SENTINEL_SEQUENCE_BLOCK",
+            hardness: "HARD",
+            phase: session?.currentPhase === "phase-1.5" ? "phase-1.5" : "phase-1",
+            decision: "block",
+            detail: `Sentinel blocked unexpected input. Expected one of: ${sentinelState.expectedNext.join(", ")}`,
+          });
+
+          await persistGateAndConfidence(runtime ?? {}, [entry], session?.confidenceScore ?? 1);
+          throw new Error(`Sentinel blocked unexpected input. Expected: ${sentinelState.expectedNext.join(", ")}`);
+        }
         const confirmation = confirmProposal(normalizedResponse);
 
         if (session?.currentPhase === "phase-1") {
@@ -864,6 +894,29 @@ export function createPipelineController(runtime?: {
               },
               executionProof: createInitialExecutionProof(),
             });
+            await saveSentinelState(runtime, {
+              pipelineActive: true,
+              currentPhase: "phase-1.5",
+              currentAgent: "pipeline-controller",
+              expectedNext: ["phase-1.5-response"],
+              completedPhases: ["phase-0", "phase-1"],
+              gateSummary: ["SENTINEL_CHECKPOINT"],
+              batchState: {
+                batchIndex: session.batchIndex ?? 0,
+                status: "awaiting-plan-approval",
+              },
+              consecutiveCorrections: sentinelState?.consecutiveCorrections ?? 0,
+              lastCheckpoint: "phase_0_to_1",
+            });
+            await persistGateAndConfidence(runtime ?? {}, [
+              toGateLogEntry({
+                gate: "SENTINEL_CHECKPOINT",
+                hardness: "HARD",
+                phase: "phase-1",
+                decision: "pass",
+                detail: "Sentinel recorded phase_0_to_1 transition.",
+              }),
+            ], session.confidenceScore ?? 1);
 
             return {
               phase: "phase-1.5",
@@ -871,6 +924,8 @@ export function createPipelineController(runtime?: {
                 status: confirmation.status,
                 summary: session.proposal?.summary,
                 affectedFiles: session.proposal?.affectedFiles,
+                variant: session.proposal?.variant,
+                validationIntent: session.proposal?.validationIntent as ValidationIntent | undefined,
               }),
             };
           }
@@ -901,6 +956,33 @@ export function createPipelineController(runtime?: {
                   })
                 : revokeExecutionApproval(session.executionProof),
           });
+          await saveSentinelState(runtime, {
+            pipelineActive: true,
+            currentPhase: "phase-1.5",
+            currentAgent: "pipeline-controller",
+            expectedNext: normalizedResponse === "yes" ? ["continue"] : ["phase-1.5-response"],
+            completedPhases: ["phase-0", "phase-1", "phase-1.5"],
+            gateSummary: ["SENTINEL_CHECKPOINT"],
+            batchState: {
+              batchIndex: session.batchIndex ?? 0,
+              status: normalizedResponse === "yes" ? "execution-approved" : "awaiting-plan-reapproval",
+            },
+            consecutiveCorrections: normalizedResponse === "adjust"
+              ? (sentinelState?.consecutiveCorrections ?? 0) + 1
+              : sentinelState?.consecutiveCorrections ?? 0,
+            lastCheckpoint: "phase_1_to_2",
+          });
+          if (normalizedResponse === "yes") {
+            await persistGateAndConfidence(runtime ?? {}, [
+              toGateLogEntry({
+                gate: "SENTINEL_CHECKPOINT",
+                hardness: "HARD",
+                phase: "phase-1.5",
+                decision: "pass",
+                detail: "Sentinel recorded phase_1_to_2 transition.",
+              }),
+            ], session.confidenceScore ?? 1);
+          }
 
           return {
             phase: session.currentPhase,
@@ -908,6 +990,8 @@ export function createPipelineController(runtime?: {
               status: confirmation.status,
               summary: session.proposal?.summary,
               affectedFiles: session.proposal?.affectedFiles,
+              variant: session.proposal?.variant,
+              validationIntent: session.proposal?.validationIntent as ValidationIntent | undefined,
             }),
           };
         }
@@ -924,11 +1008,18 @@ export function createPipelineController(runtime?: {
           throw new Error("Cannot continue while proposal confirmation is pending");
         }
 
-        const pendingRollback = resolvePendingRollback(session);
+        const gateLogEntries = await runtime?.stores?.gateLog?.list?.() ?? [];
+        const pendingRollback = resolveContinueRollbackState({
+          session,
+          gateLogEntries,
+        });
         if (pendingRollback) {
           return {
             mode,
+            status: "blocked" as const,
+            blockedBy: pendingRollback.rollbackGate,
             ...pendingRollback,
+            gateLogEntries,
           };
         }
 
@@ -969,16 +1060,6 @@ export function createPipelineController(runtime?: {
           throw new Error("Cannot continue while proposal confirmation is pending");
         }
 
-        const pendingRollback = resolvePendingRollback(session);
-        if (pendingRollback) {
-          return {
-            mode,
-            ...pendingRollback,
-            latestRun: runDir,
-            gateLogEntries: latestRun ? await runStores.gateLog.list() : [],
-          };
-        }
-
         if (session.currentPhase === "phase-1.5" && !hasControllerManagedPhaseOnePointFiveTransition(session)) {
           throw new Error("phase-1.5 session is missing controller-managed transition proof");
         }
@@ -991,6 +1072,7 @@ export function createPipelineController(runtime?: {
             const gateLogEntries = await lockedRunStores.gateLog.list();
             return {
               mode,
+              status: "blocked" as const,
               phase: lockedSession.currentPhase,
               resumeBlocked: true,
               revalidationRequired: true,
@@ -1004,16 +1086,57 @@ export function createPipelineController(runtime?: {
         }
 
         const gateLogEntries = latestRun ? await runStores.gateLog.list() : [];
+        const pendingRollback = resolveContinueRollbackState({
+          session,
+          gateLogEntries,
+        });
+        if (pendingRollback) {
+          return {
+            mode,
+            status: "blocked" as const,
+            blockedBy: pendingRollback.rollbackGate,
+            ...pendingRollback,
+            latestRun: runDir,
+            gateLogEntries,
+          };
+        }
+
         const trustedGateLogEntries = gateLogEntries.filter(isControllerRecordedGate);
         const recordedStaleLock = trustedGateLogEntries.some((entry) => entry.gate === "STALE_CONTEXT" && entry.decision === "block");
+        const rollbackRoute = resolveRollbackRoute(trustedGateLogEntries);
 
         if (recordedStaleLock) {
           return {
             mode,
+            status: "blocked" as const,
             phase: session.currentPhase,
             resumeBlocked: true,
             revalidationRequired: true,
             staleContext: getLatestGateLogEntry(trustedGateLogEntries),
+            latestRun: runDir,
+            gateLogEntries,
+          };
+        }
+
+        if (rollbackRoute) {
+          await runStores.session.save({
+            ...session,
+            currentPhase: session.currentPhase,
+            phase: session.phase ?? session.currentPhase,
+            unresolvedBlockers: [...new Set([...(session.unresolvedBlockers ?? []), rollbackRoute.detail])],
+            pendingDecision: rollbackRoute.rollback,
+            touchedFiles: session.touchedFiles ?? session.proposal?.affectedFiles ?? [],
+          });
+
+          return {
+            mode,
+            status: "blocked" as const,
+            phase: session.currentPhase,
+            resumeBlocked: true,
+            revalidationRequired: rollbackRoute.rollback === "revalidate",
+            rollbackGate: rollbackRoute.gate,
+            rollbackRoute: rollbackRoute.rollback,
+            rollbackDecision: rollbackRoute.decision,
             latestRun: runDir,
             gateLogEntries,
           };
@@ -1051,33 +1174,10 @@ export function createPipelineController(runtime?: {
 
           return {
             mode,
+            status: "blocked" as const,
             phase: session.currentPhase,
             resumeBlocked: true,
             staleContext,
-            latestRun: runDir,
-            gateLogEntries,
-          };
-        }
-
-        const rollbackRoute = resolveRollbackRoute(trustedGateLogEntries);
-        if (rollbackRoute) {
-          await runStores.session.save({
-            ...session,
-            currentPhase: session.currentPhase,
-            phase: session.phase ?? session.currentPhase,
-            unresolvedBlockers: [...new Set([...(session.unresolvedBlockers ?? []), rollbackRoute.detail])],
-            pendingDecision: rollbackRoute.rollback,
-            touchedFiles: session.touchedFiles ?? session.proposal?.affectedFiles ?? [],
-          });
-
-          return {
-            mode,
-            phase: session.currentPhase,
-            resumeBlocked: true,
-            revalidationRequired: rollbackRoute.rollback === "revalidate",
-            rollbackGate: rollbackRoute.gate,
-            rollbackRoute: rollbackRoute.rollback,
-            rollbackDecision: rollbackRoute.decision,
             latestRun: runDir,
             gateLogEntries,
           };
@@ -1124,6 +1224,7 @@ export function createPipelineController(runtime?: {
         mode,
         request: normalizedRequest,
         complexity: classificationResult.classification.complexity,
+        type: classificationResult.classification.type,
       });
       const planModeStatus = getPlanModeStatus(mode, classificationResult.classification.complexity);
       const reviewOnlyChangedFiles = mode === "review-only"
@@ -1220,6 +1321,33 @@ export function createPipelineController(runtime?: {
       await persistGateAndConfidence(
         runtime ?? {},
         gateEntries,
+        1,
+      );
+      await saveSentinelState(runtime, {
+        pipelineActive: true,
+        currentPhase: "phase-1",
+        currentAgent: "pipeline-controller",
+        expectedNext: ["proposal-response"],
+        completedPhases: ["phase-0"],
+        gateSummary: gateEntries.map((entry) => entry.gate),
+        batchState: {
+          batchIndex: 0,
+          status: "awaiting-proposal-confirmation",
+        },
+        consecutiveCorrections: 0,
+        lastCheckpoint: "post_orchestrator",
+      });
+      await persistGateAndConfidence(
+        runtime ?? {},
+        [
+          toGateLogEntry({
+            gate: "SENTINEL_CHECKPOINT",
+            hardness: "HARD",
+            phase: "phase-0",
+            decision: "pass",
+            detail: "Sentinel recorded post_orchestrator checkpoint.",
+          }),
+        ],
         1,
       );
 

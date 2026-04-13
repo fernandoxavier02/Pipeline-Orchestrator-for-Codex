@@ -62,4 +62,191 @@ describe("pipeline controller", () => {
         });
         expect(referenceIndexCalls).toBe(0);
     });
+    it("persists a final adversarial rework rollback route during continue", { timeout: 10000 }, async () => {
+        let sessionState = {
+            currentPhase: "phase-1.5",
+            phase: "phase-1.5",
+            mode: "--complexa",
+            variant: "bugfix-heavy",
+            proposal: {
+                summary: "stabilize payment flow",
+                affectedFiles: ["src/payments/checkout.ts"],
+                validationIntent: "standard",
+                batchSize: 1,
+            },
+            approvalProof: {
+                kind: "controller-managed-transition",
+                from: "phase-1",
+                to: "phase-1.5",
+            },
+            executionProof: {
+                approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+                tddApproval: "APPROVED",
+                redValidation: {
+                    status: "approved",
+                    reasons: [],
+                },
+                checkpointEvidence: [],
+                fixAttempts: [],
+            },
+            unresolvedBlockers: [],
+            touchedFiles: ["src/payments/checkout.ts"],
+        };
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => sessionState,
+                    save: async (nextSession) => {
+                        sessionState = nextSession;
+                    },
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+            },
+            executionController: {
+                executeApprovedWork: async () => ({
+                    status: "blocked",
+                    blockedBy: "FINAL_ADVERSARIAL_REWORK",
+                }),
+            },
+        });
+        const firstResult = await controller.start("/pipeline continue");
+        const secondResult = await controller.start("/pipeline continue");
+        expect(firstResult.blockedBy).toBe("FINAL_ADVERSARIAL_REWORK");
+        expect(firstResult.phase).toBe("phase-2");
+        expect(secondResult.resumeBlocked).toBe(true);
+        expect(secondResult.rollbackGate).toBe("FINAL_ADVERSARIAL_REWORK");
+        expect(secondResult.rollbackRoute).toBe("replan");
+    });
+    it("revalidates generic blocked execution on the next continue", { timeout: 10000 }, async () => {
+        let sessionState = {
+            currentPhase: "phase-1.5",
+            phase: "phase-1.5",
+            mode: "--complexa",
+            variant: "bugfix-heavy",
+            proposal: {
+                summary: "stabilize payment flow",
+                affectedFiles: ["src/payments/checkout.ts"],
+                validationIntent: "standard",
+                batchSize: 1,
+            },
+            approvalProof: {
+                kind: "controller-managed-transition",
+                from: "phase-1",
+                to: "phase-1.5",
+            },
+            executionProof: {
+                approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+                tddApproval: "APPROVED",
+                redValidation: {
+                    status: "approved",
+                    reasons: [],
+                },
+                checkpointEvidence: [],
+                fixAttempts: [],
+            },
+            unresolvedBlockers: [],
+            touchedFiles: ["src/payments/checkout.ts"],
+        };
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => sessionState,
+                    save: async (nextSession) => {
+                        sessionState = nextSession;
+                    },
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+            },
+            executionController: {
+                executeApprovedWork: async () => ({
+                    status: "blocked",
+                }),
+            },
+        });
+        const firstResult = await controller.start("/pipeline continue");
+        const secondResult = await controller.start("/pipeline continue");
+        expect(firstResult.blockedBy).toBe("CHECKPOINT_FAIL");
+        expect(firstResult.phase).toBe("phase-1.5");
+        expect(secondResult.resumeBlocked).toBe(true);
+        expect(secondResult.rollbackGate).toBe("CHECKPOINT_FAIL");
+        expect(secondResult.rollbackRoute).toBe("revalidate");
+    });
+    it("fails closed on a malformed continue pending decision instead of resuming", async () => {
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => ({
+                        currentPhase: "phase-2",
+                        pendingDecision: "unknown",
+                        unresolvedBlockers: ["CHECKPOINT_FAIL"],
+                    }),
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+                gateLog: {
+                    append: async () => undefined,
+                    list: async () => [],
+                },
+            },
+        });
+        await expect(controller.start("/pipeline continue")).rejects.toThrow('Unknown continue pending decision "unknown"');
+    });
+    it("fails closed on in-memory blocked continue state without rollback metadata", async () => {
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => ({
+                        currentPhase: "phase-2",
+                        pendingDecision: "revalidate",
+                        unresolvedBlockers: [],
+                    }),
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+                gateLog: {
+                    append: async () => undefined,
+                    list: async () => [],
+                },
+            },
+        });
+        await expect(controller.start("/pipeline continue")).rejects.toThrow("Unable to resolve blocked continue rollback metadata");
+    });
+    it("fails closed on in-memory blocked continue state with unusable gate log rollback metadata", async () => {
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => ({
+                        currentPhase: "phase-2",
+                        pendingDecision: "revalidate",
+                        unresolvedBlockers: [],
+                    }),
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+                gateLog: {
+                    append: async () => undefined,
+                    list: async () => [
+                        {
+                            gate: "FINAL_ADVERSARIAL_GATE",
+                            decision: "block",
+                            detail: "Final gate blocked but does not define a rollback route",
+                            timestamp: "2026-04-12T00:00:00.000Z",
+                            hardness: "SOFT",
+                            decided_by: "controller",
+                            confidence_impact: 0,
+                            phase: "phase-3",
+                        },
+                    ],
+                },
+            },
+        });
+        await expect(controller.start("/pipeline continue")).rejects.toThrow("Unable to resolve blocked continue rollback metadata");
+    });
 });

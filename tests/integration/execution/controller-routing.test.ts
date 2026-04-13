@@ -11,6 +11,45 @@ import { createConfidenceScoreStore } from "../../../src/state/confidence-score.
 import { createGateLog } from "../../../src/state/gate-log.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
 
+function createCheckpointValidatorDispatch(checkpointName = "batch-1") {
+  return {
+    mode: "single-agent",
+    role: "checkpoint-validator",
+    output: {
+      CHECKPOINT_RESULT: checkpointName,
+      STATUS: "passed",
+      EVIDENCE: ["tests/unit/controller/pipeline-controller.test.ts"],
+      NEXT_ACTION: "continue",
+      status: "passed",
+      checkpointName,
+      consecutiveFailures: 0,
+      requiredCheckpoints: 1,
+      verifiedCheckpoints: 1,
+      coverage: 1,
+      evidence: ["tests/unit/controller/pipeline-controller.test.ts"],
+    },
+  };
+}
+
+function createPreTesterDispatch() {
+  return {
+    mode: "single-agent",
+    role: "pre-tester",
+    output: {
+      PRE_TESTER_RESULT: "approved-proof",
+      STATUS: "approved",
+      EVIDENCE: ["tests/unit/controller/pipeline-controller.test.ts"],
+      NEXT_ACTION: "proceed-to-batch",
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+      tddApproval: "APPROVED",
+      redValidation: {
+        status: "approved",
+        reasons: ["RED validation passed for approved scenarios"],
+      },
+    },
+  };
+}
+
 describe("execution controller routing", () => {
   it("blocks execution when TDD approval is missing", async () => {
     const runBatch = vi.fn();
@@ -146,6 +185,257 @@ describe("execution controller routing", () => {
         tasks: ["a", "b", "c"],
       }).batches.map((batch) => batch.tasks.length),
     ).toEqual([1, 1, 1]);
+  });
+
+  it("dispatches checkpoint validation through the runtime role and consumes its structured result", async () => {
+    const runRole = vi.fn().mockImplementation(async ({ role }) => {
+      if (role === "pre-tester") {
+        return createPreTesterDispatch();
+      }
+
+      return createCheckpointValidatorDispatch("batch-1");
+    });
+    const controller = createExecutorController({
+      runBatch: vi.fn().mockResolvedValue({
+        execution: {
+          status: "implemented",
+        },
+        changedFiles: ["src/controller/pipeline-controller.ts"],
+        review: {
+          status: "approved",
+        },
+        verificationEvidence: {
+          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        },
+      }),
+      reviewOrchestrator: {
+        reviewBatch: vi.fn().mockResolvedValue({
+          status: "approved",
+          findings: [],
+        }),
+      } as any,
+      finalAdversarialOrchestrator: vi.fn().mockResolvedValue({
+        status: "approved",
+        finalDecision: "approved",
+        findings: [],
+      }),
+      preTester: {
+        deriveExecutionProof: () => ({
+          approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          tddApproval: "APPROVED",
+          redValidation: {
+            status: "approved",
+            reasons: [],
+          },
+          checkpointEvidence: [],
+          fixAttempts: [],
+        }),
+      } as any,
+      runRole,
+    });
+
+    const result = await controller.executeApprovedWork({
+      batch: {
+        name: "batch-1",
+        files: ["src/controller/pipeline-controller.ts"],
+      },
+      mode: "--complexa",
+      proposal: {
+        summary: "stabilize login flow",
+        affectedFiles: ["src/controller/pipeline-controller.ts"],
+        validationIntent: "standard",
+        batchSize: 1,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    expect(runRole).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "single-agent",
+        role: "checkpoint-validator",
+        authorityLevel: "controller",
+        filesInScope: ["src/controller/pipeline-controller.ts"],
+      }),
+    );
+    expect(result.validation).toEqual(
+      expect.objectContaining({
+        status: "passed",
+        checkpointName: "batch-1",
+        requiredCheckpoints: 1,
+        verifiedCheckpoints: 1,
+      }),
+    );
+  });
+
+  it("dispatches pre-tester through the runtime role and consumes its structured proof", async () => {
+    const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
+      if (role === "pre-tester") {
+        return createPreTesterDispatch();
+      }
+
+      if (role === "checkpoint-validator") {
+        return createCheckpointValidatorDispatch(typeof input?.checkpointName === "string" ? input.checkpointName : "batch-1");
+      }
+
+      if (role === "pre-tester") {
+        return createPreTesterDispatch();
+      }
+
+      throw new Error(`Unexpected role ${role}`);
+    });
+    const controller = createExecutorController({
+      runBatch: vi.fn().mockResolvedValue({
+        execution: {
+          status: "implemented",
+        },
+        changedFiles: ["src/controller/pipeline-controller.ts"],
+        review: {
+          status: "approved",
+        },
+        verificationEvidence: {
+          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        },
+      }),
+      reviewOrchestrator: {
+        reviewBatch: vi.fn().mockResolvedValue({
+          status: "approved",
+          findings: [],
+        }),
+      } as any,
+      finalAdversarialOrchestrator: vi.fn().mockResolvedValue({
+        status: "approved",
+        finalDecision: "approved",
+        findings: [],
+      }),
+      runRole,
+    });
+
+    const result = await controller.executeApprovedWork({
+      batch: {
+        name: "batch-1",
+        files: ["src/controller/pipeline-controller.ts"],
+      },
+      mode: "--complexa",
+      proposal: {
+        summary: "stabilize login flow",
+        affectedFiles: ["src/controller/pipeline-controller.ts"],
+        validationIntent: "standard",
+        batchSize: 1,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    expect(runRole).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        mode: "single-agent",
+        role: "pre-tester",
+        authorityLevel: "controller",
+        filesInScope: ["src/controller/pipeline-controller.ts"],
+      }),
+    );
+    expect(result.proof).toEqual(
+      expect.objectContaining({
+        approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        tddApproval: "APPROVED",
+        redValidation: {
+          status: "approved",
+          reasons: ["RED validation passed for approved scenarios"],
+        },
+      }),
+    );
+  });
+
+  it("dispatches quality-gate-router through the runtime role and consumes its structured batch plan", async () => {
+    const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
+      if (role === "quality-gate-router") {
+        return {
+          mode: "single-agent",
+          role: "quality-gate-router",
+          output: {
+            QUALITY_GATE_PLAN: "planned-batches",
+            STATUS: "planned",
+            EVIDENCE: ["a", "b", "c", "d"],
+            NEXT_ACTION: "proceed-to-pre-tester",
+            batchSize: 3,
+            regressionProofs: 2,
+            approvedScenarios: ["a", "b", "c", "d"],
+            batches: [
+              { name: "batch-1", tasks: ["a", "b", "c"] },
+              { name: "batch-2", tasks: ["d"] },
+            ],
+          },
+        };
+      }
+
+      if (role === "pre-tester") {
+        return createPreTesterDispatch();
+      }
+
+      if (role === "checkpoint-validator") {
+        return createCheckpointValidatorDispatch(typeof input?.checkpointName === "string" ? input.checkpointName : "batch-1");
+      }
+
+      throw new Error(`Unexpected role ${role}`);
+    });
+    const controller = createExecutorController({
+      runBatch: vi.fn().mockResolvedValue({
+        execution: {
+          status: "implemented",
+        },
+        changedFiles: ["a", "b", "c"],
+        review: {
+          status: "approved",
+        },
+        verificationEvidence: {
+          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        },
+      }),
+      reviewOrchestrator: {
+        reviewBatch: vi.fn().mockResolvedValue({
+          status: "approved",
+          findings: [],
+        }),
+      } as any,
+      finalAdversarialOrchestrator: vi.fn().mockResolvedValue({
+        status: "approved",
+        finalDecision: "approved",
+        findings: [],
+      }),
+      runRole,
+    });
+
+    const result = await controller.executeApprovedWork({
+      tasks: ["a", "b", "c", "d"],
+      complexity: "MEDIA",
+      proposal: {
+        summary: "stabilize batch routing",
+        affectedFiles: ["a", "b", "c", "d"],
+        validationIntent: "standard",
+        batchSize: 3,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    expect(runRole).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        mode: "single-agent",
+        role: "quality-gate-router",
+        authorityLevel: "controller",
+        filesInScope: ["a", "b", "c", "d"],
+      }),
+    );
+    expect(result.batches).toEqual([
+      { name: "batch-1", tasks: ["a", "b", "c"] },
+      { name: "batch-2", tasks: ["d"] },
+    ]);
+    expect(result.execution).toEqual(
+      expect.objectContaining({
+        batchSize: 3,
+        regressionProofs: 2,
+      }),
+    );
   });
 
   it("routes approved work through execution, review, checkpoint, and validation", async () => {
@@ -344,7 +634,10 @@ describe("execution controller routing", () => {
     expect(runBatch).not.toHaveBeenCalled();
   });
 
-  it("blocks the real continue path when phase 2 lacks TDD and RED proof", async () => {
+  it.each([
+    "phase-1.5-approval-required",
+    "phase-1.5-reapproval-required",
+  ])("blocks the real continue path when %s is still pending", async (pendingDecision) => {
     const runBatch = vi.fn();
     let savedSession: Record<string, unknown> | undefined;
     const controller = createPipelineController({
@@ -374,7 +667,7 @@ describe("execution controller routing", () => {
               from: "phase-1",
               to: "phase-1.5",
             },
-            pendingDecision: "phase-1.5-approval-required",
+            pendingDecision,
             unresolvedBlockers: [],
             touchedFiles: ["src/controller/pipeline-controller.ts"],
           }),
@@ -396,9 +689,9 @@ describe("execution controller routing", () => {
 
     expect(result.status).toBe("blocked");
     expect(result.blockedBy).toBe("TDD_APPROVAL");
-    expect(result.phase).toBe("phase-1.5");
+    expect(result.resumeBlocked).toBe(true);
+    expect(result.rollbackGate).toBe("TDD_APPROVAL");
     expect(runBatch).not.toHaveBeenCalled();
-    expect(savedSession?.currentPhase).toBe("phase-1.5");
   });
 
   it("rejects fabricated batch-runner verification evidence that is not controller-approved", async () => {
@@ -679,16 +972,26 @@ describe("execution controller routing", () => {
   });
 
   it("routes changed files and hotfix mode through adversarial review and blocks on mandatory review failures", async () => {
-    const runRole = vi.fn().mockResolvedValue({
-      mode: "single-agent",
-      role: "executor-implementer",
-      output: {
-        implementation: "done",
-        modifiedFiles: ["src/auth/session.ts", "src/db/query-builder.ts"],
-        verificationEvidence: {
-          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
+      if (role === "checkpoint-validator") {
+        return createCheckpointValidatorDispatch(typeof input?.checkpointName === "string" ? input.checkpointName : "batch-1");
+      }
+
+      if (role === "pre-tester") {
+        return createPreTesterDispatch();
+      }
+
+      return {
+        mode: "single-agent",
+        role: "executor-implementer",
+        output: {
+          implementation: "done",
+          modifiedFiles: ["src/auth/session.ts", "src/db/query-builder.ts"],
+          verificationEvidence: {
+            scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          },
         },
-      },
+      };
     });
     const adversarialReview = vi.fn().mockResolvedValue({
       batch: "batch-1",
@@ -753,16 +1056,26 @@ describe("execution controller routing", () => {
   });
 
   it("blocks injection-only hotfixes at the per-batch adversarial gate in the default runtime path", async () => {
-    const runRole = vi.fn().mockResolvedValue({
-      mode: "single-agent",
-      role: "executor-implementer",
-      output: {
-        implementation: "done",
-        modifiedFiles: ["src/db/query-builder.ts"],
-        verificationEvidence: {
-          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
+      if (role === "checkpoint-validator") {
+        return createCheckpointValidatorDispatch(typeof input?.checkpointName === "string" ? input.checkpointName : "batch-1");
+      }
+
+      if (role === "pre-tester") {
+        return createPreTesterDispatch();
+      }
+
+      return {
+        mode: "single-agent",
+        role: "executor-implementer",
+        output: {
+          implementation: "done",
+          modifiedFiles: ["src/db/query-builder.ts"],
+          verificationEvidence: {
+            scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          },
         },
-      },
+      };
     });
     const controller = createExecutorController({
       runRole,
@@ -811,16 +1124,26 @@ describe("execution controller routing", () => {
   });
 
   it("runs the final adversarial team after batch review and blocks when the final team demands rework", async () => {
-    const runRole = vi.fn().mockResolvedValue({
-      mode: "single-agent",
-      role: "executor-implementer",
-      output: {
-        implementation: "done",
-        modifiedFiles: ["src/payments/checkout.ts"],
-        verificationEvidence: {
-          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
+      if (role === "checkpoint-validator") {
+        return createCheckpointValidatorDispatch(typeof input?.checkpointName === "string" ? input.checkpointName : "batch-1");
+      }
+
+      if (role === "pre-tester") {
+        return createPreTesterDispatch();
+      }
+
+      return {
+        mode: "single-agent",
+        role: "executor-implementer",
+        output: {
+          implementation: "done",
+          modifiedFiles: ["src/payments/checkout.ts"],
+          verificationEvidence: {
+            scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          },
         },
-      },
+      };
     });
     const adversarialReview = vi.fn().mockResolvedValue({
       batch: "batch-1",
@@ -899,16 +1222,26 @@ describe("execution controller routing", () => {
   });
 
   it("routes adversarial review and final review from the executor's actual modified files, not only the planned batch list", async () => {
-    const runRole = vi.fn().mockResolvedValue({
-      mode: "single-agent",
-      role: "executor-implementer",
-      output: {
-        implementation: "done",
-        modifiedFiles: ["src/auth/session.ts", "src/payments/checkout.ts"],
-        verificationEvidence: {
-          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
+      if (role === "checkpoint-validator") {
+        return createCheckpointValidatorDispatch(typeof input?.checkpointName === "string" ? input.checkpointName : "batch-1");
+      }
+
+      if (role === "pre-tester") {
+        return createPreTesterDispatch();
+      }
+
+      return {
+        mode: "single-agent",
+        role: "executor-implementer",
+        output: {
+          implementation: "done",
+          modifiedFiles: ["src/auth/session.ts", "src/payments/checkout.ts"],
+          verificationEvidence: {
+            scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          },
         },
-      },
+      };
     });
     const adversarialReview = vi.fn().mockResolvedValue({
       batch: "batch-1",
@@ -983,16 +1316,87 @@ describe("execution controller routing", () => {
     expect(result.blockedBy).toBe("FINAL_ADVERSARIAL_REWORK");
   });
 
-  it("blocks the default runtime defensively when the executor provides no authoritative changed-file evidence", async () => {
-    const runRole = vi.fn().mockResolvedValue({
-      mode: "single-agent",
-      role: "executor-implementer",
-      output: {
-        implementation: "done",
-        verificationEvidence: {
-          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
-        },
+  it("persists final adversarial rework as a controlled rollback before the next continue", { timeout: 10000 }, async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-final-rework-rollback-"));
+    const runBatch = vi.fn().mockResolvedValue({
+      execution: {
+        status: "implemented",
       },
+      changedFiles: ["src/payments/checkout.ts"],
+      review: {
+        status: "approved",
+      },
+      verificationEvidence: {
+        scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+      },
+    });
+    const finalAdversarialOrchestrator = vi.fn().mockResolvedValue({
+      status: "rework",
+      finalDecision: "blocked",
+      findings: [
+        {
+          id: "final-payment-rework",
+          severity: "important",
+          summary: "Final adversarial review requires one targeted rework cycle.",
+          file: "src/payments/checkout.ts",
+        },
+      ],
+      contradictions: [],
+    });
+    const controller = createPipelineController({
+      stores: {
+        session: createSessionStore(root),
+        checkpoints: createCheckpointStore(root),
+        gateLog: createGateLog(root),
+        confidence: createConfidenceScoreStore(root),
+      },
+      executionController: createExecutorController({
+        runBatch,
+        finalAdversarialOrchestrator,
+        reviewOrchestrator: {
+          reviewBatch: vi.fn().mockResolvedValue({
+            status: "approved",
+            findings: [],
+          }),
+        } as any,
+      }),
+    });
+
+    await controller.start("/pipeline --complexa stabilize payment settlement");
+    await controller.start("Yes");
+    await controller.start("Yes");
+
+    const firstResult = await controller.start("/pipeline continue");
+    const secondResult = await controller.start("/pipeline continue");
+
+    expect(firstResult.status).toBe("blocked");
+    expect(firstResult.blockedBy).toBe("FINAL_ADVERSARIAL_REWORK");
+    expect(firstResult.phase).toBe("phase-2");
+    expect(secondResult.resumeBlocked).toBe(true);
+    expect(secondResult.rollbackGate).toBe("FINAL_ADVERSARIAL_REWORK");
+    expect(secondResult.rollbackRoute).toBe("replan");
+  });
+
+  it("blocks the default runtime defensively when the executor provides no authoritative changed-file evidence", async () => {
+    const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
+      if (role === "pre-tester") {
+        return createPreTesterDispatch();
+      }
+
+      if (role === "checkpoint-validator") {
+        return createCheckpointValidatorDispatch(typeof input?.checkpointName === "string" ? input.checkpointName : "batch-1");
+      }
+
+      return {
+        mode: "single-agent",
+        role: "executor-implementer",
+        output: {
+          implementation: "done",
+          verificationEvidence: {
+            scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          },
+        },
+      };
     });
     const adversarialReview = vi.fn();
     const finalAdversarialOrchestrator = vi.fn();

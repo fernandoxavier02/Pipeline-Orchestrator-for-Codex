@@ -1,4 +1,5 @@
 import type { DispatchRequest } from "./dispatcher-types.js";
+import { runMultiAgentRole } from "./multi-agent-runner.js";
 import { runSingleAgentRole } from "./single-agent-runner.js";
 
 export async function runRole(request: DispatchRequest) {
@@ -9,7 +10,7 @@ export async function runRole(request: DispatchRequest) {
   };
 
   if (request.mode === "multi-agent") {
-    throw new Error("Multi-agent mode is not implemented yet");
+    return runMultiAgentRole(normalizedRequest);
   }
 
   return runSingleAgentRole(normalizedRequest);

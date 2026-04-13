@@ -85,10 +85,15 @@ Authority:
 - `agents/core/information-gate.md`
 - `agents/core/sanity-checker.md`
 - `agents/core/task-orchestrator.md`
+- `prompts/agents/core/checkpoint-validator.md`
+- `prompts/agents/core/final-validator.md`
+- `prompts/agents/core/information-gate.md`
+- `prompts/agents/core/sanity-checker.md`
+- `prompts/agents/core/sentinel.md`
 
 Role:
 
-- define orchestrator, gating, validation, and closeout behaviors
+- define orchestrator, gating, validation, closeout, and sanity-check behaviors
 
 Authority:
 
@@ -101,6 +106,9 @@ Authority:
 - `agents/executor/executor-implementer-task.md`
 - `agents/executor/executor-quality-reviewer.md`
 - `agents/executor/executor-spec-reviewer.md`
+- `prompts/agents/executor/executor-fix.md`
+- `prompts/agents/executor/executor-implementer.md`
+- `prompts/agents/executor/executor-spec-reviewer.md`
 
 Role:
 
@@ -120,6 +128,15 @@ Authority:
 - `agents/quality/pre-tester.md`
 - `agents/quality/quality-gate-router.md`
 - `agents/quality/review-orchestrator.md`
+- `prompts/agents/quality/architecture-reviewer.md`
+- `prompts/agents/quality/design-interrogator.md`
+- `prompts/agents/quality/final-adversarial-orchestrator.md`
+- `prompts/agents/quality/plan-architect.md`
+- `prompts/agents/quality/pre-tester.md`
+- `prompts/agents/quality/quality-gate-router.md`
+- `prompts/agents/quality/quality-reviewer.md`
+- `prompts/agents/quality/review-orchestrator.md`
+- `prompts/agents/quality/security-reviewer.md`
 
 Role:
 
@@ -149,6 +166,8 @@ Inspected files:
 
 - `audit-heavy.md`
 - `audit-light.md`
+- `adversarial-heavy.md`
+- `adversarial-light.md`
 - `bugfix-heavy.md`
 - `bugfix-light.md`
 - `implement-heavy.md`
@@ -282,7 +301,13 @@ No single file explains the entire system cleanly. The mapping therefore synthes
 
 ### Conceptual roles may exceed file granularity
 
-Some runtime descriptions imply roles or reviewer combinations that are more conceptual than individually materialized as separate prompt files. Those were documented as behaviors where evidence supported them.
+Some runtime descriptions imply composite reviewer combinations or orchestration patterns that are more conceptual than individually materialized as separate prompt files. Those were documented as behaviors where evidence supported them.
+The current Codex port now materializes dedicated runtime prompt files for the shipped review orchestrators, final reviewers, and Phase 2/3 runtime roles, reducing this gap in the local implementation.
+
+Current boundary:
+
+- controller-owned ownership remains for phase transitions, gate decisions, rollback routing, and persistence writers
+- runtime-dispatched roles now cover checkpoint validation, pre-testing, quality-gate routing, sanity checks, final validation, executor fixes, and review/final-adversarial work
 
 ## Coverage Statement
 

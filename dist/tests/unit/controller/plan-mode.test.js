@@ -9,10 +9,21 @@ describe("plan mode", () => {
             status: "APPROVED",
             summary: "harden audit trail",
             affectedFiles: ["src/controller/pipeline-controller.ts"],
+            variant: "audit-heavy",
+            validationIntent: "standard",
         });
         expect(plan.kind).toBe("IMPLEMENTATION_PLAN");
         expect(plan.status).toBe("APPROVED");
         expect(plan.summary).toBe("harden audit trail");
         expect(plan.affectedFiles).toEqual(["src/controller/pipeline-controller.ts"]);
+        expect(plan.tasks).toEqual(expect.arrayContaining([
+            "Confirm the failing or review-driving scenarios before implementation.",
+            "Implement the scoped change in the affected files.",
+            "Run verification and capture approval evidence for the batch.",
+        ]));
+        expect(plan.risks).toEqual(expect.arrayContaining([
+            "State transitions or persistence can drift from the intended pipeline behavior.",
+            "Review evidence can become stale if the touched files expand during execution.",
+        ]));
     });
 });

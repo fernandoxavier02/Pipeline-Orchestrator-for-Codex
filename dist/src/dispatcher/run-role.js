@@ -1,3 +1,4 @@
+import { runMultiAgentRole } from "./multi-agent-runner.js";
 import { runSingleAgentRole } from "./single-agent-runner.js";
 export async function runRole(request) {
     const normalizedRequest = {
@@ -6,7 +7,7 @@ export async function runRole(request) {
         reviewOnly: request.reviewOnly ?? false,
     };
     if (request.mode === "multi-agent") {
-        throw new Error("Multi-agent mode is not implemented yet");
+        return runMultiAgentRole(normalizedRequest);
     }
     return runSingleAgentRole(normalizedRequest);
 }

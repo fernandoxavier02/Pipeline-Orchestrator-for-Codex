@@ -1,5 +1,6 @@
 import { runAdversarialReview } from "../review/adversarial-review.js";
 import { createFinalAdversarialOrchestrator } from "../review/final-adversarial-orchestrator.js";
+import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
 import { runRole } from "../dispatcher/run-role.js";
 import type { PipelineComplexity, ValidationIntent } from "../controller/classification-overrides.js";
@@ -65,6 +66,199 @@ function createMissingChangedFilesReview(batch: ExecutionBatch) {
       },
     ],
     strategy: "missing-changed-file-evidence",
+  };
+}
+
+function summarizeEffectiveReview(review: unknown) {
+  if (!review || typeof review !== "object") {
+    return {
+      status: "approved",
+      findings: [] as Array<{ severity: string }>,
+    };
+  }
+
+  const candidate = review as {
+    status?: unknown;
+    findings?: unknown;
+  };
+
+  return {
+    status: typeof candidate.status === "string" ? candidate.status : "approved",
+    findings: Array.isArray(candidate.findings)
+      ? candidate.findings as Array<{ severity: string }>
+      : [],
+  };
+}
+
+function resolveReworkFindings(review: unknown) {
+  if (!review || typeof review !== "object") {
+    return undefined;
+  }
+
+  const candidate = review as {
+    findings?: unknown;
+    reviews?: unknown;
+  };
+  const directReviewerFindings = Array.isArray(candidate.reviews)
+    ? candidate.reviews
+      .filter((entry): entry is { reviewer?: unknown; status?: unknown; findings?: unknown } => !!entry && typeof entry === "object")
+      .filter((entry) =>
+        typeof entry.reviewer === "string"
+        && ["batch-reviewer", "executor-spec-reviewer", "quality-reviewer"].includes(entry.reviewer),
+      )
+      .flatMap((entry) =>
+        Array.isArray(entry.findings)
+          ? entry.findings.filter((finding): finding is Record<string, unknown> => !!finding && typeof finding === "object")
+          : [],
+      )
+    : [];
+
+  if (directReviewerFindings.length > 0) {
+    return directReviewerFindings;
+  }
+
+  return Array.isArray(candidate.findings)
+    ? candidate.findings.filter((finding): finding is Record<string, unknown> => !!finding && typeof finding === "object")
+    : undefined;
+}
+
+function isCheckpointStatus(value: unknown): value is CheckpointValidationResult["status"] {
+  return value === "passed" || value === "failed" || value === "STOP_RULE";
+}
+
+function parseCheckpointValidationResult(output: unknown): CheckpointValidationResult | undefined {
+  if (!output || typeof output !== "object") {
+    return undefined;
+  }
+
+  const candidate = output as Record<string, unknown>;
+  const status = candidate.status ?? candidate.STATUS;
+  const checkpointName = candidate.checkpointName ?? candidate.CHECKPOINT_RESULT;
+
+  if (
+    !isCheckpointStatus(status)
+    || typeof checkpointName !== "string"
+    || typeof candidate.consecutiveFailures !== "number"
+    || typeof candidate.requiredCheckpoints !== "number"
+    || typeof candidate.verifiedCheckpoints !== "number"
+    || typeof candidate.coverage !== "number"
+  ) {
+    return undefined;
+  }
+
+  return {
+    status,
+    checkpointName,
+    consecutiveFailures: candidate.consecutiveFailures,
+    requiredCheckpoints: candidate.requiredCheckpoints,
+    verifiedCheckpoints: candidate.verifiedCheckpoints,
+    coverage: candidate.coverage,
+  };
+}
+
+function isPreTesterStatus(value: unknown): value is "approved" | "blocked" {
+  return value === "approved" || value === "blocked";
+}
+
+function isTddApproval(value: unknown): value is "APPROVED" | "REJECTED" {
+  return value === "APPROVED" || value === "REJECTED";
+}
+
+function parsePreTesterProof(output: unknown): ReturnType<ReturnType<typeof createPreTester>["deriveExecutionProof"]> | undefined {
+  if (!output || typeof output !== "object") {
+    return undefined;
+  }
+
+  const candidate = output as Record<string, unknown>;
+  const approvedScenarios = Array.isArray(candidate.approvedScenarios)
+    ? candidate.approvedScenarios.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+  const tddApproval = candidate.tddApproval;
+  const redValidation = candidate.redValidation;
+  const redValidationRecord = redValidation && typeof redValidation === "object"
+    ? redValidation as Record<string, unknown>
+    : undefined;
+  const reasons = Array.isArray(redValidationRecord?.reasons)
+    ? redValidationRecord.reasons.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+
+  if (
+    !approvedScenarios
+    || !isTddApproval(tddApproval)
+    || !redValidationRecord
+    || !isPreTesterStatus(redValidationRecord.status)
+    || !reasons
+  ) {
+    return undefined;
+  }
+
+  return {
+    approvedScenarios,
+    tddApproval,
+    redValidation: {
+      status: redValidationRecord.status,
+      reasons,
+    },
+  };
+}
+
+function parseQualityGatePlan(output: unknown): PlannedExecution | undefined {
+  if (!output || typeof output !== "object") {
+    return undefined;
+  }
+
+  const candidate = output as Record<string, unknown>;
+  const batchSize = candidate.batchSize;
+  const regressionProofs = candidate.regressionProofs;
+  const approvedScenarios = Array.isArray(candidate.approvedScenarios)
+    ? candidate.approvedScenarios.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+  const batches = Array.isArray(candidate.batches)
+    ? candidate.batches
+      .filter((entry): entry is { name: string; tasks: string[] } =>
+        !!entry
+        && typeof entry === "object"
+        && typeof (entry as { name?: unknown }).name === "string"
+        && Array.isArray((entry as { tasks?: unknown }).tasks)
+        && (entry as { tasks: unknown[] }).tasks.every((task) => typeof task === "string"))
+      .map((entry) => ({
+        name: entry.name,
+        tasks: entry.tasks,
+      }))
+    : undefined;
+
+  if (
+    typeof batchSize !== "number"
+    || typeof regressionProofs !== "number"
+    || !approvedScenarios
+    || !batches
+  ) {
+    return undefined;
+  }
+
+  return {
+    batchSize,
+    regressionProofs,
+    approvedScenarios,
+    batches,
+  };
+}
+
+function parseExecutorFixResult(output: unknown): { status: string; success: boolean } | undefined {
+  if (!output || typeof output !== "object") {
+    return undefined;
+  }
+
+  const candidate = output as Record<string, unknown>;
+  const status = candidate.status ?? candidate.FIX_RESULT;
+
+  if (typeof status !== "string" || status.length === 0) {
+    return undefined;
+  }
+
+  return {
+    status,
+    success: status === "fixed",
   };
 }
 
@@ -242,6 +436,14 @@ export interface ExecutorControllerDependencies {
     changedDomains?: string[];
     reviews?: Array<{ reviewer: string; status: string; findings: Array<{ severity: string }> }>;
   }) => Promise<any>;
+  reviewOrchestrator?: {
+    reviewBatch: (input: {
+      batch: { name: string; files: string[] };
+      changedDomains?: string[];
+      changedFiles?: string[];
+      mode?: string;
+    }) => Promise<any>;
+  };
   qualityGateRouter?: ReturnType<typeof createQualityGateRouter>;
   preTester?: ReturnType<typeof createPreTester>;
   checkpointValidator?: ReturnType<typeof createCheckpointValidator> | {
@@ -255,6 +457,169 @@ export interface ExecutorControllerDependencies {
       checkpointName: string;
     }) => CheckpointValidationResult;
   };
+}
+
+async function dispatchExecutorFix(input: {
+  runRole?: typeof runRole;
+  batch: ExecutionBatch;
+  attempt: number;
+  strategy: string;
+  findings?: unknown;
+  changedDomains?: string[];
+}) {
+  if (!input.runRole) {
+    return undefined;
+  }
+
+  return input.runRole({
+    mode: "single-agent",
+    role: "executor-fix",
+    prompt: "Apply the current finding set from fresh context within the approved batch scope.",
+    input: {
+      batch: {
+        name: input.batch.name,
+        files: [...input.batch.files],
+      },
+      files: [...input.batch.files],
+      changedDomains: [...(input.changedDomains ?? [])],
+      findings: input.findings,
+      attempt: input.attempt,
+      strategy: input.strategy,
+    },
+    filesInScope: [...input.batch.files],
+    authorityLevel: "executor",
+    freshContext: true,
+    reviewOnly: false,
+  });
+}
+
+async function resolveCheckpointValidation(input: {
+  runRole?: typeof runRole;
+  checkpointValidator: ReturnType<typeof createCheckpointValidator> | {
+    reset?: () => void;
+    validateCheckpoints: (input: {
+      verificationEvidence?: {
+        requiredCheckpoints: number;
+        verifiedCheckpoints: number;
+        evidence: string[];
+      };
+      checkpointName: string;
+    }) => CheckpointValidationResult;
+  };
+  batch: ExecutionBatch;
+  verificationEvidence: {
+    requiredCheckpoints: number;
+    verifiedCheckpoints: number;
+    evidence: string[];
+  };
+  checkpointName: string;
+  previousFailures: number;
+}) {
+  if (!input.runRole) {
+    return input.checkpointValidator.validateCheckpoints({
+      verificationEvidence: input.verificationEvidence,
+      checkpointName: input.checkpointName,
+    });
+  }
+
+  const dispatch = await input.runRole({
+    mode: "single-agent",
+    role: "checkpoint-validator",
+    prompt: "Validate proportional per-batch evidence before the checkpoint can pass.",
+    input: {
+      verificationEvidence: input.verificationEvidence,
+      checkpointName: input.checkpointName,
+      previousFailures: input.previousFailures,
+    },
+    filesInScope: [...input.batch.files],
+    authorityLevel: "controller",
+    freshContext: true,
+    reviewOnly: false,
+  });
+  const parsed = parseCheckpointValidationResult(dispatch.output);
+
+  if (!parsed) {
+    throw new Error("checkpoint-validator returned an invalid runtime result");
+  }
+
+  return parsed;
+}
+
+async function resolvePreTesterProof(input: {
+  runRole?: typeof runRole;
+  preTester: ReturnType<typeof createPreTester>;
+  filesInScope: string[];
+  approvedScenarios: string[];
+  cwd?: string;
+}) {
+  if (!input.runRole) {
+    return input.preTester.deriveExecutionProof({
+      approvedScenarios: input.approvedScenarios,
+      cwd: input.cwd,
+    });
+  }
+
+  const dispatch = await input.runRole({
+    mode: "single-agent",
+    role: "pre-tester",
+    prompt: "Validate TDD proof and RED readiness before any implementation batch proceeds.",
+    input: {
+      approvedScenarios: input.approvedScenarios,
+      cwd: input.cwd,
+    },
+    filesInScope: [...input.filesInScope],
+    authorityLevel: "controller",
+    freshContext: true,
+    reviewOnly: false,
+  });
+  const parsed = parsePreTesterProof(dispatch.output);
+
+  if (!parsed) {
+    throw new Error("pre-tester returned an invalid runtime result");
+  }
+
+  return parsed;
+}
+
+async function resolveQualityGatePlan(input: {
+  runRole?: typeof runRole;
+  qualityGateRouter: ReturnType<typeof createQualityGateRouter>;
+  complexity: PipelineComplexity;
+  tasks: string[];
+  mode?: string;
+  validationIntent?: ValidationIntent;
+}) {
+  if (!input.runRole) {
+    return input.qualityGateRouter.planBatches({
+      complexity: input.complexity,
+      tasks: input.tasks,
+      mode: input.mode,
+      validationIntent: input.validationIntent,
+    });
+  }
+
+  const dispatch = await input.runRole({
+    mode: "single-agent",
+    role: "quality-gate-router",
+    prompt: "Plan proportional Phase 2 batches and regression proof depth from the approved task set.",
+    input: {
+      complexity: input.complexity,
+      tasks: input.tasks,
+      mode: input.mode,
+      validationIntent: input.validationIntent,
+    },
+    filesInScope: [...input.tasks],
+    authorityLevel: "controller",
+    freshContext: true,
+    reviewOnly: false,
+  });
+  const parsed = parseQualityGatePlan(dispatch.output);
+
+  if (!parsed) {
+    throw new Error("quality-gate-router returned an invalid runtime result");
+  }
+
+  return parsed;
 }
 
 export function createExecutorController(dependencies: ExecutorControllerDependencies = {}): {
@@ -274,6 +639,10 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
   const finalAdversarialOrchestrator = dependencies.finalAdversarialOrchestrator
     ?? ((input: { scope: { files: string[] }; changedDomains?: string[] }) =>
       createFinalAdversarialOrchestrator().reviewFinal(input));
+  const reviewOrchestrator = dependencies.reviewOrchestrator
+    ?? createReviewOrchestrator({
+      runRole: dependencies.runRole,
+    });
   let currentExecutionMode: string | undefined;
   const runFixLoop = async (input: {
     strategy: string;
@@ -325,13 +694,18 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
             approvedScenarios: [...(input.approvedScenarios ?? [])],
             batches: [toPlannedBatch(input.batch)],
           }
-        : qualityGateRouter.planBatches({
+        : await resolveQualityGatePlan({
+            runRole: dependencies.runRole,
+            qualityGateRouter,
             complexity,
             tasks,
             mode: input.mode,
             validationIntent: input.proposal?.validationIntent,
           });
-      const proof = preTester.deriveExecutionProof({
+      const proof = await resolvePreTesterProof({
+        runRole: dependencies.runRole,
+        preTester,
+        filesInScope: input.batch?.files ?? tasks,
         approvedScenarios: input.approvedScenarios ?? [],
         cwd: input.workingDirectory,
       });
@@ -368,6 +742,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
         changedFiles: string[];
         execution: unknown;
         review: unknown;
+        batchReview?: unknown;
         checkpoint: CheckpointValidationResult;
       }> = [];
       const checkpointEvidence: Array<{
@@ -377,6 +752,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
         evidence: string[];
       }> = [];
       const appliedFixAttempts: boolean[] = [];
+      let checkpointFailureCount = 0;
 
       for (const [index, batch] of planned.batches.entries()) {
         const executionBatch = toExecutionBatch(batch);
@@ -391,9 +767,26 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           batchResult && typeof batchResult === "object" && "fixAttempts" in batchResult && Array.isArray(batchResult.fixAttempts)
             ? batchResult.fixAttempts as boolean[]
             : [];
-        const checkpoint = checkpointValidator.validateCheckpoints({
+        const checkpoint = await resolveCheckpointValidation({
+          runRole: dependencies.runRole,
+          checkpointValidator,
+          batch: executionBatch,
           verificationEvidence,
           checkpointName: batch.name,
+          previousFailures: checkpointFailureCount,
+        });
+        checkpointFailureCount = checkpoint.status === "passed" ? 0 : checkpoint.consecutiveFailures;
+        const changedDomains = detectChangedDomains(
+          actualChangedFiles.length > 0 ? actualChangedFiles : executionBatch.files,
+        );
+        const batchReview = await reviewOrchestrator.reviewBatch({
+          batch: {
+            name: batch.name,
+            files: actualChangedFiles.length > 0 ? actualChangedFiles : executionBatch.files,
+          },
+          changedFiles: actualChangedFiles,
+          changedDomains,
+          mode: input.mode,
         });
         checkpointEvidence.push({
           batchName: batch.name,
@@ -411,6 +804,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
               ? batchResult.execution
               : {},
             review: missingEvidenceReview,
+            batchReview,
             checkpoint,
           });
 
@@ -439,6 +833,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
             ? batchResult.execution
             : {},
           review: batchResult.review,
+          batchReview,
           checkpoint,
         });
 
@@ -477,14 +872,106 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
               ? "Checkpoint verified proportionally"
               : checkpoint.status === "STOP_RULE"
                 ? "Checkpoint validation exhausted the stop rule"
-                : "Checkpoint validation failed",
+              : "Checkpoint validation failed",
         });
+
+        if (
+          batchReview
+          && typeof batchReview === "object"
+          && "status" in batchReview
+          && batchReview.status === "blocked"
+        ) {
+          if (batchFixAttempts.length > 0) {
+            const fixLoopResult = await runFixLoop({
+              strategy: "independent-review-rework",
+              attemptFix: async ({ attempt, strategy }) => {
+                const fixDispatch = await dispatchExecutorFix({
+                  runRole: dependencies.runRole,
+                  batch: executionBatch,
+                  attempt,
+                  strategy,
+                  findings: resolveReworkFindings(batchReview),
+                  changedDomains,
+                });
+                const structuredResult = parseExecutorFixResult(
+                  fixDispatch && typeof fixDispatch === "object" && "output" in fixDispatch
+                    ? fixDispatch.output
+                    : undefined,
+                );
+                const result = structuredResult?.success ?? (batchFixAttempts[attempt - 1] ?? false);
+                appliedFixAttempts.push(result);
+                return result;
+              },
+            });
+
+            if (fixLoopResult.status === "FIX_LOOP_EXHAUSTED") {
+              return {
+                status: "FIX_LOOP_EXHAUSTED",
+                attempts: fixLoopResult.attempts,
+                strategyChangeRequired: fixLoopResult.strategyChangeRequired,
+                batchSize: planned.batchSize,
+                regressionProofs: planned.regressionProofs,
+                execution: {
+                  ...((batchResult.execution && typeof batchResult.execution === "object")
+                    ? batchResult.execution
+                    : {}),
+                  batchSize: planned.batchSize,
+                  regressionProofs: planned.regressionProofs,
+                },
+                review: batchResult.review,
+                batchReview,
+                validation: checkpoint,
+                proof: {
+                  ...proof,
+                  checkpointEvidence,
+                  fixAttempts: appliedFixAttempts,
+                },
+                batches: planned.batches,
+                results: batchResults,
+              };
+            }
+          }
+
+          return {
+            status: "blocked",
+            blockedBy: "BATCH_REVIEW_REWORK",
+            batchSize: planned.batchSize,
+            regressionProofs: planned.regressionProofs,
+            execution: batchResult.execution,
+            review: batchResult.review,
+            batchReview,
+            validation: checkpoint,
+            proof: {
+              ...proof,
+              checkpointEvidence,
+              fixAttempts: appliedFixAttempts,
+            },
+            batches: planned.batches,
+            results: batchResults,
+          };
+        }
 
         if (checkpoint.status === "failed" && batchFixAttempts.length > 0) {
           const fixLoopResult = await runFixLoop({
             strategy: "same-plan",
-            attemptFix: ({ attempt }) => {
-              const result = batchFixAttempts[attempt - 1] ?? false;
+            attemptFix: async ({ attempt, strategy }) => {
+              const fixDispatch = await dispatchExecutorFix({
+                runRole: dependencies.runRole,
+                batch: executionBatch,
+                attempt,
+                strategy,
+                findings:
+                  batchResult.review && typeof batchResult.review === "object" && "findings" in batchResult.review
+                    ? batchResult.review.findings
+                    : undefined,
+                changedDomains,
+              });
+              const structuredResult = parseExecutorFixResult(
+                fixDispatch && typeof fixDispatch === "object" && "output" in fixDispatch
+                  ? fixDispatch.output
+                  : undefined,
+              );
+              const result = structuredResult?.success ?? (batchFixAttempts[attempt - 1] ?? false);
               appliedFixAttempts.push(result);
               return result;
             },
@@ -573,23 +1060,14 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           files: finalScopeFiles.length > 0 ? finalScopeFiles : tasks,
         },
         changedDomains: detectChangedDomains(finalScopeFiles.length > 0 ? finalScopeFiles : tasks),
-        reviews: batchResults.map((result) => ({
-          reviewer: result.batch.name,
-          status:
-            result.review
-            && typeof result.review === "object"
-            && "status" in result.review
-            && typeof result.review.status === "string"
-              ? result.review.status
-              : "approved",
-          findings:
-            result.review
-            && typeof result.review === "object"
-            && "findings" in result.review
-            && Array.isArray(result.review.findings)
-              ? result.review.findings
-              : [],
-        })),
+        reviews: batchResults.map((result) => {
+          const effectiveReview = summarizeEffectiveReview(result.batchReview ?? result.review);
+          return {
+            reviewer: result.batch.name,
+            status: effectiveReview.status,
+            findings: effectiveReview.findings,
+          };
+        }),
       });
 
       if (finalReview.status === "rework" || finalReview.finalDecision === "blocked") {
@@ -599,7 +1077,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           batchSize: planned.batchSize,
           regressionProofs: planned.regressionProofs,
           execution: lastResult?.execution ?? null,
-          review: lastResult?.review ?? null,
+          review: lastResult?.batchReview ?? lastResult?.review ?? null,
           finalReview,
           validation: lastResult?.checkpoint ?? null,
           proof: {
@@ -619,13 +1097,13 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
         execution: lastResult
           ? {
               ...((lastResult.execution && typeof lastResult.execution === "object")
-                ? lastResult.execution
+              ? lastResult.execution
                 : {}),
               batchSize: planned.batchSize,
               regressionProofs: planned.regressionProofs,
             }
           : null,
-        review: lastResult?.review ?? null,
+        review: lastResult?.batchReview ?? lastResult?.review ?? null,
         finalReview,
         validation: lastResult?.checkpoint ?? null,
         proof: {

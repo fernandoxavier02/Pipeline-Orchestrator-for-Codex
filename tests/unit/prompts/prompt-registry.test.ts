@@ -7,4 +7,76 @@ describe("prompt registry", () => {
     const prompt = await registry.load("core/information-gate");
     expect(prompt).toContain("Ask one question at a time");
   });
+
+  it("loads the dedicated security reviewer prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("quality/security-reviewer");
+    expect(prompt).toContain("Prioritize auth, crypto, payment, and injection risk.");
+  });
+
+  it("loads the review orchestrator prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("quality/review-orchestrator");
+    expect(prompt).toContain("Coordinate the independent per-batch review team.");
+  });
+
+  it("loads the checkpoint validator prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("core/checkpoint-validator");
+    expect(prompt).toContain("Require evidence before any per-batch pass claim.");
+  });
+
+  it("loads the sentinel prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("core/sentinel");
+    expect(prompt).toContain("Protect the expected pipeline sequence.");
+  });
+
+  it("loads the design interrogator prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("quality/design-interrogator");
+    expect(prompt).toContain("Resolve design trade-offs before implementation.");
+  });
+
+  it("loads the plan architect prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("quality/plan-architect");
+    expect(prompt).toContain("Produce a read-only implementation plan.");
+  });
+
+  it("loads the pre-tester prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("quality/pre-tester");
+    expect(prompt).toContain("Validate that approved scenarios are real runnable tests before implementation begins.");
+  });
+
+  it("loads the quality gate router prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("quality/quality-gate-router");
+    expect(prompt).toContain("Plan the approved Phase 2 task set into proportional execution batches.");
+  });
+
+  it("loads the sanity checker prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("core/sanity-checker");
+    expect(prompt).toContain("Run final proportional verification before the final decision.");
+  });
+
+  it("loads the final validator prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("core/final-validator");
+    expect(prompt).toContain("Issue the final GO, CONDITIONAL, or NO-GO decision.");
+  });
+
+  it("loads the executor fix prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("executor/executor-fix");
+    expect(prompt).toContain("Apply findings from fresh context within the original write scope.");
+  });
+
+  it("loads the executor spec reviewer prompt from disk", async () => {
+    const registry = createPromptRegistry(process.cwd());
+    const prompt = await registry.load("executor/executor-spec-reviewer");
+    expect(prompt).toContain("Check requirement compliance directly from the changed files.");
+  });
 });

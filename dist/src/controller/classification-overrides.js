@@ -152,6 +152,8 @@ export function applyClassificationOverrides(mode, classification, referenceInde
             type: nextType,
             complexity: nextComplexity,
             variant: profile.variant,
+            routeFamily: classification.routeFamily,
+            adversarialRequested: classification.adversarialRequested,
         },
         profile,
         validationIntent,

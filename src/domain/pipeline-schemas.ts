@@ -43,6 +43,9 @@ export const implementationPlanSchema = z.object({
   status: proposalConfirmationStatusSchema,
   summary: z.string(),
   affectedFiles: z.array(z.string()),
+  tasks: z.array(z.string()).default([]),
+  risks: z.array(z.string()).default([]),
+  approvalNotes: z.string().default(""),
 });
 
 export const designInterrogationSchema = z.object({
@@ -86,6 +89,8 @@ const closeoutEvidenceSchema = z.object({
 
 const closeoutSummarySchema = z.object({
   decision: z.enum(["GO", "CONDITIONAL", "NO-GO"]),
+  confidenceScore: z.number(),
+  confidenceBand: confidenceBandSchema,
   missingEvidence: z.array(z.string()),
   blockingGates: z.array(z.string()),
   skippedSoftGates: z.array(z.string()),
@@ -129,6 +134,28 @@ export const controllerRevalidationLockSchema = z.object({
   runDir: z.string(),
   phase: pipelinePhaseSchema,
   staleContext: gateDecisionSchema,
+  updatedAt: z.string(),
+});
+
+export const sentinelStateSchema = z.object({
+  pipelineActive: z.boolean(),
+  currentPhase: pipelinePhaseSchema,
+  currentAgent: z.string(),
+  expectedNext: z.array(z.string()).default([]),
+  completedPhases: z.array(pipelinePhaseSchema).default([]),
+  gateSummary: z.array(z.string()).default([]),
+  batchState: z.object({
+    batchIndex: z.number().int().nonnegative(),
+    status: z.string(),
+  }),
+  consecutiveCorrections: z.number().int().nonnegative(),
+  lastCheckpoint: z.enum([
+    "post_orchestrator",
+    "phase_0_to_1",
+    "phase_1_to_2",
+    "phase_2_to_3",
+    "post_final_validator",
+  ]),
   updatedAt: z.string(),
 });
 

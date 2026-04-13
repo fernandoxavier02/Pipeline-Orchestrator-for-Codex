@@ -157,6 +157,22 @@ const GATE_REGISTRY: Record<string, GateDefinition> = {
     confidenceImpactOnSkip: 0,
     rollback: "none",
   },
+  SENTINEL_CHECKPOINT: {
+    gate: "SENTINEL_CHECKPOINT",
+    hardness: "HARD",
+    phase: "phase-0",
+    defaultDecision: "pass",
+    confidenceImpactOnSkip: 0,
+    rollback: "none",
+  },
+  SENTINEL_SEQUENCE_BLOCK: {
+    gate: "SENTINEL_SEQUENCE_BLOCK",
+    hardness: "HARD",
+    phase: "phase-1",
+    defaultDecision: "block",
+    confidenceImpactOnSkip: 0,
+    rollback: "revalidate",
+  },
 };
 
 export function createGateRegistry() {

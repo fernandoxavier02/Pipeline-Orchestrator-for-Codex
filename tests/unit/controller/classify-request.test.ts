@@ -26,4 +26,16 @@ describe("classifyRequest", () => {
       expect(classification.complexity).toBe(profile.complexity);
     }
   });
+
+  it("detects adversarial audit intent without discarding the base audit variant", async () => {
+    const bundle = await loadReferenceBundle(repoRoot);
+    const index = createReferenceProfileIndex(bundle);
+
+    const classification = classifyRequest("run adversarial security audit on auth boundaries", index);
+
+    expect(classification.type).toBe("Audit");
+    expect(classification.variant).toBe("audit-heavy");
+    expect(classification.routeFamily).toBe("adversarial");
+    expect(classification.adversarialRequested).toBe(true);
+  });
 });
