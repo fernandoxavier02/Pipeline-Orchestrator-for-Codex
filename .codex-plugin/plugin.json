@@ -1,7 +1,7 @@
 {
   "name": "pipeline-orchestrator-for-codex",
-  "version": "0.1.0",
-  "description": "Structured multi-phase execution pipeline for Codex with gates, state, and adversarial review.",
+  "version": "0.2.0",
+  "description": "Full-depth prompt-driven pipeline orchestrator for Codex with 4 phases, 36 specialist agents, confidence scoring, TDD gates, and adversarial review.",
   "author": {
     "name": "Fernando Xavier - FX Studio AI",
     "email": "",
@@ -15,8 +15,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Pipeline Orchestrator for Codex",
-    "shortDescription": "Structured execution pipeline with gates and review",
-    "longDescription": "Codex pipeline runtime with controller routing, persisted state, continue mode, batch review, and final validation.",
+    "shortDescription": "Full-depth 4-phase pipeline with 36 agents, TDD gates, and adversarial review",
+    "longDescription": "Codex pipeline orchestrator restored to full Claude Code depth: 4 execution phases (Classification, Proposal, Execution, Validation), 36 specialist agents (panel, spec-lifecycle, iOS experts), confidence scoring with non-invention rules, TDD-driven gates, adversarial review loops, and spec-driven development workflow.",
     "developerName": "Fernando Xavier - FX Studio AI",
     "category": "Coding",
     "capabilities": ["Interactive", "Write"],
