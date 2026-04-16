@@ -1,3 +1,28 @@
+---
+kind: checklist
+id: data-integrity
+title: Data Integrity
+domains:
+  - data
+  - state
+  - persistence
+pathHints:
+  - state
+  - store
+  - repository
+  - model
+items:
+  - "Write operations are atomic or use transactions where needed"
+  - "Concurrent updates handled (optimistic locking, merge semantics)"
+  - "Data validation before persistence (not just at input layer)"
+  - "Referential integrity maintained (foreign keys, references valid)"
+  - "Cascading deletes handled correctly (or prevented)"
+  - "Schema migrations are backwards-compatible (additive preferred)"
+  - "Backup/recovery strategy exists for critical data"
+  - "Data retention rules implemented (if applicable)"
+  - "Timestamps use consistent timezone/format"
+  - "Numeric precision preserved (no floating point for money)"
+---
 # Adversarial Checklist: Data Integrity
 
 ## What to Check

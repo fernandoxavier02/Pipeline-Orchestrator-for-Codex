@@ -1,3 +1,28 @@
+---
+kind: checklist
+id: injection
+title: Injection
+domains:
+  - injection
+  - prompt-injection
+  - query
+pathHints:
+  - injection
+  - query
+  - sql
+  - prompt
+items:
+  - "SQL/NoSQL queries use parameterized queries (never string concatenation)"
+  - "Command execution uses safe APIs (no shell interpolation)"
+  - "HTML output is escaped/sanitized (XSS prevention)"
+  - "File paths are validated and sandboxed (no path traversal)"
+  - "Template rendering escapes user input"
+  - "Regular expressions don't use untrusted input (ReDoS prevention)"
+  - "JSON/XML parsing handles malformed input safely"
+  - "URL construction validates/sanitizes components"
+  - "Header injection prevented (CRLF in HTTP headers)"
+  - "Log injection prevented (newlines in log entries)"
+---
 # Adversarial Checklist: Injection
 
 ## What to Check

@@ -1,4 +1,21 @@
-# Adversarial Review Pipeline — Heavy
+---
+kind: pipeline-profile
+variant: adversarial-heavy
+type: Audit
+complexity: COMPLEXA
+intensity: heavy
+batchSize: 1
+summary: Adversarial review-fix flow for complex audits with independent reviewers.
+checklists:
+  - auth
+  - business-logic
+  - crypto
+  - data-integrity
+  - error-handling
+  - injection
+  - input-validation
+---
+# Adversarial Review Pipeline â€” Heavy
 
 ## When Selected
 - Type: Audit (sub-routed via adversarial keyword detection + user confirmation)
@@ -16,21 +33,21 @@
 | 2 | sentinel (ORCHESTRATOR_VALIDATION) | 0 | Validate classification correctness |
 | 3 | information-gate | 0b | Deep verification: scope, targets, threat model baseline |
 | 4 | design-interrogator | 0c | Walk adversarial scope decision tree (automatic for COMPLEXA) |
-| 5 | sentinel (phase_0_to_1) | 0→1 | Validate Phase 0 coherence |
+| 5 | sentinel (phase_0_to_1) | 0â†’1 | Validate Phase 0 coherence |
 | 6 | plan-architect | 1.5 | Enter Plan Mode, plan adversarial execution order |
-| 7 | sentinel (phase_1_to_2) | 1→2 | Validate Phase 1 coherence |
+| 7 | sentinel (phase_1_to_2) | 1â†’2 | Validate Phase 1 coherence |
 | 8 | executor-controller | 2 | Dispatch adversarial team via sub-routing |
-| 9 | sentinel (phase_2_to_3) | 2→3 | Validate phase transition coherence |
+| 9 | sentinel (phase_2_to_3) | 2â†’3 | Validate phase transition coherence |
 | 10 | sanity-checker | 3 | Verify report completeness and evidence quality |
 | 11 | final-validator (Pa de Cal) | 3 | Consolidated findings + Go/No-Go |
 | 12 | sentinel (post_final_validator) | 3 | Final coherence validation |
 | 13 | finishing-branch | 3 | Present closeout options |
 
-### Pipeline Discipline (MANDATORY — ALL checkpoints for COMPLEXA)
+### Pipeline Discipline (MANDATORY â€” ALL checkpoints for COMPLEXA)
 
 - **Sentinel checkpoints:** ALL 5 checkpoints (#1-#5) are MANDATORY for COMPLEXA.
-- **Design interrogation:** Automatic for COMPLEXA — defines adversarial scope.
-- **Plan mode:** Automatic for COMPLEXA — plans review execution order.
+- **Design interrogation:** Automatic for COMPLEXA â€” defines adversarial scope.
+- **Plan mode:** Automatic for COMPLEXA â€” plans review execution order.
 - **Phase transitions:** Emit Phase Transition Summary block BEFORE every phase change.
 - **Gate decisions:** Log EVERY gate trigger to `{PIPELINE_DOC_PATH}/gate-decisions.jsonl`.
 - **State file:** Update `sentinel-state.json` via Write tool BEFORE every Agent spawn.
@@ -54,12 +71,12 @@
 
 ### Step 4 (fix mode only): Critical/High Fix
 - Input: Critical/high findings from ADVERSARIAL_CONSOLIDATED
-- Action: executor-implementer-task applies targeted fixes → spec-reviewer → quality-reviewer
+- Action: executor-implementer-task applies targeted fixes â†’ spec-reviewer â†’ quality-reviewer
 - Output: Fixed code + verification
 
 ### Step 5: Pipeline Closeout
-- **Review-only mode:** CONDITIONAL_SKIP { hardness: "SOFT" } — skip spec-reviewer, quality-reviewer, checkpoint-validator. Proceed to sanity-checker → final-validator.
-- **Fix mode:** Normal code-changing post-chain (spec-reviewer → quality-reviewer → checkpoint-validator → sanity-checker → final-validator).
+- **Review-only mode:** CONDITIONAL_SKIP { hardness: "SOFT" } â€” skip spec-reviewer, quality-reviewer, checkpoint-validator. Proceed to sanity-checker â†’ final-validator.
+- **Fix mode:** Normal code-changing post-chain (spec-reviewer â†’ quality-reviewer â†’ checkpoint-validator â†’ sanity-checker â†’ final-validator).
 
 ## Report Format
 
@@ -94,9 +111,9 @@ ADVERSARIAL_CONSOLIDATED:
 - Review-only mode: actionable report delivered, no code modified
 
 ## Escalation
-- Critical security vulnerabilities → recommend immediate remediation, flag as P0
-- Architecture concerns spanning 3+ modules → recommend phased refactor
-- Both scanners find overlapping concerns → high-confidence signal, elevate severity
+- Critical security vulnerabilities â†’ recommend immediate remediation, flag as P0
+- Architecture concerns spanning 3+ modules â†’ recommend phased refactor
+- Both scanners find overlapping concerns â†’ high-confidence signal, elevate severity
 
 ---
 
@@ -105,10 +122,11 @@ ADVERSARIAL_CONSOLIDATED:
 **Team:** Adversarial Heavy
 **Mode:** review +/- fix
 **Agents (execution order):**
-1. adversarial-review-coordinator — scope definition, mode selection (review-only vs fix), finding consolidation
-2. adversarial-security-scanner ‖ adversarial-architecture-critic — parallel independent reviews with ZERO shared context
-3. (fix mode only) executor-implementer-task — targeted fixes for critical/high findings *(shared executor agent, not type-specific — lives at `agents/executor/executor-implementer-task.md`)*
+1. adversarial-review-coordinator â€” scope definition, mode selection (review-only vs fix), finding consolidation
+2. adversarial-security-scanner â€– adversarial-architecture-critic â€” parallel independent reviews with ZERO shared context
+3. (fix mode only) executor-implementer-task â€” targeted fixes for critical/high findings *(shared executor agent, not type-specific â€” lives at `agents/executor/executor-implementer-task.md`)*
 
 **Phase 3 Note:**
 - Review-only mode: report-only pipeline. final-adversarial-orchestrator is SKIPPED. Pipeline proceeds directly to final-validator.
-- Fix mode: code-changing pipeline. Normal Phase 3 applies (sanity-checker → final-adversarial-orchestrator [opt-in] → final-validator).
+- Fix mode: code-changing pipeline. Normal Phase 3 applies (sanity-checker â†’ final-adversarial-orchestrator [opt-in] â†’ final-validator).
+

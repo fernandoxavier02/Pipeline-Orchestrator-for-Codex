@@ -1,4 +1,17 @@
-# Feature Implementation Pipeline — Light
+---
+kind: pipeline-profile
+variant: implement-light
+type: Feature
+complexity: MEDIA
+intensity: light
+batchSize: 3
+summary: Feature implementation flow for medium-scope changes with proportional quality gates.
+checklists:
+  - business-logic
+  - error-handling
+  - input-validation
+---
+# Feature Implementation Pipeline â€” Light
 
 ## When Selected
 - Type: Feature
@@ -16,7 +29,7 @@
 | 6 | executor-controller | 2 | Dispatch per-task subagents in batches of 2-3 |
 | 7 | checkpoint-validator | 2 | Build + tests after each batch |
 | 8 | review-orchestrator | 2 | Independent batch review (adversarial + architecture in parallel) |
-| 9 | sentinel (phase_2_to_3) | 2→3 | Validate phase transition coherence |
+| 9 | sentinel (phase_2_to_3) | 2â†’3 | Validate phase transition coherence |
 | 10 | sanity-checker | 3 | Build + tests + scope verification |
 | 11 | final-adversarial-orchestrator | 3 | Independent final review (recommended, opt-in) |
 | 12 | final-validator (Pa de Cal) | 3 | Go/No-Go decision |
@@ -58,13 +71,13 @@
 
 ### Step 5: Adversarial Gate + Independent Review
 - Input: Checkpoint PASS result + files modified
-- Action: ADVERSARIAL GATE (user approves) → review-orchestrator spawns reviewers in parallel
-- Output: Consolidated findings → fix loop (max 3) if needed
+- Action: ADVERSARIAL GATE (user approves) â†’ review-orchestrator spawns reviewers in parallel
+- Output: Consolidated findings â†’ fix loop (max 3) if needed
 - Gate: User must approve review start. Mandatory if auth/crypto/data touched.
 
 ### Step 5b: Final Adversarial Review (Recommended)
 - Input: All files modified across all batches
-- Action: FINAL ADVERSARIAL GATE (user opts in) → 3 independent reviewers in parallel
+- Action: FINAL ADVERSARIAL GATE (user opts in) â†’ 3 independent reviewers in parallel
 - Output: Cross-batch findings, consensus analysis
 - Gate: Opt-in. Recommended for all.
 
@@ -97,7 +110,8 @@
 **Team:** Feature Light
 **Mode:** code-changing
 **Agents (execution order):**
-1. feature-vertical-slice-planner — scope decomposition, task mapping, acceptance criteria per task
-2. feature-implementer — per-task TDD implementation, batches of 2-3
+1. feature-vertical-slice-planner â€” scope decomposition, task mapping, acceptance criteria per task
+2. feature-implementer â€” per-task TDD implementation, batches of 2-3
 
 **Note:** feature-integration-validator is SKIPPED in Light (cross-slice integration handled inline by checkpoint-validator).
+

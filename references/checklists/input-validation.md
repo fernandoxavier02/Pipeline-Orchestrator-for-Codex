@@ -1,3 +1,28 @@
+---
+kind: checklist
+id: input-validation
+title: Input Validation
+domains:
+  - input
+  - validation
+  - payload
+pathHints:
+  - input
+  - payload
+  - request
+  - schema
+items:
+  - "All user inputs validated on server side (never trust client validation alone)"
+  - "Type checking enforced (string, number, boolean, array)"
+  - "Size/length limits enforced (max string length, max array size, max file size)"
+  - "Format validation for structured inputs (email, URL, date, phone)"
+  - "Sanitization applied before storage or display"
+  - "Enum/allowlist validation for constrained values"
+  - "Nested object depth limited (prevent prototype pollution)"
+  - "Numeric ranges validated (min/max, no negative where inappropriate)"
+  - "Required fields enforced (no silent null/undefined)"
+  - "Array inputs bounded (prevent unbounded iteration)"
+---
 # Adversarial Checklist: Input Validation
 
 ## What to Check

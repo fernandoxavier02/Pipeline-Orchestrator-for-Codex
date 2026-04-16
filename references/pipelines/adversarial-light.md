@@ -1,4 +1,17 @@
-# Adversarial Review Pipeline — Light
+---
+kind: pipeline-profile
+variant: adversarial-light
+type: Audit
+complexity: MEDIA
+intensity: light
+batchSize: 1
+summary: Adversarial review-fix flow for targeted medium-scope audits.
+checklists:
+  - business-logic
+  - error-handling
+  - input-validation
+---
+# Adversarial Review Pipeline â€” Light
 
 ## When Selected
 - Type: Audit (sub-routed via adversarial keyword detection + user confirmation)
@@ -18,7 +31,7 @@
 | 4 | sanity-checker | 3 | Verify report completeness |
 | 5 | final-validator (Pa de Cal) | 3 | Consolidated findings + Go/No-Go |
 
-### Pipeline Discipline (SIMPLES — reduced ceremony)
+### Pipeline Discipline (SIMPLES â€” reduced ceremony)
 
 - **Sentinel checkpoints:** Checkpoint #1 only (ORCHESTRATOR_VALIDATION).
 - **Design interrogation:** SKIPPED for SIMPLES.
@@ -45,11 +58,11 @@
 
 ### Step 4 (fix mode only): Critical/High Fix
 - Input: Critical/high findings from ADVERSARIAL_CONSOLIDATED
-- Action: executor-implementer-task applies targeted fixes → spec-reviewer → quality-reviewer
+- Action: executor-implementer-task applies targeted fixes â†’ spec-reviewer â†’ quality-reviewer
 - Output: Fixed code + verification
 
 ### Step 5: Pipeline Closeout
-- **Review-only mode:** CONDITIONAL_SKIP { hardness: "SOFT" } — proceed to sanity-checker → final-validator.
+- **Review-only mode:** CONDITIONAL_SKIP { hardness: "SOFT" } â€” proceed to sanity-checker â†’ final-validator.
 - **Fix mode:** Normal code-changing post-chain.
 
 ## Success Criteria
@@ -65,10 +78,11 @@
 **Team:** Adversarial Light
 **Mode:** review +/- fix
 **Agents (execution order):**
-1. adversarial-review-coordinator — scope definition, mode selection, finding consolidation
-2. adversarial-security-scanner — independent security review (architecture-critic SKIPPED in light)
-3. (fix mode only) executor-implementer-task — targeted fixes for critical/high findings *(shared executor agent, not type-specific — lives at `agents/executor/executor-implementer-task.md`)*
+1. adversarial-review-coordinator â€” scope definition, mode selection, finding consolidation
+2. adversarial-security-scanner â€” independent security review (architecture-critic SKIPPED in light)
+3. (fix mode only) executor-implementer-task â€” targeted fixes for critical/high findings *(shared executor agent, not type-specific â€” lives at `agents/executor/executor-implementer-task.md`)*
 
 **Phase 3 Note:**
 - Review-only mode: report-only pipeline. Proceeds directly to final-validator.
 - Fix mode: code-changing pipeline. Normal Phase 3 applies.
+

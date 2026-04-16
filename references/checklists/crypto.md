@@ -1,3 +1,28 @@
+---
+kind: checklist
+id: crypto
+title: Cryptography & Secrets
+domains:
+  - crypto
+  - secret
+  - token
+pathHints:
+  - crypto
+  - secret
+  - token
+  - key
+items:
+  - "No hardcoded secrets, API keys, or passwords in source code"
+  - "Secrets loaded from environment variables or secret manager"
+  - "Strong hashing algorithms used (bcrypt/scrypt/argon2, NOT md5/sha1)"
+  - "Encryption uses standard libraries (not custom crypto)"
+  - "HTTPS enforced for all external communication"
+  - "API keys have minimum necessary permissions (least privilege)"
+  - "Secrets are NOT logged or included in error messages"
+  - "Key rotation strategy exists"
+  - ".env files are gitignored"
+  - "Sensitive data encrypted at rest (if stored locally)"
+---
 # Adversarial Checklist: Cryptography & Secrets
 
 ## What to Check

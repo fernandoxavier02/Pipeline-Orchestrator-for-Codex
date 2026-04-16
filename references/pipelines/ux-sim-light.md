@@ -1,4 +1,16 @@
-# UX Simulation Pipeline — Light
+---
+kind: pipeline-profile
+variant: ux-sim-light
+type: UX Simulation
+complexity: MEDIA
+intensity: light
+batchSize: 2
+summary: UX simulation/reporting flow for medium-scope validation work.
+checklists:
+  - error-handling
+  - input-validation
+---
+# UX Simulation Pipeline â€” Light
 
 ## When Selected
 - Type: UX Simulation
@@ -14,13 +26,13 @@
 | 2 | sentinel (ORCHESTRATOR_VALIDATION) | 0 | Validate classification correctness |
 | 3 | information-gate | 0b | Verify: target journey, devices, accessibility requirements |
 | 4 | executor-controller | 2 | Execute journey simulations |
-| 5 | sentinel (phase_2_to_3) | 2→3 | Validate phase transition coherence |
+| 5 | sentinel (phase_2_to_3) | 2â†’3 | Validate phase transition coherence |
 | 6 | sanity-checker | 3 | Verify report completeness |
 | 7 | final-adversarial-orchestrator | 3 | Independent final review (recommended, opt-in) |
 | 8 | final-validator (Pa de Cal) | 3 | UX assessment decision |
 | 9 | finishing-branch | 3 | Present closeout options |
 
-**Note:** UX Simulation pipelines produce REPORTS ONLY — no TDD (quality-gate-router/pre-tester not applicable).
+**Note:** UX Simulation pipelines produce REPORTS ONLY â€” no TDD (quality-gate-router/pre-tester not applicable).
 
 ### Pipeline Discipline (MANDATORY)
 
@@ -54,7 +66,7 @@
 
 ### Step 4b: Final Adversarial Review (Recommended)
 - Input: UX report + all files analyzed
-- Action: FINAL ADVERSARIAL GATE (user opts in) → independent security review
+- Action: FINAL ADVERSARIAL GATE (user opts in) â†’ independent security review
 - Output: Security findings on analyzed code
 - Gate: Opt-in. Recommended if code touches auth/data.
 
@@ -101,10 +113,11 @@ UX_SIMULATION_REPORT:
 **Team:** UX Sim Light
 **Mode:** report-only
 **Agents (execution order):**
-1. ux-simulator — journey simulation, step-by-step friction points, problem classification
-2. ux-qa-validator — problem prioritization, report completeness verification, recommendations assembly
+1. ux-simulator â€” journey simulation, step-by-step friction points, problem classification
+2. ux-qa-validator â€” problem prioritization, report completeness verification, recommendations assembly
 
 **Note:** ux-accessibility-auditor is SKIPPED in Light (accessibility checks handled inline by ux-simulator where applicable).
 
 **Phase 3 Note:**
 This is a report-only pipeline. final-adversarial-orchestrator is SKIPPED (zero code review surface). Pipeline proceeds directly to final-validator.
+

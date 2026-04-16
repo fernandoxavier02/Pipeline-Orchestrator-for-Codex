@@ -1,4 +1,17 @@
-# Audit Pipeline — Light
+---
+kind: pipeline-profile
+variant: audit-light
+type: Audit
+complexity: MEDIA
+intensity: light
+batchSize: 1
+summary: Audit/report-only flow for medium-scope review work.
+checklists:
+  - business-logic
+  - error-handling
+  - input-validation
+---
+# Audit Pipeline â€” Light
 
 ## When Selected
 - Type: Audit
@@ -14,13 +27,13 @@
 | 2 | sentinel (ORCHESTRATOR_VALIDATION) | 0 | Validate classification correctness |
 | 3 | information-gate | 0b | Verify: scope, axes of analysis, stakeholder |
 | 4 | executor-controller | 2 | Dispatch analysis tasks (READ-ONLY) |
-| 5 | sentinel (phase_2_to_3) | 2→3 | Validate phase transition coherence |
+| 5 | sentinel (phase_2_to_3) | 2â†’3 | Validate phase transition coherence |
 | 6 | sanity-checker | 3 | Verify report completeness |
 | 7 | final-adversarial-orchestrator | 3 | Independent final review (recommended, opt-in) |
 | 8 | final-validator (Pa de Cal) | 3 | Report quality assessment |
 | 9 | finishing-branch | 3 | Present closeout options |
 
-**Note:** Audit pipelines produce REPORTS ONLY — no TDD (quality-gate-router/pre-tester not applicable).
+**Note:** Audit pipelines produce REPORTS ONLY â€” no TDD (quality-gate-router/pre-tester not applicable).
 
 ### Pipeline Discipline (MANDATORY)
 
@@ -54,7 +67,7 @@
 
 ### Step 4b: Final Adversarial Review (Recommended)
 - Input: Audit report + all files analyzed
-- Action: FINAL ADVERSARIAL GATE (user opts in) → independent security review
+- Action: FINAL ADVERSARIAL GATE (user opts in) â†’ independent security review
 - Output: Security findings on analyzed code
 - Gate: Opt-in. Recommended if code touches auth/data.
 
@@ -101,11 +114,12 @@ AUDIT_REPORT:
 **Team:** Audit Light
 **Mode:** report-only
 **Agents (execution order):**
-1. audit-intake — scope definition, axis selection, audit plan
-2. audit-compliance-checker — architecture analysis, domain rules, quality assessment, findings with severity ratings
-3. audit-risk-matrix-generator — finding consolidation, structured AUDIT_REPORT generation, recommendations
+1. audit-intake â€” scope definition, axis selection, audit plan
+2. audit-compliance-checker â€” architecture analysis, domain rules, quality assessment, findings with severity ratings
+3. audit-risk-matrix-generator â€” finding consolidation, structured AUDIT_REPORT generation, recommendations
 
 **Note:** audit-domain-analyzer is SKIPPED in Light (domain analysis handled inline by audit-compliance-checker).
 
 **Phase 3 Note:**
 This is a report-only pipeline. final-adversarial-orchestrator is SKIPPED (zero code review surface). Pipeline proceeds directly to final-validator.
+

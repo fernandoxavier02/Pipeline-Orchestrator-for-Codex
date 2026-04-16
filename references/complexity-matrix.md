@@ -1,7 +1,26 @@
+---
+kind: complexity-matrix
+types:
+  - type: Feature
+    light: implement-light
+    heavy: implement-heavy
+  - type: Bug Fix
+    light: bugfix-light
+    heavy: bugfix-heavy
+  - type: Audit
+    light: audit-light
+    heavy: audit-heavy
+  - type: User Story
+    light: user-story-light
+    heavy: user-story-heavy
+  - type: UX Simulation
+    light: ux-sim-light
+    heavy: ux-sim-heavy
+---
 # Complexity Matrix (SSOT)
 
 This is the SINGLE SOURCE OF TRUTH for complexity classification and proportional behavior.
-All agents MUST reference this file — never define complexity rules inline.
+All agents MUST reference this file â€” never define complexity rules inline.
 
 ---
 
@@ -77,7 +96,7 @@ DIRETO = Direct execution without pipeline (build + test only, max 2 files, < 30
 1. Per-batch gate: Show AFTER checkpoint passes, BEFORE review-orchestrator
 2. Final gate: Show AFTER sanity-checker, BEFORE final-validator
 3. Always show token cost estimate for final review
-4. Always show as "RECOMMENDED" or "STRONGLY RECOMMENDED" — never hide
+4. Always show as "RECOMMENDED" or "STRONGLY RECOMMENDED" â€” never hide
 
 ---
 
@@ -111,10 +130,11 @@ The hardness level of each gate is FIXED and does not vary by complexity. What v
 
 | Zone | Score Range | Advisory Signal |
 |------|-------------|-----------------|
-| HIGH | >= 0.80 | High confidence — no score-related concerns |
-| MEDIUM | 0.60 - 0.79 | Moderate confidence — review skipped gates and dimension breakdown |
-| LOW | < 0.60 | Low confidence — investigate root cause, but does NOT force any decision |
+| HIGH | >= 0.80 | High confidence â€” no score-related concerns |
+| MEDIUM | 0.60 - 0.79 | Moderate confidence â€” review skipped gates and dimension breakdown |
+| LOW | < 0.60 | Low confidence â€” investigate root cause, but does NOT force any decision |
 
 **Zone naming convention:** Use `HIGH` / `MEDIUM` / `LOW` in all contexts (pipeline output, PA_DE_CAL YAML, documentation). These are advisory labels, not decision outcomes. The PA_DE_CAL `zone` field in the YAML output uses these same names.
 
-The confidence score is PURELY ADVISORY — it informs the final-validator but NEVER overrides binary PASS/FAIL checks. Thresholds are soft guidelines, not mandatory gates.
+The confidence score is PURELY ADVISORY â€” it informs the final-validator but NEVER overrides binary PASS/FAIL checks. Thresholds are soft guidelines, not mandatory gates.
+

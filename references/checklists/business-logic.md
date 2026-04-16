@@ -1,3 +1,37 @@
+---
+kind: checklist
+id: business-logic
+title: Business Logic
+domains:
+  - business-logic
+  - workflow
+  - state
+pathHints:
+  - proposal
+  - workflow
+  - controller
+  - state-machine
+items:
+  - "Can steps be skipped or reordered? (e.g., payment before validation)"
+  - "Can completed workflows be re-entered or replayed?"
+  - "Are state transitions validated server-side (not just UI)?"
+  - "Can a user force an invalid state by manipulating requests?"
+  - "Can users access resources belonging to other users?"
+  - "Are role checks enforced at every endpoint (not just UI)?"
+  - "Can privilege escalation occur through parameter manipulation?"
+  - "Are admin-only operations properly gated?"
+  - "Can concurrent requests create duplicate resources?"
+  - "Are credit/balance operations atomic?"
+  - "Can time-of-check/time-of-use (TOCTOU) bugs be exploited?"
+  - "Are database operations properly serialized where needed?"
+  - "Can pricing, quantities, or amounts be manipulated client-side?"
+  - "Are discounts/credits validated server-side?"
+  - "Can negative values bypass checks (e.g., negative quantity)?"
+  - "Is the single source of truth for values enforced?"
+  - "Can rate limits be bypassed through batch endpoints?"
+  - "Are bulk operations properly authorized per-item?"
+  - "Can enumeration attacks extract data through bulk queries?"
+---
 # Business Logic Security Checklist
 
 Adversarial review checklist for business logic vulnerabilities. These issues are harder to detect than technical flaws because they exploit valid functionality in unintended ways.

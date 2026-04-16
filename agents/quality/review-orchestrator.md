@@ -56,6 +56,10 @@ REVIEW_CONTEXT:
   pipeline_doc_path: "[path]"
   project_config: {patterns_file, build_command, test_command}
   domains_touched: ["list of domains this batch affects"]
+  review_loop:
+    iteration: [0 for first review, 1..3 for post-fix rounds]
+    max_iterations: 3
+    after_fix: [true | false]
 ```
 
 **NOTE:** This input does NOT include implementation summaries, design decisions, or reasoning from the implementer. This is intentional — reviewers must form their own understanding from the code.
@@ -104,7 +108,10 @@ Wait for ALL reviewers to complete, then merge findings:
 ```yaml
 REVIEW_CONSOLIDATED:
   batch: [N]
-  status: "[PASS | FIX_NEEDED | BLOCKED]"
+  review_loop:
+    iteration: [from REVIEW_CONTEXT.review_loop.iteration]
+    after_fix: [from REVIEW_CONTEXT.review_loop.after_fix]
+  status: "[PASS | FIX_NEEDED | BLOCKED | LOOP_EXHAUSTED]"
   adversarial:
     status: "[from adversarial-batch]"
     findings: {critical: N, important: N, minor: N}
@@ -119,6 +126,9 @@ REVIEW_CONSOLIDATED:
       description: "[what's wrong]"
       recommendation: "[how to fix]"
   action_required: "[NONE | FIX_NEEDED]"
+  round_summary:
+    blocking_findings: [Critical + Important count]
+    minor_findings: [Minor count]
   fix_context:  # only if FIX_NEEDED
     findings: [Critical + Important findings only]
     files_in_scope: [from REVIEW_CONTEXT.files_modified]
@@ -127,6 +137,7 @@ REVIEW_CONSOLIDATED:
 ### Step 4: Return to Pipeline Controller
 
 Return REVIEW_CONSOLIDATED. The pipeline.md handles fix dispatch (executor-fix) — NOT this agent.
+If this is a post-fix round (`review_loop.after_fix = true`), consolidate only the CURRENT round while keeping the same batch identity.
 
 ---
 
@@ -138,9 +149,12 @@ Return REVIEW_CONSOLIDATED. The pipeline.md handles fix dispatch (executor-fix) 
 4. **Proportional** — Only spawn reviewers appropriate to complexity level
 5. **Evidence pass-through** — Forward all evidence (file:line, grep) from reviewers unchanged
 6. **No filtering** — Report ALL findings from ALL reviewers, even if they seem contradictory
+7. **Round-aware** — You may be reinvoked multiple times for the same batch; use `review_loop.iteration` to label the round
+8. **Blocking threshold** — Critical and Important findings mean `FIX_NEEDED`; Minor findings alone do not block the batch
+9. **No silent exhaustion** — If the controller signals the loop cap was reached, report the round as `LOOP_EXHAUSTED`
 
 ---
 
 ## SAVE DOCUMENTATION
 
-Save to `{PIPELINE_DOC_PATH}/04-review-batch-[N].md`
+Save to `{PIPELINE_DOC_PATH}/04-review-batch-[N]-round-[iteration].md`

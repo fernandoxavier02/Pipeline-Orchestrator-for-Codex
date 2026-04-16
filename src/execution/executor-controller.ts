@@ -13,6 +13,12 @@ type ExecutionBatch = {
   files: string[];
 };
 
+type BatchReviewLoopContext = {
+  iteration: number;
+  maxIterations: number;
+  afterFix: boolean;
+};
+
 const authoritativeFinalReviewResultSymbol = Symbol("authoritative-final-review-result");
 
 function normalizeFiles(files: unknown) {
@@ -353,6 +359,52 @@ function resolveComplexity(input: {
 
 function normalizeScenarioPath(path: string) {
   return path.replace(/\\/g, "/");
+}
+
+function createBatchReviewLoopContext(iteration: number): BatchReviewLoopContext {
+  return {
+    iteration,
+    maxIterations: 3,
+    afterFix: iteration > 0,
+  };
+}
+
+function mergeVerificationEvidence(input: {
+  base: {
+    requiredCheckpoints: number;
+    verifiedCheckpoints: number;
+    evidence: string[];
+  };
+  fixDispatch?: unknown;
+  approvedScenarios: string[];
+}) {
+  const approvedScenarios = new Set(input.approvedScenarios.map(normalizeScenarioPath));
+  const fixOutput =
+    input.fixDispatch
+    && typeof input.fixDispatch === "object"
+    && "output" in input.fixDispatch
+    && input.fixDispatch.output
+    && typeof input.fixDispatch.output === "object"
+      ? input.fixDispatch.output as Record<string, unknown>
+      : undefined;
+  const fixTests = [
+    ...(Array.isArray(fixOutput?.TESTS) ? fixOutput.TESTS : []),
+    ...(Array.isArray(fixOutput?.tests) ? fixOutput.tests : []),
+  ]
+    .filter((entry): entry is string => typeof entry === "string")
+    .map(normalizeScenarioPath)
+    .filter((entry, index, values) => values.indexOf(entry) === index)
+    .filter((entry) => approvedScenarios.has(entry));
+  const evidence = [
+    ...input.base.evidence.map(normalizeScenarioPath),
+    ...fixTests,
+  ].filter((entry, index, values) => values.indexOf(entry) === index);
+
+  return {
+    requiredCheckpoints: input.base.requiredCheckpoints,
+    verifiedCheckpoints: Math.min(evidence.length, input.base.requiredCheckpoints),
+    evidence,
+  };
 }
 
 function deriveControllerVerificationEvidence(input: {
@@ -779,7 +831,18 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
         const changedDomains = detectChangedDomains(
           actualChangedFiles.length > 0 ? actualChangedFiles : executionBatch.files,
         );
-        const batchReview = await reviewOrchestrator.reviewBatch({
+        const currentBatchResult = {
+          batch,
+          changedFiles: actualChangedFiles,
+          execution: batchResult.execution && typeof batchResult.execution === "object"
+            ? batchResult.execution
+            : {},
+          review: batchResult.review,
+          batchReview: undefined as unknown,
+          checkpoint,
+        };
+        let activeCheckpoint = checkpoint;
+        let activeBatchReview = await reviewOrchestrator.reviewBatch({
           batch: {
             name: batch.name,
             files: actualChangedFiles.length > 0 ? actualChangedFiles : executionBatch.files,
@@ -787,6 +850,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           changedFiles: actualChangedFiles,
           changedDomains,
           mode: input.mode,
+          reviewLoop: createBatchReviewLoopContext(0),
         });
         checkpointEvidence.push({
           batchName: batch.name,
@@ -794,19 +858,15 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           verifiedCheckpoints: checkpoint.verifiedCheckpoints,
           evidence: verificationEvidence?.evidence ?? [],
         });
+        currentBatchResult.batchReview = activeBatchReview;
 
         if (actualChangedFiles.length === 0) {
           const missingEvidenceReview = createMissingChangedFilesReview(executionBatch);
-          batchResults.push({
-            batch,
-            changedFiles: [],
-            execution: batchResult.execution && typeof batchResult.execution === "object"
-              ? batchResult.execution
-              : {},
-            review: missingEvidenceReview,
-            batchReview,
-            checkpoint,
-          });
+          currentBatchResult.changedFiles = [];
+          currentBatchResult.review = missingEvidenceReview;
+          currentBatchResult.batchReview = activeBatchReview;
+          currentBatchResult.checkpoint = activeCheckpoint;
+          batchResults.push(currentBatchResult);
 
           return {
             status: "blocked",
@@ -826,16 +886,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           };
         }
 
-        batchResults.push({
-          batch,
-          changedFiles: actualChangedFiles,
-          execution: batchResult.execution && typeof batchResult.execution === "object"
-            ? batchResult.execution
-            : {},
-          review: batchResult.review,
-          batchReview,
-          checkpoint,
-        });
+        batchResults.push(currentBatchResult);
 
         if (
           batchResult.review
@@ -876,12 +927,12 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
         });
 
         if (
-          batchReview
-          && typeof batchReview === "object"
-          && "status" in batchReview
-          && batchReview.status === "blocked"
+          activeBatchReview
+          && typeof activeBatchReview === "object"
+          && "status" in activeBatchReview
+          && activeBatchReview.status === "blocked"
         ) {
-          if (batchFixAttempts.length > 0) {
+          if (dependencies.runRole || batchFixAttempts.length > 0) {
             const fixLoopResult = await runFixLoop({
               strategy: "independent-review-rework",
               attemptFix: async ({ attempt, strategy }) => {
@@ -890,7 +941,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
                   batch: executionBatch,
                   attempt,
                   strategy,
-                  findings: resolveReworkFindings(batchReview),
+                  findings: resolveReworkFindings(activeBatchReview),
                   changedDomains,
                 });
                 const structuredResult = parseExecutorFixResult(
@@ -898,9 +949,58 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
                     ? fixDispatch.output
                     : undefined,
                 );
-                const result = structuredResult?.success ?? (batchFixAttempts[attempt - 1] ?? false);
-                appliedFixAttempts.push(result);
-                return result;
+                const fixApplied = structuredResult?.success ?? (batchFixAttempts[attempt - 1] ?? false);
+                appliedFixAttempts.push(fixApplied);
+                if (!fixApplied) {
+                  return false;
+                }
+
+                const loopVerificationEvidence = mergeVerificationEvidence({
+                  base: verificationEvidence,
+                  fixDispatch,
+                  approvedScenarios: proof.approvedScenarios,
+                });
+                activeCheckpoint = await resolveCheckpointValidation({
+                  runRole: dependencies.runRole,
+                  checkpointValidator,
+                  batch: executionBatch,
+                  verificationEvidence: loopVerificationEvidence,
+                  checkpointName: batch.name,
+                  previousFailures: checkpointFailureCount,
+                });
+                checkpointFailureCount = activeCheckpoint.status === "passed"
+                  ? 0
+                  : activeCheckpoint.consecutiveFailures;
+                checkpointEvidence[checkpointEvidence.length - 1] = {
+                  batchName: batch.name,
+                  requiredCheckpoints: activeCheckpoint.requiredCheckpoints,
+                  verifiedCheckpoints: activeCheckpoint.verifiedCheckpoints,
+                  evidence: loopVerificationEvidence.evidence,
+                };
+                currentBatchResult.checkpoint = activeCheckpoint;
+
+                if (activeCheckpoint.status !== "passed") {
+                  return false;
+                }
+
+                activeBatchReview = await reviewOrchestrator.reviewBatch({
+                  batch: {
+                    name: batch.name,
+                    files: actualChangedFiles.length > 0 ? actualChangedFiles : executionBatch.files,
+                  },
+                  changedFiles: actualChangedFiles,
+                  changedDomains,
+                  mode: input.mode,
+                  reviewLoop: createBatchReviewLoopContext(attempt),
+                });
+                currentBatchResult.batchReview = activeBatchReview;
+
+                return !(
+                  activeBatchReview
+                  && typeof activeBatchReview === "object"
+                  && "status" in activeBatchReview
+                  && activeBatchReview.status === "blocked"
+                );
               },
             });
 
@@ -919,8 +1019,8 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
                   regressionProofs: planned.regressionProofs,
                 },
                 review: batchResult.review,
-                batchReview,
-                validation: checkpoint,
+                batchReview: activeBatchReview,
+                validation: activeCheckpoint,
                 proof: {
                   ...proof,
                   checkpointEvidence,
@@ -930,28 +1030,31 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
                 results: batchResults,
               };
             }
-          }
 
-          return {
-            status: "blocked",
-            blockedBy: "BATCH_REVIEW_REWORK",
-            batchSize: planned.batchSize,
-            regressionProofs: planned.regressionProofs,
-            execution: batchResult.execution,
-            review: batchResult.review,
-            batchReview,
-            validation: checkpoint,
-            proof: {
-              ...proof,
-              checkpointEvidence,
-              fixAttempts: appliedFixAttempts,
-            },
-            batches: planned.batches,
-            results: batchResults,
-          };
+            currentBatchResult.batchReview = activeBatchReview;
+            currentBatchResult.checkpoint = activeCheckpoint;
+          } else {
+            return {
+              status: "blocked",
+              blockedBy: "BATCH_REVIEW_REWORK",
+              batchSize: planned.batchSize,
+              regressionProofs: planned.regressionProofs,
+              execution: batchResult.execution,
+              review: batchResult.review,
+              batchReview: activeBatchReview,
+              validation: activeCheckpoint,
+              proof: {
+                ...proof,
+                checkpointEvidence,
+                fixAttempts: appliedFixAttempts,
+              },
+              batches: planned.batches,
+              results: batchResults,
+            };
+          }
         }
 
-        if (checkpoint.status === "failed" && batchFixAttempts.length > 0) {
+        if (activeCheckpoint.status === "failed" && (dependencies.runRole || batchFixAttempts.length > 0)) {
           const fixLoopResult = await runFixLoop({
             strategy: "same-plan",
             attemptFix: async ({ attempt, strategy }) => {
@@ -992,7 +1095,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
                 regressionProofs: planned.regressionProofs,
               },
               review: batchResult.review,
-              validation: checkpoint,
+              validation: activeCheckpoint,
               proof: {
                 ...proof,
                 checkpointEvidence,
@@ -1004,7 +1107,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           }
         }
 
-        if (checkpoint.status === "STOP_RULE") {
+        if (activeCheckpoint.status === "STOP_RULE") {
           return {
             status: "STOP_RULE",
             batchSize: planned.batchSize,
@@ -1017,7 +1120,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
               regressionProofs: planned.regressionProofs,
             },
             review: batchResult.review,
-            validation: checkpoint,
+            validation: activeCheckpoint,
             proof: {
               ...proof,
               checkpointEvidence,
@@ -1028,7 +1131,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           };
         }
 
-        if (checkpoint.status === "failed" && index === planned.batches.length - 1) {
+        if (activeCheckpoint.status === "failed" && index === planned.batches.length - 1) {
           return {
             status: "failed",
             batchSize: planned.batchSize,
@@ -1041,7 +1144,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
               regressionProofs: planned.regressionProofs,
             },
             review: batchResult.review,
-            validation: checkpoint,
+            validation: activeCheckpoint,
             proof: {
               ...proof,
               checkpointEvidence,

@@ -1,3 +1,11 @@
+---
+kind: gate-bank
+gate: macro
+questions:
+  - What is the desired outcome?
+  - Which domains are touched?
+  - What could make this change unsafe?
+---
 # Macro-Gate: Conditional Questions
 
 The information-gate agent uses these conditional question sets to detect knowledge gaps BEFORE pipeline execution begins. Questions are selected based on task type and affected domain.
@@ -86,8 +94,9 @@ These questions are asked ONLY when the classified task touches specific domains
 
 ## Question Protocol
 
-1. **ONE question at a time** — never present the full list
-2. **Skip if answered** — if the answer is present in the user's request, in the code the information-gate read in Step 0, or is directly inferrable from observable project conventions, mark it resolved. The code is part of the context — but only skip if clearly answered, not if "probably fine".
-3. **BLOCKER vs IMPORTANT** — classify each gap by severity
-4. **Max 2 options** — if offering alternatives, present at most 2 with pros/cons
-5. **Stop when clear** — once all relevant gaps are resolved, proceed immediately
+1. **ONE question at a time** â€” never present the full list
+2. **Skip if answered** â€” if the answer is present in the user's request, in the code the information-gate read in Step 0, or is directly inferrable from observable project conventions, mark it resolved. The code is part of the context â€” but only skip if clearly answered, not if "probably fine".
+3. **BLOCKER vs IMPORTANT** â€” classify each gap by severity
+4. **Max 2 options** â€” if offering alternatives, present at most 2 with pros/cons
+5. **Stop when clear** â€” once all relevant gaps are resolved, proceed immediately
+

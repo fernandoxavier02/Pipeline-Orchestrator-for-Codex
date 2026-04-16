@@ -1,4 +1,17 @@
-# Bug Fix Pipeline — Light
+---
+kind: pipeline-profile
+variant: bugfix-light
+type: Bug Fix
+complexity: MEDIA
+intensity: light
+batchSize: 2
+summary: Bug fix flow with proportional validation and focused rework.
+checklists:
+  - error-handling
+  - input-validation
+  - data-integrity
+---
+# Bug Fix Pipeline â€” Light
 
 ## When Selected
 - Type: Bug Fix
@@ -11,12 +24,12 @@
 | 1 | task-orchestrator | 0a | Classify as Bug Fix + MEDIA |
 | 2 | sentinel (ORCHESTRATOR_VALIDATION) | 0 | Validate classification correctness |
 | 3 | information-gate | 0b | Verify: reproduction steps, expected vs actual, recent changes |
-| 4 | quality-gate-router | 2 (TDD) | Generate test scenarios — regression + edge cases |
+| 4 | quality-gate-router | 2 (TDD) | Generate test scenarios â€” regression + edge cases |
 | 5 | pre-tester | 2 (TDD) | Convert approved scenarios to automated tests (RED phase) |
 | 6 | executor-controller | 2 | Dispatch per-task subagents in batches of 2-3 |
 | 7 | checkpoint-validator | 2 | Build + tests after each batch |
 | 8 | review-orchestrator | 2 | Independent batch review (adversarial + architecture in parallel) |
-| 9 | sentinel (phase_2_to_3) | 2→3 | Validate phase transition coherence |
+| 9 | sentinel (phase_2_to_3) | 2â†’3 | Validate phase transition coherence |
 | 10 | sanity-checker | 3 | Build + tests + symptom verification |
 | 11 | final-adversarial-orchestrator | 3 | Independent final review (recommended, opt-in) |
 | 12 | final-validator (Pa de Cal) | 3 | Go/No-Go decision |
@@ -58,13 +71,13 @@
 
 ### Step 5: Adversarial Gate + Independent Review
 - Input: Checkpoint PASS result + files modified
-- Action: ADVERSARIAL GATE (user approves) → review-orchestrator spawns reviewers in parallel
-- Output: Consolidated findings → fix loop (max 3) if needed
+- Action: ADVERSARIAL GATE (user approves) â†’ review-orchestrator spawns reviewers in parallel
+- Output: Consolidated findings â†’ fix loop (max 3) if needed
 - Gate: User must approve review start. Mandatory if auth/crypto/data touched.
 
 ### Step 5b: Final Adversarial Review (Recommended)
 - Input: All files modified across all batches
-- Action: FINAL ADVERSARIAL GATE (user opts in) → 3 independent reviewers in parallel
+- Action: FINAL ADVERSARIAL GATE (user opts in) â†’ 3 independent reviewers in parallel
 - Output: Cross-batch findings, consensus analysis
 - Gate: Opt-in. Recommended for all. Strongly recommended for COMPLEXA.
 
@@ -96,8 +109,9 @@
 **Team:** Bug Fix Light
 **Mode:** code-changing
 **Agents (execution order):**
-1. bugfix-diagnostic-agent — diagnosis, root cause hypothesis, file:line evidence
-2. executor-implementer-task — fix implementation (TDD, batches of 2-3) *(shared executor agent, not type-specific — lives at `agents/executor/executor-implementer-task.md`)*
-3. bugfix-regression-tester — post-fix validation, symptom verification
+1. bugfix-diagnostic-agent â€” diagnosis, root cause hypothesis, file:line evidence
+2. executor-implementer-task â€” fix implementation (TDD, batches of 2-3) *(shared executor agent, not type-specific â€” lives at `agents/executor/executor-implementer-task.md`)*
+3. bugfix-regression-tester â€” post-fix validation, symptom verification
 
 **Note:** bugfix-root-cause-analyzer is SKIPPED in Light (root cause consolidation handled inline by bugfix-diagnostic-agent).
+

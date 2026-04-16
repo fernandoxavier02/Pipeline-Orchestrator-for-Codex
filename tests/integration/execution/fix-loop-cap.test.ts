@@ -81,7 +81,7 @@ describe("fix loop cap", () => {
     expect(secondResult.rollbackRoute).toBe("stop");
   });
 
-  it("opens the fix loop when the per-batch independent review blocks the batch", async () => {
+  it("re-runs checkpoint validation and independent review on every batch fix-loop round until the cap is exhausted", async () => {
     const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
       if (role === "pre-tester") {
         return {
@@ -126,9 +126,23 @@ describe("fix loop cap", () => {
         mode: "single-agent",
         role: "executor-fix",
         output: {
-          status: "attempted",
+          FIX_RESULT: "fixed",
+          CHANGES: ["src/controller/pipeline-controller.ts"],
+          TESTS: ["tests/unit/controller/pipeline-controller.test.ts"],
+          NEXT_ACTION: "re-run-checkpoint",
+          status: "fixed",
         },
       };
+    });
+    const reviewBatch = vi.fn().mockResolvedValue({
+      status: "blocked",
+      findings: [
+        {
+          severity: "important",
+          summary: "Independent batch review still sees an unsafe state transition.",
+          file: "src/controller/pipeline-controller.ts",
+        },
+      ],
     });
     const controller = createExecutorController({
       runBatch: vi.fn().mockResolvedValue({
@@ -145,16 +159,7 @@ describe("fix loop cap", () => {
         fixAttempts: [false, false, false],
       }),
       reviewOrchestrator: {
-        reviewBatch: vi.fn().mockResolvedValue({
-          status: "blocked",
-          findings: [
-            {
-              severity: "important",
-              summary: "Independent batch review still sees an unsafe state transition.",
-              file: "src/controller/pipeline-controller.ts",
-            },
-          ],
-        }),
+        reviewBatch,
       } as any,
       runRole,
       preTester: {
@@ -194,9 +199,33 @@ describe("fix loop cap", () => {
         status: "blocked",
       }),
     );
+    const checkpointCalls = runRole.mock.calls.filter(([request]) => request.role === "checkpoint-validator");
     const executorFixCalls = runRole.mock.calls.filter(([request]) => request.role === "executor-fix");
-    expect(runRole).toHaveBeenCalledTimes(5);
+    expect(checkpointCalls).toHaveLength(4);
     expect(executorFixCalls).toHaveLength(3);
+    expect(reviewBatch).toHaveBeenCalledTimes(4);
+    expect(reviewBatch.mock.calls.map(([request]) => request.reviewLoop)).toEqual([
+      {
+        iteration: 0,
+        maxIterations: 3,
+        afterFix: false,
+      },
+      {
+        iteration: 1,
+        maxIterations: 3,
+        afterFix: true,
+      },
+      {
+        iteration: 2,
+        maxIterations: 3,
+        afterFix: true,
+      },
+      {
+        iteration: 3,
+        maxIterations: 3,
+        afterFix: true,
+      },
+    ]);
     expect(executorFixCalls[0]?.[0]).toEqual(
       expect.objectContaining({
         mode: "single-agent",
@@ -336,7 +365,7 @@ describe("fix loop cap", () => {
     );
   });
 
-  it("treats a structured executor-fix success result as authoritative and exits the loop early", async () => {
+  it("requires a successful post-fix checkpoint and re-review before the batch can complete", async () => {
     const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
       if (role === "pre-tester") {
         return {
@@ -389,6 +418,27 @@ describe("fix loop cap", () => {
         },
       };
     });
+    const reviewBatch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: "blocked",
+        findings: [
+          {
+            severity: "important",
+            summary: "Independent batch review still sees an unsafe state transition.",
+            file: "src/controller/pipeline-controller.ts",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        status: "approved",
+        findings: [],
+      });
+    const finalAdversarialOrchestrator = vi.fn().mockResolvedValue({
+      status: "approved",
+      finalDecision: "approved",
+      findings: [],
+    });
     const controller = createExecutorController({
       runBatch: vi.fn().mockResolvedValue({
         execution: {
@@ -404,17 +454,9 @@ describe("fix loop cap", () => {
         fixAttempts: [false, false, false],
       }),
       reviewOrchestrator: {
-        reviewBatch: vi.fn().mockResolvedValue({
-          status: "blocked",
-          findings: [
-            {
-              severity: "important",
-              summary: "Independent batch review still sees an unsafe state transition.",
-              file: "src/controller/pipeline-controller.ts",
-            },
-          ],
-        }),
+        reviewBatch,
       } as any,
+      finalAdversarialOrchestrator,
       runRole,
     });
 
@@ -433,9 +475,30 @@ describe("fix loop cap", () => {
       approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
     });
 
+    const checkpointCalls = runRole.mock.calls.filter(([request]) => request.role === "checkpoint-validator");
     const executorFixCalls = runRole.mock.calls.filter(([request]) => request.role === "executor-fix");
+
+    expect(checkpointCalls).toHaveLength(2);
+    expect(reviewBatch).toHaveBeenCalledTimes(2);
+    expect(reviewBatch.mock.calls.map(([request]) => request.reviewLoop)).toEqual([
+      {
+        iteration: 0,
+        maxIterations: 3,
+        afterFix: false,
+      },
+      {
+        iteration: 1,
+        maxIterations: 3,
+        afterFix: true,
+      },
+    ]);
     expect(executorFixCalls).toHaveLength(1);
-    expect(result.status).toBe("blocked");
-    expect(result.blockedBy).toBe("BATCH_REVIEW_REWORK");
+    expect(finalAdversarialOrchestrator).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe("completed");
+    expect(result.review).toEqual(
+      expect.objectContaining({
+        status: "approved",
+      }),
+    );
   });
 });

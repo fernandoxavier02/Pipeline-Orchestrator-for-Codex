@@ -1,3 +1,30 @@
+---
+kind: checklist
+id: auth
+title: Authentication & Authorization
+domains:
+  - auth
+  - security
+  - session
+pathHints:
+  - auth
+  - session
+  - permission
+  - credential
+items:
+  - "All protected endpoints require authentication"
+  - "Token validation is server-side (never trust client-only checks)"
+  - "Session management uses secure defaults (httpOnly, secure, sameSite)"
+  - "Password/credential handling follows secure practices"
+  - "OAuth/SSO flows validate state parameter"
+  - "Token expiration is enforced"
+  - "Refresh token rotation is implemented (if applicable)"
+  - "Role-based or attribute-based access control in place"
+  - "Authorization checks happen on EVERY request (not just UI hiding)"
+  - "Resource ownership verified (user can only access their own data)"
+  - "Admin/elevated operations require explicit role check"
+  - "API endpoints enforce same permissions as UI"
+---
 # Adversarial Checklist: Authentication & Authorization
 
 ## What to Check

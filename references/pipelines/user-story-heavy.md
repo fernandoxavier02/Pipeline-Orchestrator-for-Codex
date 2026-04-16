@@ -1,4 +1,18 @@
-# User Story Pipeline — Heavy
+---
+kind: pipeline-profile
+variant: user-story-heavy
+type: User Story
+complexity: COMPLEXA
+intensity: heavy
+batchSize: 1
+summary: Complex user-story flow with tight checkpoints and cross-domain verification.
+checklists:
+  - business-logic
+  - data-integrity
+  - error-handling
+  - input-validation
+---
+# User Story Pipeline â€” Heavy
 
 ## When Selected
 - Type: User Story
@@ -12,26 +26,26 @@
 | 2 | sentinel (ORCHESTRATOR_VALIDATION) | 0 | Validate classification correctness |
 | 3 | information-gate | 0b | Deep verification: persona, journey, acceptance criteria, domain rules |
 | 4 | design-interrogator | 0c | Walk design decision tree (automatic for COMPLEXA) |
-| 5 | sentinel (phase_0_to_1) | 0→1 | Validate Phase 0 coherence |
+| 5 | sentinel (phase_0_to_1) | 0â†’1 | Validate Phase 0 coherence |
 | 6 | plan-architect | 1.5 | Enter Plan Mode, decompose story into implementation plan |
-| 7 | sentinel (phase_1_to_2) | 1→2 | Validate Phase 1 coherence |
+| 7 | sentinel (phase_1_to_2) | 1â†’2 | Validate Phase 1 coherence |
 | 8 | quality-gate-router | 2 (TDD) | Generate test scenarios from acceptance criteria |
 | 9 | pre-tester | 2 (TDD) | Convert approved scenarios to automated tests (RED phase) |
 | 10 | executor-controller | 2 | Translate + execute, 1 task per batch |
 | 11 | checkpoint-validator | 2 | Build + tests + regression after each batch |
 | 12 | review-orchestrator | 2 | Independent batch review (adversarial + architecture in parallel) |
-| 13 | sentinel (phase_2_to_3) | 2→3 | Validate phase transition coherence |
+| 13 | sentinel (phase_2_to_3) | 2â†’3 | Validate phase transition coherence |
 | 14 | sanity-checker | 3 | Full validation + regression + journey verification |
 | 15 | final-adversarial-orchestrator | 3 | Independent final review (strongly recommended, opt-in) |
 | 16 | final-validator (Pa de Cal) | 3 | Go/No-Go with complete evidence |
 | 17 | sentinel (post_final_validator) | 3 | Final coherence validation |
 | 18 | finishing-branch | 3 | Present closeout options (commit/PR/keep/discard) |
 
-### Pipeline Discipline (MANDATORY — ALL checkpoints for COMPLEXA)
+### Pipeline Discipline (MANDATORY â€” ALL checkpoints for COMPLEXA)
 
 - **Sentinel checkpoints:** ALL 5 checkpoints (#1-#5) are MANDATORY for COMPLEXA.
-- **Design interrogation:** Automatic for COMPLEXA — design-interrogator walks decision tree.
-- **Plan mode:** Automatic for COMPLEXA — plan-architect decomposes story into plan.
+- **Design interrogation:** Automatic for COMPLEXA â€” design-interrogator walks decision tree.
+- **Plan mode:** Automatic for COMPLEXA â€” plan-architect decomposes story into plan.
 - **TDD:** quality-gate-router + pre-tester are MANDATORY before executor-controller.
 - **Phase transitions:** Emit Phase Transition Summary block BEFORE every phase change.
 - **Gate decisions:** Log EVERY gate trigger to `{PIPELINE_DOC_PATH}/gate-decisions.jsonl`.
@@ -47,7 +61,7 @@
 
 ### Step 2: Cause-Root Matrix
 - Input: Structured story
-- Action: Identify why this story exists — what problem does it solve?
+- Action: Identify why this story exists â€” what problem does it solve?
 - Output: Problem statement + success metrics
 - Gate: If problem unclear, ASK user
 
@@ -71,13 +85,13 @@
 
 ### Step 6: Adversarial Gate + Independent Review
 - Input: Checkpoint PASS result + files modified
-- Action: ADVERSARIAL GATE (user approves) → review-orchestrator spawns reviewers in parallel
-- Output: Consolidated findings → fix loop (max 3) if needed
+- Action: ADVERSARIAL GATE (user approves) â†’ review-orchestrator spawns reviewers in parallel
+- Output: Consolidated findings â†’ fix loop (max 3) if needed
 - Gate: User must approve review start. Mandatory if auth/crypto/data touched.
 
 ### Step 6b: Final Adversarial Review (Recommended)
 - Input: All files modified across all batches
-- Action: FINAL ADVERSARIAL GATE (user opts in) → 3 independent reviewers in parallel
+- Action: FINAL ADVERSARIAL GATE (user opts in) â†’ 3 independent reviewers in parallel
 - Output: Cross-batch findings, consensus analysis
 - Gate: Opt-in. Strongly recommended for COMPLEXA.
 
@@ -116,8 +130,9 @@
 **Team:** Feature Heavy (referenced from implement-heavy)
 **Mode:** code-changing
 **Agents (execution order):**
-1. feature-vertical-slice-planner — story decomposition into vertical slices, acceptance criteria per slice
-2. feature-implementer — per-task TDD implementation, 1 task per batch
-3. feature-integration-validator — cross-slice integration checks, end-to-end journey verification, acceptance criteria confirmation
+1. feature-vertical-slice-planner â€” story decomposition into vertical slices, acceptance criteria per slice
+2. feature-implementer â€” per-task TDD implementation, 1 task per batch
+3. feature-integration-validator â€” cross-slice integration checks, end-to-end journey verification, acceptance criteria confirmation
 
 **Note:** User Story Heavy uses the same agent team as Feature Heavy. The difference is upstream: user-story pipeline includes NLP story intake and cause-root matrix before reaching executor-controller.
+

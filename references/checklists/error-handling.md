@@ -1,3 +1,28 @@
+---
+kind: checklist
+id: error-handling
+title: Error Handling
+domains:
+  - error
+  - failure
+  - recovery
+pathHints:
+  - controller
+  - handler
+  - error
+  - exception
+items:
+  - "All async operations wrapped in try/catch"
+  - "Error messages do NOT leak sensitive information (stack traces, DB queries, internal paths)"
+  - "Errors logged with sufficient context for debugging"
+  - "User-facing errors are clear and actionable (not \"Internal Server Error\")"
+  - "Graceful degradation when dependencies fail"
+  - "Error contract followed consistently (if project has one)"
+  - "No swallowed errors (empty catch blocks)"
+  - "HTTP status codes are appropriate (not all 500s)"
+  - "Retry logic has bounded attempts and backoff"
+  - "Circuit breaker pattern for external dependencies (if applicable)"
+---
 # Adversarial Checklist: Error Handling
 
 ## What to Check

@@ -1,4 +1,17 @@
-# Bug Fix Pipeline — Heavy
+---
+kind: pipeline-profile
+variant: bugfix-heavy
+type: Bug Fix
+complexity: COMPLEXA
+intensity: heavy
+batchSize: 1
+summary: High-control bug fix flow with deep validation and targeted regression proof.
+checklists:
+  - data-integrity
+  - error-handling
+  - input-validation
+---
+# Bug Fix Pipeline â€” Heavy
 
 ## When Selected
 - Type: Bug Fix
@@ -13,26 +26,26 @@
 | 2 | sentinel (ORCHESTRATOR_VALIDATION) | 0 | Validate classification correctness |
 | 3 | information-gate | 0b | Deep verification: reproduction, environment, frequency, data state |
 | 4 | design-interrogator | 0c | Walk design decision tree (automatic for COMPLEXA) |
-| 5 | sentinel (phase_0_to_1) | 0→1 | Validate Phase 0 coherence |
+| 5 | sentinel (phase_0_to_1) | 0â†’1 | Validate Phase 0 coherence |
 | 6 | plan-architect | 1.5 | Enter Plan Mode, research root cause, generate fix plan |
-| 7 | sentinel (phase_1_to_2) | 1→2 | Validate Phase 1 coherence |
-| 8 | quality-gate-router | 2 (TDD) | Generate test scenarios — regression + reproduction + edge cases |
+| 7 | sentinel (phase_1_to_2) | 1â†’2 | Validate Phase 1 coherence |
+| 8 | quality-gate-router | 2 (TDD) | Generate test scenarios â€” regression + reproduction + edge cases |
 | 9 | pre-tester | 2 (TDD) | Convert approved scenarios to automated tests (RED phase) |
 | 10 | executor-controller | 2 | Dispatch per-task subagents, 1 task per batch |
 | 11 | checkpoint-validator | 2 | Build + tests + regression suite after each batch |
 | 12 | review-orchestrator | 2 | Independent batch review (adversarial + architecture in parallel) |
-| 13 | sentinel (phase_2_to_3) | 2→3 | Validate phase transition coherence |
+| 13 | sentinel (phase_2_to_3) | 2â†’3 | Validate phase transition coherence |
 | 14 | sanity-checker | 3 | Full validation + regression + symptom verification |
 | 15 | final-adversarial-orchestrator | 3 | Independent final review (strongly recommended, opt-in) |
 | 16 | final-validator (Pa de Cal) | 3 | Go/No-Go decision with full evidence |
 | 17 | sentinel (post_final_validator) | 3 | Final coherence validation |
 | 18 | finishing-branch | 3 | Present closeout options (commit/PR/keep/discard) |
 
-### Pipeline Discipline (MANDATORY — ALL checkpoints for COMPLEXA)
+### Pipeline Discipline (MANDATORY â€” ALL checkpoints for COMPLEXA)
 
 - **Sentinel checkpoints:** ALL 5 checkpoints (#1-#5) are MANDATORY for COMPLEXA.
-- **Design interrogation:** Automatic for COMPLEXA — design-interrogator walks decision tree.
-- **Plan mode:** Automatic for COMPLEXA — plan-architect enters read-only Plan Mode.
+- **Design interrogation:** Automatic for COMPLEXA â€” design-interrogator walks decision tree.
+- **Plan mode:** Automatic for COMPLEXA â€” plan-architect enters read-only Plan Mode.
 - **TDD:** quality-gate-router + pre-tester are MANDATORY before executor-controller.
 - **Phase transitions:** Emit Phase Transition Summary block BEFORE every phase change.
 - **Gate decisions:** Log EVERY gate trigger to `{PIPELINE_DOC_PATH}/gate-decisions.jsonl`.
@@ -78,13 +91,13 @@
 
 ### Step 7: Adversarial Gate + Independent Review
 - Input: Checkpoint PASS result + files modified
-- Action: ADVERSARIAL GATE (user approves) → review-orchestrator spawns reviewers in parallel
-- Output: Consolidated findings → fix loop (max 3) if needed
+- Action: ADVERSARIAL GATE (user approves) â†’ review-orchestrator spawns reviewers in parallel
+- Output: Consolidated findings â†’ fix loop (max 3) if needed
 - Gate: User must approve review start. Mandatory if auth/crypto/data touched.
 
 ### Step 7b: Final Adversarial Review (Recommended)
 - Input: All files modified across all batches
-- Action: FINAL ADVERSARIAL GATE (user opts in) → 3 independent reviewers in parallel
+- Action: FINAL ADVERSARIAL GATE (user opts in) â†’ 3 independent reviewers in parallel
 - Output: Cross-batch findings, consensus analysis
 - Gate: Opt-in. Strongly recommended for COMPLEXA.
 
@@ -119,7 +132,8 @@
 **Team:** Bug Fix Heavy
 **Mode:** code-changing
 **Agents (execution order):**
-1. bugfix-diagnostic-agent — terrain reconnaissance, full execution path trace, evidence chain
-2. bugfix-root-cause-analyzer — root cause consolidation, multi-point evidence verification, confidence assessment
-3. executor-implementer-task — controlled fix implementation (TDD, per-task batches) *(shared executor agent, not type-specific — lives at `agents/executor/executor-implementer-task.md`)*
-4. bugfix-regression-tester — post-fix regression suite, symptom verification, edge case coverage
+1. bugfix-diagnostic-agent â€” terrain reconnaissance, full execution path trace, evidence chain
+2. bugfix-root-cause-analyzer â€” root cause consolidation, multi-point evidence verification, confidence assessment
+3. executor-implementer-task â€” controlled fix implementation (TDD, per-task batches) *(shared executor agent, not type-specific â€” lives at `agents/executor/executor-implementer-task.md`)*
+4. bugfix-regression-tester â€” post-fix regression suite, symptom verification, edge case coverage
+
