@@ -17,7 +17,7 @@ This is the canonical `quality gate` and `final validation` entrypoint for the p
 The Codex runtime does not expose `AskUserQuestion`, `EnterPlanMode`, or `ExitPlanMode` as native tools. The controller emulates these primitives through typed helpers:
 
 - `AskUserQuestion` → `src/primitives/ask-user-question.ts` (blocking question serializer with user confirmation)
-- `EnterPlanMode` / `ExitPlanMode` → `src/primitives/plan-mode.ts` (read-only guard during Phase 1.5)
+- `EnterPlanMode` / `ExitPlanMode` → `src/primitives/plan-mode.ts` (write-attempt telemetry during Phase 1.5 — caller must voluntarily report writes via `recordWriteAttempt`; Codex cannot intercept tool calls like CC does)
 
 When the skill orchestrates user confirmation or plan mode, it MUST route through these helpers. Never attempt to call the CC-native tool names directly.
 

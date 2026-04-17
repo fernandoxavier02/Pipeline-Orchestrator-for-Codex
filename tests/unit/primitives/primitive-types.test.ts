@@ -39,6 +39,40 @@ describe("Question value object", () => {
       }),
     ).toThrow();
   });
+
+  it("rejects confirmation question without options", () => {
+    expect(() =>
+      QuestionSchema.parse({
+        id: "q-conf",
+        type: "confirmation",
+        prompt: "Proceed?",
+        gateName: "PROPOSAL_CONFIRM",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects choice question with empty options array", () => {
+    expect(() =>
+      QuestionSchema.parse({
+        id: "q-empty",
+        type: "choice",
+        prompt: "Pick one",
+        options: [],
+        gateName: "CLASSIFICATION_OVERRIDE",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects Response with empty questionId", () => {
+    expect(() =>
+      ResponseSchema.parse({
+        questionId: "",
+        raw: "yes",
+        parsed: "yes",
+        timestamp: new Date().toISOString(),
+      }),
+    ).toThrow();
+  });
 });
 
 describe("PlanSession aggregate", () => {
@@ -60,6 +94,17 @@ describe("PlanSession aggregate", () => {
         startTime: new Date().toISOString(),
         readOnly: true,
         writesAttempted: -1,
+      }),
+    ).toThrow();
+  });
+
+  it("rejects PlanSession with invalid ISO datetime in startTime", () => {
+    expect(() =>
+      PlanSessionSchema.parse({
+        id: "plan-x",
+        startTime: "not-a-date",
+        readOnly: true,
+        writesAttempted: 0,
       }),
     ).toThrow();
   });

@@ -9,11 +9,11 @@ export const QuestionSchema = z
     gateName: z.string().min(1),
   })
   .refine(
-    (q) => q.type !== "choice" || (q.options !== undefined && q.options.length >= 2),
-    { message: "choice questions require options (length >= 2)" },
+    (q) => q.type === "freetext" || (q.options !== undefined && q.options.length >= 2),
+    { message: "choice and confirmation questions require options (length >= 2)" },
   );
 
-export type Question = z.infer<typeof QuestionSchema>;
+export type Question = Readonly<z.infer<typeof QuestionSchema>>;
 
 export const ResponseSchema = z.object({
   questionId: z.string().min(1),
@@ -22,7 +22,7 @@ export const ResponseSchema = z.object({
   timestamp: z.string().datetime(),
 });
 
-export type Response = z.infer<typeof ResponseSchema>;
+export type Response = Readonly<z.infer<typeof ResponseSchema>>;
 
 export const InteractionSchema = z.object({
   id: z.string().min(1),
@@ -31,7 +31,7 @@ export const InteractionSchema = z.object({
   gateName: z.string().min(1),
 });
 
-export type Interaction = z.infer<typeof InteractionSchema>;
+export type Interaction = Readonly<z.infer<typeof InteractionSchema>>;
 
 export const PlanSessionSchema = z.object({
   id: z.string().min(1),
@@ -41,4 +41,4 @@ export const PlanSessionSchema = z.object({
   endTime: z.string().datetime().optional(),
 });
 
-export type PlanSession = z.infer<typeof PlanSessionSchema>;
+export type PlanSession = Readonly<z.infer<typeof PlanSessionSchema>>;
