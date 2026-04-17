@@ -315,3 +315,18 @@ You are a CONTROLLER, not an executor. For EVERY phase:
 - Saying "I chose the conservative approach" to skip spawning → `/pipeline` IS the explicit request
 
 The user chose `/pipeline` specifically to get multi-agent execution. Respect that choice.
+
+### HOTFIX Mode Reduction Table
+
+HOTFIX does NOT skip validation — it reduces scope but maintains safety. The typed policy is in `src/modes/hotfix-mode.ts`.
+
+| Phase | Normal COMPLEXA | HOTFIX |
+|-------|----------------|--------|
+| Info-Gate | Full questions | BLOCKER only |
+| User confirm | Required (full proposal + plan) | 1 emergency-confirmation question only |
+| TDD | Full suite | 1 regression test |
+| Adversarial | 7 checklists | 2 checklists (auth + injection) |
+| Sanity | Build + tests + regression | Build + tests |
+| Pa de Cal | Full | Standard |
+
+Forced classification on entry: `type=Bug Fix, complexity=COMPLEXA, severity=Critical`. Batch size is forced to 1 for maximum control.
