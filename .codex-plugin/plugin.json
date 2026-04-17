@@ -1,6 +1,6 @@
 {
   "name": "pipeline-orchestrator-for-codex",
-  "version": "0.2.1",
+  "version": "1.0.0",
   "description": "Full-depth prompt-driven pipeline orchestrator for Codex with 4 phases, 36 specialist agents, confidence scoring, TDD gates, and adversarial review.",
   "author": {
     "name": "Fernando Xavier - FX Studio AI",
