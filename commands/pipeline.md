@@ -1,7 +1,7 @@
 ---
 description: "Single-command multi-agent pipeline. Auto-classifies, confirms with the user, executes in batches, enforces adversarial review per batch, and finishes with quality gate plus final validation."
-allowed-tools: Skill, Read, Bash, Task
-argument-hint: [diagnostic|continue|review-only|--simples|--media|--complexa|--hotfix|--grill|--plan] <tarefa>
+allowed-tools: Task, Read, Write, Bash, Glob, Grep, TodoWrite, Skill
+argument-hint: "[diagnostic|continue|review-only|--simples|--media|--complexa|--hotfix|--grill|--plan] <tarefa>"
 ---
 
 # /pipeline
@@ -11,6 +11,15 @@ Use a skill `pipeline-orchestrator-for-codex:pipeline`
 Nao dependa de skills globais legadas.
 
 This is the canonical `quality gate` and `final validation` entrypoint for the plugin.
+
+## Codex Primitive Emulation
+
+The Codex runtime does not expose `AskUserQuestion`, `EnterPlanMode`, or `ExitPlanMode` as native tools. The controller emulates these primitives through typed helpers:
+
+- `AskUserQuestion` → `src/primitives/ask-user-question.ts` (blocking question serializer with user confirmation)
+- `EnterPlanMode` / `ExitPlanMode` → `src/primitives/plan-mode.ts` (read-only guard during Phase 1.5)
+
+When the skill orchestrates user confirmation or plan mode, it MUST route through these helpers. Never attempt to call the CC-native tool names directly.
 
 ## Instructions
 
