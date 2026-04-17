@@ -15,29 +15,37 @@ describe("version consistency across manifests", () => {
   const hooksJson = readFileSync(join(ROOT, "hooks", "hooks.json"), "utf8");
   const changelog = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
 
-  it("plugin.json version is 1.0.0", () => {
-    expect(pluginJson.version).toBe("1.0.0");
+  it("plugin.json version is 0.3.0", () => {
+    expect(pluginJson.version).toBe("0.3.0");
   });
 
   it("package.json version matches plugin.json", () => {
     expect(pkgJson.version).toBe(pluginJson.version);
   });
 
-  it("SessionStart banner mentions v1.0.0", () => {
-    expect(hooksJson).toContain("v1.0.0");
+  it("SessionStart banner mentions v0.3.0", () => {
+    expect(hooksJson).toContain("v0.3.0");
   });
 
-  it("CHANGELOG has an entry for 1.0.0", () => {
-    expect(changelog).toMatch(/##\s+\[?1\.0\.0\]?/);
+  it("CHANGELOG has an entry for 0.3.0", () => {
+    expect(changelog).toMatch(/##\s+\[?0\.3\.0\]?/);
   });
 
-  it("CHANGELOG 1.0.0 entry references all 7 gap IDs", () => {
+  it("CHANGELOG 0.3.0 entry references all 7 gap IDs", () => {
     const gapIds = ["GAP-01", "GAP-02", "GAP-03", "GAP-05", "GAP-06", "GAP-07", "GAP-08"];
     const entry = changelog
-      .split(/##\s+\[?1\.0\.0\]?/)[1]
-      ?.split(/##\s+\[?0\./)[0] ?? "";
+      .split(/##\s+\[?0\.3\.0\]?/)[1]
+      ?.split(/##\s+\[?0\.2\./)[0] ?? "";
     for (const gap of gapIds) {
       expect(entry).toContain(gap);
     }
+  });
+
+  it("CHANGELOG 0.3.0 entry discloses Known Limitations (runtime wiring deferred)", () => {
+    const entry = changelog
+      .split(/##\s+\[?0\.3\.0\]?/)[1]
+      ?.split(/##\s+\[?0\.2\./)[0] ?? "";
+    expect(entry).toMatch(/Known Limitations/);
+    expect(entry).toMatch(/not yet wired/i);
   });
 });

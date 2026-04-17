@@ -1,0 +1,10 @@
+{
+  "current_phase": "0",
+  "expected_next": "codex-audit-parallel-spawn",
+  "classification": {
+    "task_type": "Audit",
+    "complexity": "COMPLEXA",
+    "pipeline_variant": "audit-heavy-codex-specialist"
+  },
+  "timestamp": "2026-04-17T14:30:00Z"
+}

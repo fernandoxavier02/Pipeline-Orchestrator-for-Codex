@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Pipeline Orchestrator for Codex v1.0.0 loaded. Parity with Claude Code v3.8.0. Try: /pipeline [task] for full execution, /pipeline diagnostic [task] to preview without executing, /pipeline --grill [task] for design interrogation, /pipeline --hotfix [task] for emergency bypass. Config: create .codex/pipeline.local.md to set build/test commands (optional — auto-detection available)."
+            "prompt": "Pipeline Orchestrator for Codex v0.3.0 loaded. Parity contracts + tool-allowlist aligned with CC v3.8.0 (runtime wiring deferred — see CHANGELOG). Try: /pipeline [task] for full execution, /pipeline diagnostic [task] to preview without executing, /pipeline --grill [task] for design interrogation, /pipeline --hotfix [task] for emergency bypass. Config: create .codex/pipeline.local.md to set build/test commands (optional — auto-detection available)."
           }
         ]
       }
