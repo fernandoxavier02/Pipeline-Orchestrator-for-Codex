@@ -19,6 +19,8 @@
 // CONFIGURAÇÃO
 // ============================================================
 
+const { recordHookEvent } = require('./hook-events.cjs');
+
 // Padrões de SKILLS - usa skill, não precisa de orchestrator externo
 const SKILL_PATTERNS = [
   /^\/(context|commit|code-review|fix|verify|deploy|qa|test|pipeline)/i,
@@ -214,6 +216,12 @@ process.stdin.on('end', () => {
 
     // 1. Se é conversacional/meta → passa direto
     if (isTrivialChat(prompt)) {
+      recordHookEvent({
+        hook: 'force-pipeline-agents',
+        event: 'UserPromptSubmit',
+        decision: 'allow_trivial',
+        reason: 'trivial chat',
+      });
       console.log(JSON.stringify({ continue: true }));
       return;
     }
@@ -221,6 +229,12 @@ process.stdin.on('end', () => {
     // 2. Se é skill → passa direto (skill tem seu próprio fluxo)
     if (isSkillCommand(prompt)) {
       const isPipelineSkill = /^\/(pipeline-orchestrator(-for-codex)?:pipeline|pipeline)\b/i.test(prompt.trim());
+      recordHookEvent({
+        hook: 'force-pipeline-agents',
+        event: 'UserPromptSubmit',
+        decision: isPipelineSkill ? 'inject_pipeline_skill_message' : 'allow_skill',
+        reason: isPipelineSkill ? 'pipeline command invoked' : 'skill command detected',
+      });
       console.log(JSON.stringify({
         continue: true,
         systemMessage: isPipelineSkill ? PIPELINE_SKILL_MESSAGE : SKILL_MESSAGE
@@ -230,6 +244,12 @@ process.stdin.on('end', () => {
 
     // 3. Se é request de implementação → FORÇA usar Task tool
     if (isPipelineWorthy(prompt)) {
+      recordHookEvent({
+        hook: 'force-pipeline-agents',
+        event: 'UserPromptSubmit',
+        decision: 'inject_pipeline_message',
+        reason: 'pipeline-worthy prompt',
+      });
       console.log(JSON.stringify({
         continue: true,
         systemMessage: ENFORCEMENT_MESSAGE
@@ -238,6 +258,12 @@ process.stdin.on('end', () => {
     }
 
     // 4. Caso não identificado → passa mas sugere orchestrator
+    recordHookEvent({
+      hook: 'force-pipeline-agents',
+      event: 'UserPromptSubmit',
+      decision: 'suggest_orchestrator',
+      reason: 'unclassified prompt',
+    });
     console.log(JSON.stringify({
       continue: true,
       systemMessage: "💡 Considere usar o Task tool com task-orchestrator para classificar esta solicitação."

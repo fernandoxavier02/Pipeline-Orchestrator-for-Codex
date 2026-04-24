@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Strict real-agent dispatch contract for pipeline roles. `runRole` can now require a real Codex agent adapter and fails with `AgentRuntimeUnavailableError` instead of silently using local emulation.
+- Runtime option `strictAgents` plus `agentRuntime` adapter plumbing for hosts that can bridge to `spawn_agent`.
+- Hook observability log at `.codex/pipeline/hook-events.jsonl` for `UserPromptSubmit`, `PreToolUse`, and `Stop` hook decisions.
+
+### Changed
+
+- `/pipeline` command and skill docs now state that `spawn_agent` is mandatory and that missing agent support must block as `blocked-no-agent-runtime`.
+- `sentinel-hook.cjs` now understands the runtime camelCase `sentinel-state.json` schema (`pipelineActive`, `expectedNext`, `updatedAt`) while retaining legacy snake_case compatibility.
+- README installation examples now reference version `0.3.0` and document strict real-agent enforcement plus hook audit logs.
+
 ## [0.3.0] — 2026-04-17
 
 ### Parity contracts release — CC v3.8.0 parity ships as types, documentation, and one runtime behavior change. Runtime consolidation is deferred (see Known Limitations).

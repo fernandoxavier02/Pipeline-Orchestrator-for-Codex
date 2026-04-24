@@ -12,6 +12,12 @@ Nao dependa de skills globais legadas.
 
 This is the canonical `quality gate` and `final validation` entrypoint for the plugin.
 
+## Strict Real-Agent Contract
+
+`spawn_agent is mandatory` for `/pipeline`. The command is an explicit request for Codex subagent execution, so the controller must spawn the pipeline agents rather than executing their work inline.
+
+If the host runtime cannot provide `spawn_agent`, the pipeline must stop with `blocked-no-agent-runtime`. Do not silently fall back to TypeScript local emulation for `/pipeline`; local TypeScript dispatch is only a contract/test harness unless a real agent adapter is supplied.
+
 ## Codex Primitive Emulation
 
 The Codex runtime does not expose `AskUserQuestion`, `EnterPlanMode`, or `ExitPlanMode` as native tools. The controller emulates these primitives through typed helpers:

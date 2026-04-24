@@ -418,6 +418,8 @@ export function createPipelineRuntime(options: RuntimeOptions) {
 
     return runRole({
       ...request,
+      requireRealAgent: request.requireRealAgent ?? options.strictAgents ?? false,
+      agentRuntime: request.agentRuntime ?? options.agentRuntime,
       prompt,
       team,
     });

@@ -27,6 +27,11 @@ export function createReviewOrchestrator(dependencies = {}) {
     return {
         async reviewBatch(input) {
             const files = input.changedFiles?.length ? input.changedFiles : input.batch.files;
+            const reviewLoop = input.reviewLoop ?? {
+                iteration: 0,
+                maxIterations: 3,
+                afterFix: false,
+            };
             const dispatch = await runRole({
                 mode: "multi-agent",
                 role: "review-orchestrator",
@@ -39,6 +44,7 @@ export function createReviewOrchestrator(dependencies = {}) {
                     files: [...files],
                     changedDomains: [...(input.changedDomains ?? [])],
                     mode: input.mode,
+                    reviewLoop,
                     reviewOnly: true,
                 },
                 filesInScope: [...files],
@@ -59,6 +65,7 @@ export function createReviewOrchestrator(dependencies = {}) {
                             files: [...files],
                             changedDomains: [...(input.changedDomains ?? [])],
                             mode: input.mode,
+                            reviewLoop,
                             reviewOnly: true,
                         },
                         filesInScope: [...files],
@@ -81,6 +88,7 @@ export function createReviewOrchestrator(dependencies = {}) {
                             files: [...files],
                             changedDomains: [...(input.changedDomains ?? [])],
                             mode: input.mode,
+                            reviewLoop,
                             reviewOnly: true,
                         },
                         filesInScope: [...files],
@@ -102,6 +110,7 @@ export function createReviewOrchestrator(dependencies = {}) {
                             files: [...files],
                             changedDomains: [...(input.changedDomains ?? [])],
                             mode: input.mode,
+                            reviewLoop,
                             reviewOnly: true,
                         },
                         filesInScope: [...files],
@@ -118,6 +127,7 @@ export function createReviewOrchestrator(dependencies = {}) {
                 batch: input.batch.name,
                 files,
                 changedDomains: input.changedDomains ?? [],
+                reviewLoop,
                 status: dispatch.output
                     && typeof dispatch.output === "object"
                     && "status" in dispatch.output

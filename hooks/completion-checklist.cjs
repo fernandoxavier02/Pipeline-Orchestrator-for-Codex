@@ -18,6 +18,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { recordHookEvent } = require('./hook-events.cjs');
 
 /**
  * Detecta se alguma spec com audit_source existe no projeto.
@@ -129,6 +130,13 @@ process.stdin.on('end', () => {
     contextParts.push('');
     contextParts.push('Se algum item nao foi cumprido, considere completar antes de finalizar.');
     contextParts.push('Se build falhou 2x: PARAR e analisar causa raiz (Stop Rule).');
+
+    recordHookEvent({
+      hook: 'completion-checklist',
+      event: 'Stop',
+      decision: 'inject_completion_checklist',
+      reason: 'stop hook checklist emitted',
+    });
 
     console.log(JSON.stringify({
       continue: true,

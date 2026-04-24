@@ -2,9 +2,29 @@ import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { AgentRuntimeUnavailableError } from "../../../src/dispatcher/run-role.js";
 import { createPipelineRuntime } from "../../../src/index.js";
 
 describe("pipeline execution", () => {
+  it("blocks strict runtime dispatch when no real agent adapter is available", async () => {
+    const runtime = createPipelineRuntime({
+      cwd: process.cwd(),
+      codexHome: process.cwd(),
+      strictAgents: true,
+    });
+
+    await expect(runtime.dispatcher.runRole({
+      mode: "single-agent",
+      role: "information-gate",
+      phase: "phase-0",
+      prompt: "Ask one question at a time.",
+      input: { request: "/pipeline audit current agents" },
+      expectedOutput: ["INFORMATION_GATE", "STATUS"],
+      ownership: ["agents/core/information-gate.md"],
+      freshContext: true,
+    })).rejects.toThrow(AgentRuntimeUnavailableError);
+  });
+
   it("builds batches, runs review, and returns a closeout summary", async () => {
     const runtime = createPipelineRuntime({
       cwd: process.cwd(),

@@ -15,6 +15,8 @@ The entire purpose of this plugin is to dispatch specialized worker agents.
 - **NEVER** execute agent work inline in your own context. Not even "to save time."
 - **NEVER** rationalize skipping spawns with "the user didn't explicitly ask for agents." They did — by invoking `/pipeline`.
 - If you find yourself writing an audit report, classification, or review WITHOUT having called `spawn_agent` first, YOU ARE DOING IT WRONG. Stop and spawn the agent.
+- If `spawn_agent` is unavailable, stop with `blocked-no-agent-runtime` and tell the user that real Codex agent support is required.
+- Do not fall back to TypeScript local emulation for `/pipeline`; emulation is only a test/contract harness and must never be presented as real agent execution.
 
 This rule applies to ALL modes: audits, bug fixes, features, reviews — everything.
 The user invoked `/pipeline`. That IS the explicit request to use subagents.
@@ -43,7 +45,7 @@ For EVERY agent dispatch in the phases below:
 **Step 4.** Parse the structured output block (CLASSIFICATION, INFORMATION_GATE, BATCH_RESULT, etc.)
 **Step 5.** Proceed to next phase.
 
-If `spawn_agent` fails or is unavailable, tell the user: "spawn_agent is not available in this session. The pipeline requires multi-agent support. Check that multi_agent = true in ~/.codex/config.toml."
+If `spawn_agent` fails or is unavailable, tell the user: "blocked-no-agent-runtime: spawn_agent is not available in this session. The pipeline requires real Codex agent support. Check that multi_agent = true in ~/.codex/config.toml." Do not continue inline.
 
 The agent prompt files live inside this plugin's `agents/` directory. To find them dynamically, run:
 ```bash
@@ -171,6 +173,21 @@ Read file: `agents/core/checkpoint-validator.md`
 
 Dispatch a worker agent to run build + tests and validate the batch.
 
+If the batch changes any of the following, checkpoint validation must also require versioning evidence before it can pass:
+
+- dataset contracts or generated bundles
+- label logic or target definitions
+- feature packages or training columns
+- prompt packs, schemas, or other durable comparison surfaces
+- experiment, benchmark, backtest, or training artifacts
+
+Minimum versioning evidence for those batches:
+
+- manifest or record path persisted in the repo
+- explicit version identifiers or contract names
+- artifact path(s) actually produced
+- enough detail to reproduce the effective labels/features/inputs later
+
 If checkpoint fails 2 consecutive times → STOP (stop rule).
 
 ### Step 2.4 — Adversarial Review Gate (per batch)
@@ -223,6 +240,8 @@ Dispatch a worker agent. It consolidates ALL results and emits:
 - **GO**: All clear, ready to merge
 - **CONDITIONAL**: Minor issues, can proceed with notes
 - **NO-GO**: Critical issues, must fix before proceeding
+
+If the work changed versioned behavior such as labels, features, datasets, prompts, schemas, or benchmark/training contracts, Final Validator must treat missing provenance as missing evidence. No optimistic closeout without the persisted manifest/record path.
 
 ### Step 3.4 — Finishing Branch
 
@@ -286,6 +305,7 @@ SIMPLES = direct execution (no pipeline phases, just do the task).
 3. **One question at a time**: When asking the user for info, ask ONE focused question.
 4. **Agent isolation**: Each agent gets fresh context. Do not leak your accumulated context into agent prompts.
 5. **User gates**: Always ask before adversarial review phases. Never skip confirmation.
+6. **Versioned work needs provenance**: If the batch changes labels, features, datasets, prompts, schemas, or durable experiment outputs, require persisted version identifiers and artifact paths before claiming completion.
 
 ## Configuration
 

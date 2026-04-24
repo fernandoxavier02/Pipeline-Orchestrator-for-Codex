@@ -20,12 +20,14 @@
 
 const fs = require('fs');
 const path = require('path');
+const { recordHookEvent } = require('./hook-events.cjs');
 
 // ── Auto-Discovery ──────────────────────────────────────────────────────────
 
 // Find the most recent sentinel-state.json without depending on env vars.
 // Priority 1: PIPELINE_DOC_PATH env var (backwards compatible override)
-// Priority 2: Scan .pipeline/docs/Pre-{level}-action/{session}/sentinel-state.json by mtime
+// Priority 2: Codex runtime state at .codex/pipeline/sentinel-state.json
+// Priority 3: Scan .pipeline/docs/Pre-{level}-action/{session}/sentinel-state.json by mtime
 // Returns: absolute path to sentinel-state.json, or null if not found.
 function discoverStatePath() {
   // Priority 1: explicit env var (backwards compatible)
@@ -37,7 +39,13 @@ function discoverStatePath() {
     } catch { /* ignore */ }
   }
 
-  // Priority 2: auto-discovery from .pipeline/docs/
+  // Priority 2: Codex runtime controller state
+  const codexRuntimeCandidate = path.join(process.cwd(), '.codex', 'pipeline', 'sentinel-state.json');
+  try {
+    if (fs.existsSync(codexRuntimeCandidate)) return codexRuntimeCandidate;
+  } catch { /* ignore */ }
+
+  // Priority 3: auto-discovery from .pipeline/docs/
   const baseDir = path.join(process.cwd(), '.pipeline', 'docs');
   try {
     if (!fs.existsSync(baseDir)) return null;
@@ -70,6 +78,25 @@ function discoverStatePath() {
   } catch { /* baseDir read error, return null */ }
 
   return newest;
+}
+
+function normalizeState(state) {
+  const expectedNextRaw = state.expectedNext ?? state.expected_next ?? [];
+  const expectedNext = Array.isArray(expectedNextRaw)
+    ? expectedNextRaw.filter((entry) => typeof entry === 'string')
+    : typeof expectedNextRaw === 'string'
+      ? [expectedNextRaw]
+      : [];
+
+  return {
+    schemaVersion: state.schema_version,
+    pipelineActive: state.pipelineActive ?? state.pipeline_active,
+    currentPhase: state.currentPhase ?? state.current_phase,
+    expectedNext,
+    lastUpdated: state.updatedAt ?? state.last_updated,
+    consecutiveCorrections: state.consecutiveCorrections ?? state.consecutive_corrections ?? 0,
+    variant: state.variant,
+  };
 }
 
 // ── Main Handler ────────────────────────────────────────────────────────────
@@ -111,6 +138,14 @@ function handleInput(raw) {
     const BOOTSTRAP_AGENTS = ['task-orchestrator'];
 
     if (BOOTSTRAP_AGENTS.includes(agentName)) {
+      recordHookEvent({
+        hook: 'sentinel',
+        event: 'PreToolUse',
+        decision: 'allow-bootstrap',
+        attempted: agentName,
+        expected: 'task-orchestrator',
+        reason: 'bootstrap permitted without state',
+      });
       return process.exit(0); // fail-open: bootstrap permitted
     }
 
@@ -127,6 +162,14 @@ function handleInput(raw) {
           'If resuming, use /pipeline continue to restore state.'
       }
     };
+    recordHookEvent({
+      hook: 'sentinel',
+      event: 'PreToolUse',
+      decision: 'deny',
+      attempted: agentName,
+      expected: 'sentinel-state.json',
+      reason: 'missing sentinel state',
+    });
     console.log(JSON.stringify(output));
     return process.exit(0);
   }
@@ -140,19 +183,21 @@ function handleInput(raw) {
     return process.exit(0);
   }
 
-  // 7. Schema version check
-  if (state.schema_version !== 1) {
+  const normalizedState = normalizeState(state);
+
+  // 7. Schema version check (legacy snake_case files only)
+  if (normalizedState.schemaVersion !== undefined && normalizedState.schemaVersion !== 1) {
     return process.exit(0); // incompatible version → don't interfere
   }
 
   // 8. Pipeline inactive? → silent pass
-  if (!state.pipeline_active) {
+  if (!normalizedState.pipelineActive) {
     return process.exit(0);
   }
 
   // 9. Stale state detection (collected, NOT early-return — divergence check must ALWAYS run)
   const STALE_THRESHOLD_MS = 300_000; // 300 seconds (5 minutes)
-  const lastUpdated = state.last_updated ? new Date(state.last_updated).getTime() : 0;
+  const lastUpdated = normalizedState.lastUpdated ? new Date(normalizedState.lastUpdated).getTime() : 0;
   const elapsed = Date.now() - lastUpdated;
   let staleWarning = null;
 
@@ -161,12 +206,12 @@ function handleInput(raw) {
     staleWarning =
       `SENTINEL WARNING: State file is ${elapsedSec}s old (threshold: 60s). ` +
       `The controller may have forgotten to update sentinel-state.json before this spawn. ` +
-      `expected_next="${state.expected_next || '?'}" may be stale. ` +
+      `expectedNext="${normalizedState.expectedNext.join(', ') || '?'}" may be stale. ` +
       `Verify that you updated the state file via Write tool BEFORE this Agent call.`;
   }
 
   // 10. Circuit breaker: 3+ consecutive corrections
-  if ((state.consecutive_corrections || 0) >= 3) {
+  if (normalizedState.consecutiveCorrections >= 3) {
     process.stderr.write(
       'SENTINEL CIRCUIT_BREAKER: 3 consecutive corrections without PASS. ' +
       'Pipeline needs manual intervention. ' +
@@ -177,10 +222,18 @@ function handleInput(raw) {
   }
 
   // 11. Compare target vs expected_next (ALWAYS runs, even if stale)
-  const expected = (state.expected_next || '').toLowerCase();
+  const expectedValues = normalizedState.expectedNext.map((entry) => entry.toLowerCase());
   const target = agentName.toLowerCase();
 
-  if (target === expected) {
+  if (expectedValues.includes(target)) {
+    recordHookEvent({
+      hook: 'sentinel',
+      event: 'PreToolUse',
+      decision: 'allow',
+      attempted: agentName,
+      expected: normalizedState.expectedNext.join(', '),
+      reason: 'agent matched expectedNext',
+    });
     // MATCH → allow (with stale warning if applicable)
     if (staleWarning) {
       const output = {
@@ -196,7 +249,15 @@ function handleInput(raw) {
   }
 
   // 12. Check if this is a known alias or partial match
-  if (expected && fullAgentType.toLowerCase().endsWith(expected)) {
+  if (expectedValues.some((expected) => expected && fullAgentType.toLowerCase().endsWith(expected))) {
+    recordHookEvent({
+      hook: 'sentinel',
+      event: 'PreToolUse',
+      decision: 'allow',
+      attempted: agentName,
+      expected: normalizedState.expectedNext.join(', '),
+      reason: 'agent matched expected suffix',
+    });
     return process.exit(0); // suffix match → allow
   }
 
@@ -208,16 +269,24 @@ function handleInput(raw) {
       permissionDecisionReason:
         `SENTINEL DIVERGENCE DETECTED.\n` +
         `  Attempted: "${agentName}"\n` +
-        `  Expected:  "${state.expected_next}" (Phase ${state.current_phase || '?'}, Variant: ${state.variant || '?'})\n\n` +
+        `  Expected:  "${normalizedState.expectedNext.join(', ')}" (Phase ${normalizedState.currentPhase || '?'}, Variant: ${normalizedState.variant || '?'})\n\n` +
         `ACTION REQUIRED: Spawn the sentinel agent (subagent_type: "pipeline-orchestrator-for-codex:core:sentinel") ` +
         `with mode SEQUENCE_VALIDATION to diagnose and auto-correct.\n` +
         `Pass these parameters in the prompt:\n` +
         `  - mode: SEQUENCE_VALIDATION\n` +
         `  - state_file_path: ${stateFilePath}\n` +
         `  - trigger: hook_deny\n` +
-        `  - deny_reason: Attempted "${agentName}" but expected "${state.expected_next}"`
+        `  - deny_reason: Attempted "${agentName}" but expected "${normalizedState.expectedNext.join(', ')}"`
     }
   };
+  recordHookEvent({
+    hook: 'sentinel',
+    event: 'PreToolUse',
+    decision: 'deny',
+    attempted: agentName,
+    expected: normalizedState.expectedNext.join(', '),
+    reason: 'sentinel divergence',
+  });
   console.log(JSON.stringify(output));
   process.exit(0);
 }

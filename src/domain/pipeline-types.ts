@@ -1,3 +1,5 @@
+import type { AgentRuntimeAdapter } from "../dispatcher/dispatcher-types.js";
+
 export const PIPELINE_MODES = [
   "full",
   "diagnostic",
@@ -30,4 +32,6 @@ export type PipelineVariant =
 export interface RuntimeOptions {
   cwd: string;
   codexHome: string;
+  strictAgents?: boolean;
+  agentRuntime?: AgentRuntimeAdapter;
 }

@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Codex_CLI-Plugin-14532D?style=for-the-badge&logo=openai&logoColor=white" alt="Codex Plugin" />
-  <img src="https://img.shields.io/badge/version-0.2.0-blue?style=for-the-badge" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.3.0-blue?style=for-the-badge" alt="Version" />
   <img src="https://img.shields.io/badge/agents-36-orange?style=for-the-badge" alt="Agents" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License" />
 </p>
@@ -52,12 +52,12 @@ codex install fx-studio-ai/pipeline-orchestrator-for-codex
 git clone https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git
 
 # Install into Codex plugins cache
-mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.2.0
-cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.2.0/
+mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.3.0
+cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.3.0/
 
 # Optional: Install Node.js dependencies (only needed for TypeScript development/testing)
 # The plugin works WITHOUT npm install — hooks use only Node.js builtins (fs, path)
-# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.2.0
+# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.3.0
 # npm install --production
 ```
 
@@ -70,7 +70,7 @@ npm install
 
 # Create a symlink in the plugins cache
 mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex
-ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.2.0
+ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.3.0
 ```
 
 ### Verify Installation
@@ -214,6 +214,7 @@ That's it. The orchestrator handles classification, proposal, execution, and val
 
 | Mechanism | Description |
 |:----------|:------------|
+| **Strict Real-Agent Runtime** | `/pipeline` requires real `spawn_agent` execution; without an agent adapter it blocks with `blocked-no-agent-runtime` |
 | **Information Gate** | Blocks pipeline if critical info is missing — asks ONE focused question at a time |
 | **Non-Invention Rule** | Agents STOP and ask rather than guess when information is absent |
 | **Stop Rule** | 2 consecutive build/test failures → full stop and root cause analysis |
@@ -221,6 +222,12 @@ That's it. The orchestrator handles classification, proposal, execution, and val
 | **Agent Isolation** | Each agent gets fresh context — no accumulated bias leakage |
 | **Sentinel** | Validates phase sequence, blocks and auto-corrects deviations |
 | **Fix Loop Cap** | Max 3 fix attempts per adversarial finding — escalates on 3rd failure |
+
+## Hook Observability
+
+Hooks append audit events to `.codex/pipeline/hook-events.jsonl` using `JSON.stringify`. Each line records `hook`, `event`, `decision`, `attempted`, `expected`, `timestamp`, `cwd`, and `reason`.
+
+Use this file with `.codex/pipeline/gate-decisions.jsonl` to verify whether enforcement actually ran during a session.
 
 ---
 
@@ -246,7 +253,7 @@ Layer 3: SKILL.md bottom (self-check + anti-patterns)
 ```
 pipeline-orchestrator-for-codex/
 ├── .codex-plugin/
-│   └── plugin.json              # Plugin manifest (v0.2.0)
+│   └── plugin.json              # Plugin manifest (v0.3.0)
 ├── agents/                      # 36 agent prompt files (~24K lines)
 │   ├── core/                    #   8 core agents
 │   ├── executor/                #   5 executor agents
