@@ -1,5 +1,6 @@
 import { detectChangedDomains, requiresMandatoryAdversarialReview, resolveAdversarialChecklists } from "./domain-checklists.js";
 import { createReviewOrchestrator } from "./review-orchestrator.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 
 export async function runAdversarialReview(input: {
   batch: { name: string; files: string[] };
@@ -18,7 +19,8 @@ export async function runAdversarialReview(input: {
     changedDomains,
     mode: input.mode,
   });
-  const required = input.mode === "--hotfix"
+  const policy = reductionPolicyForMode(input.mode);
+  const required = policy
     ? checklists.length > 0
     : requiresMandatoryAdversarialReview({
         files,

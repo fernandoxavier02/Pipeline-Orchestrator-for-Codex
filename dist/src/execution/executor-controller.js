@@ -6,6 +6,7 @@ import { runRole } from "../dispatcher/run-role.js";
 import { createCheckpointValidator } from "./checkpoint-validator.js";
 import { createPreTester } from "./pre-tester.js";
 import { createQualityGateRouter } from "./quality-gate-router.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 const authoritativeFinalReviewResultSymbol = Symbol("authoritative-final-review-result");
 function normalizeFiles(files) {
     if (!Array.isArray(files)) {
@@ -258,7 +259,11 @@ function resolveComplexity(input) {
     if (input.complexity) {
         return input.complexity;
     }
-    if (input.mode === "--complexa" || input.mode === "--plan" || input.mode === "--hotfix") {
+    const policy = reductionPolicyForMode(input.mode);
+    if (policy) {
+        return policy.forcedClassification.complexity;
+    }
+    if (input.mode === "--complexa" || input.mode === "--plan") {
         return "COMPLEXA";
     }
     if (input.mode === "--simples") {
@@ -490,12 +495,15 @@ export function createExecutorController(dependencies = {}) {
                 complexity: input.complexity,
                 variant: input.variant,
             });
+            const batchPolicy = reductionPolicyForMode(input.mode);
             const planned = input.batch
                 ? {
                     batchSize: input.batch.files.length || 1,
-                    regressionProofs: input.mode === "--hotfix" || input.proposal?.validationIntent === "reduced"
-                        ? 1
-                        : 2,
+                    regressionProofs: batchPolicy
+                        ? batchPolicy.tdd.minimumTests
+                        : input.proposal?.validationIntent === "reduced"
+                            ? 1
+                            : 2,
                     approvedScenarios: [...(input.approvedScenarios ?? [])],
                     batches: [toPlannedBatch(input.batch)],
                 }

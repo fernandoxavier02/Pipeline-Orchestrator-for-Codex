@@ -7,6 +7,7 @@ import type { PipelineComplexity, ValidationIntent } from "../controller/classif
 import { createCheckpointValidator, type CheckpointValidationResult } from "./checkpoint-validator.js";
 import { createPreTester } from "./pre-tester.js";
 import { createQualityGateRouter, type PlannedBatch, type PlannedExecution } from "./quality-gate-router.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 
 type ExecutionBatch = {
   name: string;
@@ -342,7 +343,11 @@ function resolveComplexity(input: {
     return input.complexity;
   }
 
-  if (input.mode === "--complexa" || input.mode === "--plan" || input.mode === "--hotfix") {
+  const policy = reductionPolicyForMode(input.mode);
+  if (policy) {
+    return policy.forcedClassification.complexity;
+  }
+  if (input.mode === "--complexa" || input.mode === "--plan") {
     return "COMPLEXA";
   }
 
@@ -736,13 +741,16 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
         variant: input.variant,
       });
 
+      const batchPolicy = reductionPolicyForMode(input.mode);
       const planned: PlannedExecution = input.batch
         ? {
             batchSize: input.batch.files.length || 1,
             regressionProofs:
-              input.mode === "--hotfix" || input.proposal?.validationIntent === "reduced"
-                ? 1
-                : 2,
+              batchPolicy
+                ? batchPolicy.tdd.minimumTests
+                : input.proposal?.validationIntent === "reduced"
+                  ? 1
+                  : 2,
             approvedScenarios: [...(input.approvedScenarios ?? [])],
             batches: [toPlannedBatch(input.batch)],
           }

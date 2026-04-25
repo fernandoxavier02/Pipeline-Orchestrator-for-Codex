@@ -1,4 +1,5 @@
 import type { PipelineComplexity, ValidationIntent } from "../controller/classification-overrides.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 
 export interface PlannedBatch {
   name: string;
@@ -32,13 +33,17 @@ export function planQualityGateBatches(input: {
   validationIntent?: ValidationIntent;
 }): PlannedExecution {
   const tasks = [...input.tasks];
-  const hotfixLike = input.mode === "--hotfix" || input.validationIntent === "reduced";
+  const policy = reductionPolicyForMode(input.mode);
+  const hotfixLike = policy !== null || input.validationIntent === "reduced";
+  const policyBatchSize = policy?.batchSize;
   const batchSize =
-    hotfixLike || input.complexity === "COMPLEXA"
-      ? 1
-      : input.complexity === "MEDIA"
-        ? 3
-        : Math.max(1, tasks.length);
+    policyBatchSize !== undefined
+      ? policyBatchSize
+      : hotfixLike || input.complexity === "COMPLEXA"
+        ? 1
+        : input.complexity === "MEDIA"
+          ? 3
+          : Math.max(1, tasks.length);
 
   const batches =
     input.complexity === "SIMPLES"
@@ -52,7 +57,11 @@ export function planQualityGateBatches(input: {
 
   return {
     batchSize,
-    regressionProofs: hotfixLike || input.complexity === "COMPLEXA" ? 1 : 2,
+    regressionProofs: policy
+      ? policy.tdd.minimumTests
+      : hotfixLike || input.complexity === "COMPLEXA"
+        ? 1
+        : 2,
     approvedScenarios: tasks,
     batches,
   };

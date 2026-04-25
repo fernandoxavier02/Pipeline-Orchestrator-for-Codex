@@ -25,6 +25,7 @@ import { createGateLog } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
 import { createSentinelStateStore } from "../sentinel/sentinel-state.js";
 import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../execution/executor-controller.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
 import type { ValidationIntent } from "./classification-overrides.js";
@@ -130,7 +131,11 @@ interface PipelineSessionState {
 }
 
 function resolveExecutionComplexity(session: PipelineSessionState, mode: string): "SIMPLES" | "MEDIA" | "COMPLEXA" {
-  if (mode === "--hotfix" || mode === "--complexa" || mode === "--plan") {
+  const policy = reductionPolicyForMode(mode);
+  if (policy) {
+    return policy.forcedClassification.complexity;
+  }
+  if (mode === "--complexa" || mode === "--plan") {
     return "COMPLEXA";
   }
 
