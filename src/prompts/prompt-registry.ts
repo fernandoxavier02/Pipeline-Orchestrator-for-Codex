@@ -18,6 +18,7 @@ const REQUIRED_OUTPUT_BLOCKS: Record<string, string[]> = {
   "executor/executor-implementer": ["CHANGES", "TESTS", "RISKS"],
   "quality/quality-gate-router": ["QUALITY_GATE_PLAN", "STATUS", "EVIDENCE", "NEXT_ACTION"],
   "quality/adversarial-reviewer": ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"],
+  "quality/adversarial-quality-reviewer": ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"],
   "quality/design-interrogator": ["DESIGN_INTERROGATION", "STATUS", "DECISIONS", "QUESTION"],
   "quality/plan-architect": ["IMPLEMENTATION_PLAN", "TASKS", "FILES", "RISKS"],
   "quality/pre-tester": ["PRE_TESTER_RESULT", "STATUS", "EVIDENCE", "NEXT_ACTION"],

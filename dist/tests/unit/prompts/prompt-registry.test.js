@@ -66,6 +66,15 @@ describe("prompt registry", () => {
         const prompt = await registry.load("executor/executor-spec-reviewer");
         expect(prompt).toContain("Check requirement compliance directly from the changed files.");
     });
+    it("loads the adversarial-quality-reviewer prompt and validates the required output blocks (B9)", async () => {
+        const registry = createPromptRegistry(process.cwd());
+        const prompt = await registry.load("quality/adversarial-quality-reviewer");
+        expect(prompt).toContain("Adversarial Quality Reviewer");
+        expect(prompt).toContain("Required output block:");
+        for (const block of ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"]) {
+            expect(prompt).toMatch(new RegExp(`(^|\\n)-\\s+${block}\\s*(\\n|$)`));
+        }
+    });
     it("loads the pipeline-controller prompt and validates the required output blocks (B8)", async () => {
         const registry = createPromptRegistry(process.cwd());
         const prompt = await registry.load("controller/pipeline-controller");
