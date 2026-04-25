@@ -15,20 +15,40 @@ describe("version consistency across manifests", () => {
   const hooksJson = readFileSync(join(ROOT, "hooks", "hooks.json"), "utf8");
   const changelog = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
 
-  it("plugin.json version is 0.3.0", () => {
-    expect(pluginJson.version).toBe("0.3.0");
+  it("plugin.json version is 0.4.0", () => {
+    expect(pluginJson.version).toBe("0.4.0");
   });
 
   it("package.json version matches plugin.json", () => {
     expect(pkgJson.version).toBe(pluginJson.version);
   });
 
-  it("SessionStart banner mentions v0.3.0", () => {
-    expect(hooksJson).toContain("v0.3.0");
+  it("SessionStart banner mentions v0.4.0", () => {
+    expect(hooksJson).toContain("v0.4.0");
   });
 
-  it("CHANGELOG has an entry for 0.3.0", () => {
+  it("CHANGELOG has entries for 0.4.0 and 0.3.0", () => {
+    expect(changelog).toMatch(/##\s+\[?0\.4\.0\]?/);
     expect(changelog).toMatch(/##\s+\[?0\.3\.0\]?/);
+  });
+
+  it("CHANGELOG 0.4.0 entry references all 11 batch IDs", () => {
+    const batches = [
+      "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11",
+    ];
+    const entry = changelog
+      .split(/##\s+\[?0\.4\.0\]?/)[1]
+      ?.split(/##\s+\[?0\.3\.0\]?/)[0] ?? "";
+    for (const batch of batches) {
+      expect(entry).toMatch(new RegExp(`\\b${batch}\\b`));
+    }
+  });
+
+  it("CHANGELOG 0.4.0 entry names the CC v4.1.0-rc.1 parity target", () => {
+    const entry = changelog
+      .split(/##\s+\[?0\.4\.0\]?/)[1]
+      ?.split(/##\s+\[?0\.3\.0\]?/)[0] ?? "";
+    expect(entry).toMatch(/v4\.1\.0-rc\.1/);
   });
 
   it("CHANGELOG 0.3.0 entry references all 7 gap IDs", () => {

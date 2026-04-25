@@ -10,7 +10,7 @@
           },
           {
             "type": "prompt",
-            "prompt": "Pipeline Orchestrator for Codex v0.3.0 loaded. Parity contracts + tool-allowlist aligned with CC v3.8.0 (runtime wiring deferred — see CHANGELOG). Try: /pipeline [task] for full execution, /pipeline diagnostic [task] to preview without executing, /pipeline --grill [task] for design interrogation, /pipeline --hotfix [task] for emergency bypass. Config: create .codex/pipeline.local.md to set build/test commands (optional — auto-detection available)."
+            "prompt": "Pipeline Orchestrator for Codex v0.4.0 loaded. Parity target: Claude Code Pipeline Orchestrator v4.1.0-rc.1 (session-lock, dispatch-guard, edit-guard middleware, sentinel checkpoints 1–5, atomic stores, session-cleanup). Try: /pipeline [task] for full execution, /pipeline diagnostic [task] to preview without executing, /pipeline --grill [task] for design interrogation, /pipeline --hotfix [task] for emergency bypass. Config: create .codex/pipeline.local.md to set build/test commands (optional — auto-detection available)."
           }
         ]
       }

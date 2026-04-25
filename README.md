@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Codex_CLI-Plugin-14532D?style=for-the-badge&logo=openai&logoColor=white" alt="Codex Plugin" />
-  <img src="https://img.shields.io/badge/version-0.3.0-blue?style=for-the-badge" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.4.0-blue?style=for-the-badge" alt="Version" />
   <img src="https://img.shields.io/badge/agents-36-orange?style=for-the-badge" alt="Agents" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License" />
 </p>
@@ -253,7 +253,7 @@ Layer 3: SKILL.md bottom (self-check + anti-patterns)
 ```
 pipeline-orchestrator-for-codex/
 ├── .codex-plugin/
-│   └── plugin.json              # Plugin manifest (v0.3.0)
+│   └── plugin.json              # Plugin manifest (v0.4.0)
 ├── agents/                      # 36 agent prompt files (~24K lines)
 │   ├── core/                    #   8 core agents
 │   ├── executor/                #   5 executor agents
