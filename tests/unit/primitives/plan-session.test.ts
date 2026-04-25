@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { createPlanMode } from "../../../src/primitives/plan-mode.js";
+import { createPlanMode } from "../../../src/primitives/plan-session.js";
 
-describe("plan-mode emulator", () => {
+describe("plan-session emulator (formerly primitives/plan-mode)", () => {
   it("starts a read-only session", () => {
     const pm = createPlanMode();
     const session = pm.enter();
