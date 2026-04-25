@@ -45,6 +45,13 @@ export interface DispatchRequest {
   filesInScope?: string[];
   authorityLevel?: AuthorityLevel;
   team?: DispatchTeamMember[];
+  /**
+   * When provided, write-capable roles must have an OPEN exec-window
+   * keyed by sessionId under <sessionRoot>/sessions/<sessionId>.exec-window.
+   * Omit both fields to disable the edit-guard for legacy callers.
+   */
+  sessionRoot?: string;
+  sessionId?: string;
 }
 
 export interface DispatchResult {

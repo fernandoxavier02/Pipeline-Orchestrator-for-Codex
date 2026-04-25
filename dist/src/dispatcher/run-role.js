@@ -1,5 +1,7 @@
 import { runMultiAgentRole } from "./multi-agent-runner.js";
 import { runSingleAgentRole } from "./single-agent-runner.js";
+import { ensureWriteAuthorized } from "../security/edit-guard.js";
+export { EditGuardBlockedError } from "../security/edit-guard.js";
 export class AgentRuntimeUnavailableError extends Error {
     code = "blocked-no-agent-runtime";
     dispatchMode = "blocked-no-agent-runtime";
@@ -28,6 +30,14 @@ export async function runRole(request) {
         freshContext: request.freshContext ?? request.role.includes("review"),
         reviewOnly: request.reviewOnly ?? false,
     };
+    // B2: edit-guard middleware. Throws EditGuardBlockedError when a
+    // write-capable role is dispatched without an OPEN exec-window.
+    // Disabled when sessionRoot/sessionId are omitted (legacy callers).
+    ensureWriteAuthorized({
+        role: normalizedRequest.role,
+        sessionRoot: normalizedRequest.sessionRoot,
+        sessionId: normalizedRequest.sessionId,
+    });
     if (normalizedRequest.requireRealAgent) {
         if (!normalizedRequest.agentRuntime) {
             throw new AgentRuntimeUnavailableError(normalizedRequest.role);
