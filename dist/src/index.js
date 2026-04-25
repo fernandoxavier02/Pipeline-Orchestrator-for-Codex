@@ -19,7 +19,7 @@ import { createConfidenceScoreStore } from "./state/confidence-score.js";
 import { createGateLog } from "./state/gate-log.js";
 import { createSessionStore } from "./state/session-store.js";
 import { createSentinelStateStore } from "./sentinel/sentinel-state.js";
-import { resolveEffectiveGateLog } from "./validation/final-validator.js";
+import { recordPostFinalValidatorCheckpoint, resolveEffectiveGateLog, } from "./validation/final-validator.js";
 function hasControllerCheckpointProof(input) {
     return input.checkpointEvidence.some((entry) => entry.batchName === input.batchName
         && entry.evidence.length > 0
@@ -501,6 +501,11 @@ export function createPipelineRuntime(options) {
                 if (!validation) {
                     throw new Error("final-validator returned an invalid runtime result");
                 }
+                await recordPostFinalValidatorCheckpoint({
+                    sentinelStore: closeoutStores.sentinel,
+                    decision: validation.decision,
+                    batchIndex: session?.batchIndex,
+                });
                 const closeoutPackage = buildPersistedCloseout({
                     validation,
                     verificationEvidence,

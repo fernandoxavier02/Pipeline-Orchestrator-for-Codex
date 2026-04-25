@@ -436,7 +436,7 @@ function deriveControllerVerificationEvidence(input: {
   };
 }
 
-function markAuthoritativeFinalReviewResult<T extends object>(result: T): T {
+export function markAuthoritativeFinalReviewResult<T extends object>(result: T): T {
   Object.defineProperty(result, authoritativeFinalReviewResultSymbol, {
     value: true,
     enumerable: false,

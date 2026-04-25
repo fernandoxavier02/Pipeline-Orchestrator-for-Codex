@@ -126,6 +126,70 @@ export function runFinalValidator(input: {
   };
 }
 
+type SentinelStateInput = {
+  pipelineActive: boolean;
+  currentPhase: "phase-0" | "phase-1" | "phase-1.5" | "phase-2" | "phase-3";
+  currentAgent: string;
+  expectedNext: string[];
+  completedPhases: Array<"phase-0" | "phase-1" | "phase-1.5" | "phase-2" | "phase-3">;
+  gateSummary: string[];
+  batchState: { batchIndex: number; status: string };
+  consecutiveCorrections: number;
+  lastCheckpoint:
+    | "post_orchestrator"
+    | "phase_0_to_1"
+    | "phase_1_to_2"
+    | "phase_2_to_3"
+    | "post_final_validator";
+  updatedAt: string;
+};
+
+type SentinelStoreLike = {
+  save?: (state: SentinelStateInput) => Promise<void> | void;
+  load?: () => Promise<SentinelStateInput> | SentinelStateInput;
+};
+
+/**
+ * After a final-validator dispatch returns, persist the
+ * `post_final_validator` checkpoint so sentinel can confirm the pipeline
+ * reached the final gate. Idempotent: callers that have no sentinel store
+ * (e.g. unit fixtures) get a no-op.
+ */
+export async function recordPostFinalValidatorCheckpoint(input: {
+  sentinelStore?: SentinelStoreLike;
+  decision: "GO" | "CONDITIONAL" | "NO-GO";
+  consecutiveCorrections?: number;
+  batchIndex?: number;
+}): Promise<void> {
+  if (!input.sentinelStore?.save) {
+    return;
+  }
+  let prior: SentinelStateInput | undefined;
+  try {
+    prior = (await input.sentinelStore.load?.()) ?? undefined;
+  } catch {
+    prior = undefined;
+  }
+  const completed: SentinelStateInput["completedPhases"] = Array.from(
+    new Set([...(prior?.completedPhases ?? []), "phase-2", "phase-3"]),
+  );
+  await input.sentinelStore.save({
+    pipelineActive: input.decision === "NO-GO" ? true : false,
+    currentPhase: "phase-3",
+    currentAgent: "final-validator",
+    expectedNext: [],
+    completedPhases: completed,
+    gateSummary: [...(prior?.gateSummary ?? []), "SENTINEL_CHECKPOINT"],
+    batchState: {
+      batchIndex: input.batchIndex ?? prior?.batchState.batchIndex ?? 0,
+      status: `post-final-validator:${input.decision.toLowerCase()}`,
+    },
+    consecutiveCorrections: input.consecutiveCorrections ?? prior?.consecutiveCorrections ?? 0,
+    lastCheckpoint: "post_final_validator",
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export function runSanityChecker(input: {
   verificationEvidence: VerificationEvidence[];
   validationIntent?: string;

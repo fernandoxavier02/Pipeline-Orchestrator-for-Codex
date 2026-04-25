@@ -193,6 +193,35 @@ async function executeApprovedContinuation(input) {
                 detail: "Final adversarial review completed successfully during controller-managed execution.",
             }),
         ], input.session.confidenceScore ?? 1);
+        // B4: phase_2_to_3 sentinel checkpoint — execution succeeded and adversarial gate passed.
+        await saveSentinelState(input.runtime, {
+            pipelineActive: true,
+            currentPhase: "phase-2",
+            currentAgent: "pipeline-controller",
+            expectedNext: ["sanity-checker", "final-validator"],
+            completedPhases: ["phase-0", "phase-1", "phase-1.5", "phase-2"],
+            gateSummary: ["SENTINEL_CHECKPOINT"],
+            batchState: {
+                batchIndex: input.session.batchIndex ?? 0,
+                status: "phase-2-complete",
+            },
+            consecutiveCorrections: 0,
+            lastCheckpoint: "phase_2_to_3",
+        });
+        await persistGateAndConfidence({
+            stores: {
+                gateLog: input.runtime?.stores?.gateLog,
+                confidence: input.runtime?.stores?.confidence,
+            },
+        }, [
+            toGateLogEntry({
+                gate: "SENTINEL_CHECKPOINT",
+                hardness: "HARD",
+                phase: "phase-2",
+                decision: "pass",
+                detail: "Sentinel recorded phase_2_to_3 transition.",
+            }),
+        ], input.session.confidenceScore ?? 1);
     }
     if (blocker === "FINAL_ADVERSARIAL_REWORK") {
         await persistGateAndConfidence({
