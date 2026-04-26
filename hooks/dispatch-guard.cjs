@@ -181,7 +181,10 @@ process.stdin.on('end', () => {
   try {
     handle(parsed);
   } catch (err) {
-    // Fail-open on internal error (sentinel + edit-guard cover the security paths)
+    // Fail-open on internal error — intentional asymmetry with session-lock-hook (fail-closed).
+    // session-lock-hook owns startup gating; dispatch-guard only filters agent namespaces.
+    // A hook crash must never silently block non-pipeline Agent calls (e.g. user-initiated tools).
+    // The edit-guard TypeScript middleware provides the complementary write-authorization fence.
     recordHookEvent({
       hook: 'dispatch-guard',
       event: 'PreToolUse',

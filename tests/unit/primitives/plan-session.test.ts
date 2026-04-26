@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { createPlanMode } from "../../../src/primitives/plan-session.js";
+import { createPlanSession } from "../../../src/primitives/plan-session.js";
 
 describe("plan-session emulator (formerly primitives/plan-mode)", () => {
   it("starts a read-only session", () => {
-    const pm = createPlanMode();
+    const pm = createPlanSession();
     const session = pm.enter();
     expect(session.readOnly).toBe(true);
     expect(session.writesAttempted).toBe(0);
@@ -11,7 +11,7 @@ describe("plan-session emulator (formerly primitives/plan-mode)", () => {
   });
 
   it("counts writes attempted but does not block (observability layer)", () => {
-    const pm = createPlanMode();
+    const pm = createPlanSession();
     pm.enter();
     pm.recordWriteAttempt("docs/plan.md");
     pm.recordWriteAttempt("src/foo.ts");
@@ -19,7 +19,7 @@ describe("plan-session emulator (formerly primitives/plan-mode)", () => {
   });
 
   it("exit returns the session with endTime set and deactivates guard", () => {
-    const pm = createPlanMode();
+    const pm = createPlanSession();
     pm.enter();
     const session = pm.exit();
     expect(session.endTime).toBeDefined();
@@ -27,12 +27,12 @@ describe("plan-session emulator (formerly primitives/plan-mode)", () => {
   });
 
   it("throws when recordWriteAttempt called without active session", () => {
-    const pm = createPlanMode();
+    const pm = createPlanSession();
     expect(() => pm.recordWriteAttempt("foo.ts")).toThrow(/no active plan session/i);
   });
 
   it("throws when exit called without active session", () => {
-    const pm = createPlanMode();
+    const pm = createPlanSession();
     expect(() => pm.exit()).toThrow(/no active plan session/i);
   });
 });
