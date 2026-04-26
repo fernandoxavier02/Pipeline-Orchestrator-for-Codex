@@ -1,0 +1,66 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { type ExecWindow, parseExecWindow } from "./exec-window.js";
+
+const SESSIONS_DIRNAME = "sessions";
+const EXEC_WINDOW_SUFFIX = ".exec-window";
+
+export function execWindowDir(stateRoot: string): string {
+  return join(stateRoot, SESSIONS_DIRNAME);
+}
+
+export function execWindowPath(stateRoot: string, sessionId: string): string {
+  if (!sessionId) throw new Error("execWindowPath: sessionId is required");
+  if (sessionId.includes("/") || sessionId.includes("\\") || sessionId.includes("..")) {
+    throw new Error("execWindowPath: sessionId must not contain path separators");
+  }
+  return join(execWindowDir(stateRoot), `${sessionId}${EXEC_WINDOW_SUFFIX}`);
+}
+
+export function readExecWindow(path: string): ExecWindow | null {
+  if (!existsSync(path)) return null;
+  try {
+    return parseExecWindow(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export function writeExecWindowAtomic(path: string, window: ExecWindow): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, JSON.stringify(window), "utf8");
+  try {
+    unlinkSync(path);
+  } catch {
+    // ignore: file may not exist
+  }
+  renameSync(tmp, path);
+}
+
+export function deleteExecWindow(path: string): boolean {
+  try {
+    unlinkSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function createExecWindowStore(stateRoot: string) {
+  return {
+    root: stateRoot,
+    pathFor(sessionId: string) {
+      return execWindowPath(stateRoot, sessionId);
+    },
+    read(sessionId: string) {
+      return readExecWindow(execWindowPath(stateRoot, sessionId));
+    },
+    write(sessionId: string, window: ExecWindow) {
+      writeExecWindowAtomic(execWindowPath(stateRoot, sessionId), window);
+    },
+    delete(sessionId: string) {
+      return deleteExecWindow(execWindowPath(stateRoot, sessionId));
+    },
+  };
+}

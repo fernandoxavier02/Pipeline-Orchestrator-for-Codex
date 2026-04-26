@@ -20,7 +20,11 @@ import { createConfidenceScoreStore } from "./state/confidence-score.js";
 import { createGateLog } from "./state/gate-log.js";
 import { createSessionStore } from "./state/session-store.js";
 import { createSentinelStateStore } from "./sentinel/sentinel-state.js";
-import { resolveEffectiveGateLog, runFinalValidator } from "./validation/final-validator.js";
+import {
+  recordPostFinalValidatorCheckpoint,
+  resolveEffectiveGateLog,
+  runFinalValidator,
+} from "./validation/final-validator.js";
 
 type CloseoutGateEntry = {
   gate: string;
@@ -35,6 +39,7 @@ type CloseoutGateEntry = {
 
 type CloseoutSessionState = {
   runStartedAt?: string;
+  batchIndex?: number;
   closeout?: {
     decision: PersistedCloseout["decision"];
     confidenceScore: number;
@@ -661,6 +666,11 @@ export function createPipelineRuntime(options: RuntimeOptions) {
         if (!validation) {
           throw new Error("final-validator returned an invalid runtime result");
         }
+        await recordPostFinalValidatorCheckpoint({
+          sentinelStore: closeoutStores.sentinel,
+          decision: validation.decision,
+          batchIndex: session?.batchIndex,
+        });
         const closeoutPackage = buildPersistedCloseout({
           validation,
           verificationEvidence,

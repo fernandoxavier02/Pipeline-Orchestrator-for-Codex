@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-04-25
+
+### CC v4.1.0-rc.1 parity upgrade — security middleware, sentinel wiring, atomic stores
+
+This release lands the 11-batch upgrade described in
+`docs/superpowers/specs/2026-04-24-codex-cc-parity-upgrade-design.md`.
+The runtime now exposes governance behavior previously documented but
+not enforced: a single-session lock, dispatch-namespace enforcement, an
+exec-window edit-guard, all five sentinel checkpoints wired end to
+end, and Stop-time cleanup.
+
+### Added — security middleware (B1, B2, B3, B10)
+
+- **B1 — session-lock** — `hooks/session-lock-hook.cjs` enforces a
+  single active pipeline session per workspace via
+  `.codex/pipeline/session-lock.json`. Honors SessionStart `source`
+  semantics (startup / resume / clear). Atomic Windows-safe writes.
+  Implementation: `src/security/session-lock.ts` (DDD value object).
+- **B2 — edit-guard middleware** — `src/security/edit-guard.ts` is
+  invoked from `runRole` and throws `EditGuardBlockedError` when a
+  write-capable role (executor-implementer, executor-fix, …) is
+  dispatched without an OPEN exec-window. Exec-window value object in
+  `src/security/exec-window.ts` with OPEN / CLOSED / EXPIRED state
+  classification, default 5 min TTL capped at 60 min. Path-traversal
+  guard on `sessionId`. Disabled by default for legacy callers that do
+  not provide `sessionRoot`/`sessionId` on `DispatchRequest`.
+- **B3 — dispatch-guard** — `hooks/dispatch-guard.cjs` denies bare-leaf
+  Agent dispatches and Skill calls that map to a pipeline agent leaf,
+  pointing the caller at the codex-namespaced FQN. Backed by
+  `src/security/dispatch-contract.ts` (`AGENT_LEAF_TO_FQN`).
+- **B10 — session-cleanup** — `hooks/session-cleanup-hook.cjs`
+  (Stop hook) sweeps expired session-lock and exec-window files.
+  `src/state/atomic-write.ts` provides a Windows-safe whole-file
+  helper used by `session-store.ts` and `confidence-score.ts`. The
+  JSONL gate log now tolerates a syntactically truncated last line
+  (crash recovery) while still rejecting Zod-invalid rows.
+
+### Changed — sentinel + reduction policy wiring (B4, B5)
+
+- **B4 — sentinel checkpoints 4 and 5** —
+  `src/controller/pipeline-controller.ts` now writes `phase_2_to_3`
+  when the executor returns an authoritative final-review marked
+  approved/approved. `src/validation/final-validator.ts` exports
+  `recordPostFinalValidatorCheckpoint(...)`, called from `closeout.finalize`
+  in `src/index.ts` after the final-validator dispatch returns. Pairs
+  with `SENTINEL_CHECKPOINT` gate-log entries for each transition.
+  `markAuthoritativeFinalReviewResult` is now exported so tests can
+  exercise the success branch.
+- **B5 — HOTFIX policy is read at runtime** —
+  `src/modes/mode-policy.ts` exposes `reductionPolicyForMode(mode)` and
+  `isReducedValidation({mode, validationIntent})`. Eight call sites
+  (information-gate, domain-checklists, adversarial-review,
+  quality-gate-router, executor-controller [×2], single-agent-runner,
+  pipeline-controller) now read `infoGate`, `tdd.minimumTests`,
+  `batchSize`, `adversarialChecklists`, `forcedClassification` and
+  `sanity.runFullRegression` from the policy instead of hard-coding
+  literal `mode === "--hotfix"` checks. Behavior is byte-equivalent;
+  the existing 8 BDD scenarios still pass.
+
+### Added — controller / askUserQuestion / prompts (B6, B7, B8, B9)
+
+- **B6 — askUserQuestion wired into proposal confirmation** —
+  `src/controller/confirm-proposal.ts` exports
+  `confirmProposalViaAsk({proposal, transport})` that builds a
+  confirmation Question (yes/adjust/no), routes through
+  `askUserQuestion`, and reduces the validated reply into a
+  `ProposalConfirmation`. The legacy `confirmProposal(rawResponse)`
+  remains for back-compat.
+- **B7 — plan-mode rename** — `src/primitives/plan-mode.ts` →
+  `src/primitives/plan-session.ts` (and matching test). Resolves the
+  name collision with `src/controller/plan-mode.ts`
+  (IMPLEMENTATION_PLAN artifact builder), which is unchanged.
+- **B8 — pipeline-controller prompt** —
+  `prompts/controller/pipeline-controller.md` rewritten from an
+  11-line stub to a contract covering identity / FQN, tool allowlist,
+  governance hook integration, exec-window protocol, sentinel
+  checkpoints, phase routing, askUserQuestion wiring, the --hotfix
+  policy, and the persisted-state contract. Preserves the
+  `MODE / TYPE / COMPLEXITY / VARIANT / PROPOSAL` required output
+  block validated by the prompt registry.
+- **B9 — adversarial-quality-reviewer** — `agents/quality/adversarial-quality-reviewer.md`
+  (rich reference doc) and `prompts/agents/quality/adversarial-quality-reviewer.md`
+  (runtime stub). Six review dimensions (regression coverage, hidden
+  side-effects, silent fallbacks, governance bypass, proposal drift,
+  domain-specific risk). Registered in `src/prompts/prompt-registry.ts`
+  REQUIRED_OUTPUT_BLOCKS.
+
+### Added — JSONL sanitization (B11)
+
+- **hooks/hook-events.cjs** — every free-text field that flows into
+  `.codex/pipeline/hook-events.jsonl` is clamped at 200 chars
+  (`HOOK_EVENT_DETAIL_MAX_CHARS`). Sanitization is applied at the hook
+  layer; `gateDecisionSchema.detail` keeps `z.string()` without a
+  `.max()` so historical entries still parse.
+
 ### Added
 
 - Strict real-agent dispatch contract for pipeline roles. `runRole` can now require a real Codex agent adapter and fails with `AgentRuntimeUnavailableError` instead of silently using local emulation.

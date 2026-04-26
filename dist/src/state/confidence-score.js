@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import YAML from "yaml";
 import { confidenceScoreSchema } from "../domain/pipeline-schemas.js";
+import { writeFileAtomic } from "./atomic-write.js";
 export function createConfidenceScoreStore(root) {
     const yamlFile = join(root, "confidence-score.yaml");
     const legacyJsonFile = join(root, "confidence-score.json");
@@ -9,8 +10,7 @@ export function createConfidenceScoreStore(root) {
         root,
         async save(snapshot) {
             const parsed = confidenceScoreSchema.parse(snapshot);
-            await mkdir(root, { recursive: true });
-            await writeFile(yamlFile, YAML.stringify(parsed), "utf8");
+            await writeFileAtomic(yamlFile, YAML.stringify(parsed));
         },
         async load() {
             try {

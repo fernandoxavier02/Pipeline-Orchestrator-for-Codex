@@ -20,9 +20,9 @@ const DOMAIN_PATTERNS = {
         /(sql|nosql|command|statement)/i,
     ],
 };
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 const DEFAULT_CHECKLIST = "business-logic";
 const MANDATORY_DOMAINS = new Set(["auth", "crypto", "data-model", "payment"]);
-const HOTFIX_DOMAINS = ["auth", "injection"];
 function detectDomainsFromPath(path) {
     const matches = [];
     for (const [domain, patterns] of Object.entries(DOMAIN_PATTERNS)) {
@@ -52,9 +52,11 @@ export function resolveAdversarialChecklists(input) {
     const detectedDomains = input.changedDomains?.length
         ? dedupe(input.changedDomains)
         : detectChangedDomains(input.files);
-    if (input.mode === "--hotfix") {
-        const narrowed = HOTFIX_DOMAINS.filter((domain) => detectedDomains.includes(domain));
-        return narrowed.length > 0 ? narrowed : [...HOTFIX_DOMAINS];
+    const policy = reductionPolicyForMode(input.mode);
+    if (policy) {
+        const allowed = policy.adversarialChecklists;
+        const narrowed = allowed.filter((domain) => detectedDomains.includes(domain));
+        return narrowed.length > 0 ? narrowed : [...allowed];
     }
     if (detectedDomains.length > 0) {
         return detectedDomains;
@@ -62,7 +64,9 @@ export function resolveAdversarialChecklists(input) {
     return [DEFAULT_CHECKLIST];
 }
 export function resolveFinalValidationEvidence(input) {
-    if (input.mode === "--hotfix" || input.validationIntent === "reduced") {
+    const policy = reductionPolicyForMode(input.mode);
+    // Hotfix policy explicitly skips full regression / final-review evidence.
+    if ((policy && !policy.sanity.runFullRegression) || input.validationIntent === "reduced") {
         return ["build", "tests"];
     }
     return ["build", "tests", "final-review"];

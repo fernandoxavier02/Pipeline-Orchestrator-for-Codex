@@ -86,6 +86,40 @@ export function runFinalValidator(input) {
         rollbackHint,
     };
 }
+/**
+ * After a final-validator dispatch returns, persist the
+ * `post_final_validator` checkpoint so sentinel can confirm the pipeline
+ * reached the final gate. Idempotent: callers that have no sentinel store
+ * (e.g. unit fixtures) get a no-op.
+ */
+export async function recordPostFinalValidatorCheckpoint(input) {
+    if (!input.sentinelStore?.save) {
+        return;
+    }
+    let prior;
+    try {
+        prior = (await input.sentinelStore.load?.()) ?? undefined;
+    }
+    catch {
+        prior = undefined;
+    }
+    const completed = Array.from(new Set([...(prior?.completedPhases ?? []), "phase-2", "phase-3"]));
+    await input.sentinelStore.save({
+        pipelineActive: input.decision === "NO-GO" ? true : false,
+        currentPhase: "phase-3",
+        currentAgent: "final-validator",
+        expectedNext: [],
+        completedPhases: completed,
+        gateSummary: [...(prior?.gateSummary ?? []), "SENTINEL_CHECKPOINT"],
+        batchState: {
+            batchIndex: input.batchIndex ?? prior?.batchState.batchIndex ?? 0,
+            status: `post-final-validator:${input.decision.toLowerCase()}`,
+        },
+        consecutiveCorrections: input.consecutiveCorrections ?? prior?.consecutiveCorrections ?? 0,
+        lastCheckpoint: "post_final_validator",
+        updatedAt: new Date().toISOString(),
+    });
+}
 export function runSanityChecker(input) {
     const requiredEvidence = resolveFinalValidationEvidence({
         mode: input.mode,

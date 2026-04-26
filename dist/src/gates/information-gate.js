@@ -1,6 +1,8 @@
 import { classifyGateHardness } from "./hardness-policy.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 export function runInformationGate(input) {
-    const hotfixLike = input.mode === "--hotfix";
+    const policy = reductionPolicyForMode(input.mode);
+    const hotfixLike = policy?.infoGate === "blocker-only";
     const referenceQuestions = hotfixLike ? [] : input.referenceIndex?.getGateQuestions("macro") ?? [];
     const scopedQuestions = input.classification.type === "Audit"
         ? ["Which systems, assets, or trust boundaries are in scope for this audit?"]

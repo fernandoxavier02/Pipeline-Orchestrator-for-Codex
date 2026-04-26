@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { buildExecWindow } from "../security/exec-window.js";
+import { createExecWindowStore } from "../security/exec-window-store.js";
 import { resumePipeline } from "../continue/resume-pipeline.js";
 import { findLatestRun } from "../continue/find-latest-run.js";
 import { buildProposal } from "./build-proposal.js";
@@ -25,6 +27,7 @@ import { createGateLog } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
 import { createSentinelStateStore } from "../sentinel/sentinel-state.js";
 import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../execution/executor-controller.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
 import type { ValidationIntent } from "./classification-overrides.js";
@@ -130,7 +133,11 @@ interface PipelineSessionState {
 }
 
 function resolveExecutionComplexity(session: PipelineSessionState, mode: string): "SIMPLES" | "MEDIA" | "COMPLEXA" {
-  if (mode === "--hotfix" || mode === "--complexa" || mode === "--plan") {
+  const policy = reductionPolicyForMode(mode);
+  if (policy) {
+    return policy.forcedClassification.complexity;
+  }
+  if (mode === "--complexa" || mode === "--plan") {
     return "COMPLEXA";
   }
 
@@ -272,17 +279,46 @@ async function executeApprovedContinuation(input: {
         batchSize: input.session.proposal.batchSize ?? Math.max(1, (input.session.proposal.affectedFiles ?? []).length),
       }
     : undefined;
-  const executionResult = await executionController.executeApprovedWork({
-    phase: input.session.currentPhase,
-    mode: input.session.mode ?? input.mode,
-    complexity: resolveExecutionComplexity(input.session, input.session.mode ?? input.mode),
-    variant: input.session.variant ?? input.session.proposal?.variant ?? "implement-light",
-    proposal,
-    tasks: input.session.proposal?.affectedFiles ?? input.session.touchedFiles ?? [],
-    approvedScenarios: authoritativeExecutionProof.approvedScenarios,
-    workingDirectory: getWorkspaceRoot(input.runtime),
-    stores: input.runtime?.stores,
-  });
+
+  // IMP-01: derive exec-window root and open a write-authorization window for this dispatch.
+  // Falls back to <workspaceRoot>/.codex/pipeline when no stateRoot is available (legacy/test paths).
+  const execWindowRoot = getStateRoot(input.runtime)
+    ?? join(getWorkspaceRoot(input.runtime), ".codex", "pipeline");
+  const execWindowSessionId = input.session.sessionId;
+  const execWindowStore = execWindowSessionId
+    ? createExecWindowStore(execWindowRoot)
+    : undefined;
+
+  if (execWindowStore && execWindowSessionId) {
+    execWindowStore.write(execWindowSessionId, buildExecWindow({
+      session_id: execWindowSessionId,
+      now: Math.floor(Date.now() / 1000),
+      purpose: "controller-managed-execution-phase-2",
+      spawning_agent: "pipeline-controller",
+    }));
+  }
+
+  let executionResult: unknown;
+  try {
+    executionResult = await executionController.executeApprovedWork({
+      phase: input.session.currentPhase,
+      mode: input.session.mode ?? input.mode,
+      complexity: resolveExecutionComplexity(input.session, input.session.mode ?? input.mode),
+      variant: input.session.variant ?? input.session.proposal?.variant ?? "implement-light",
+      proposal,
+      tasks: input.session.proposal?.affectedFiles ?? input.session.touchedFiles ?? [],
+      approvedScenarios: authoritativeExecutionProof.approvedScenarios,
+      workingDirectory: getWorkspaceRoot(input.runtime),
+      stores: input.runtime?.stores,
+      sessionRoot: execWindowSessionId ? execWindowRoot : undefined,
+      sessionId: execWindowSessionId,
+    });
+  } finally {
+    // Close exec-window — revokes write authorization regardless of outcome.
+    if (execWindowStore && execWindowSessionId) {
+      execWindowStore.delete(execWindowSessionId);
+    }
+  }
 
   const executionPayload = executionResult && typeof executionResult === "object"
     ? executionResult
@@ -342,11 +378,48 @@ async function executeApprovedContinuation(input: {
       ? executionPayload.finalReview.finalDecision
       : undefined;
 
-  if (
-    hasAuthoritativeFinalReviewResult(executionPayload)
-    && finalReviewStatus === "approved"
-    && finalReviewDecision === "approved"
-  ) {
+  if (hasAuthoritativeFinalReviewResult(executionPayload) && !isFinalAdversarialRework && !isCircuitBreaker && !isCheckpointFailure) {
+    // IMP-02: load prior sentinel state so completedPhases is merged rather than hardcoded.
+    const priorSentinel = await loadSentinelState(input.runtime);
+    const priorCompleted = priorSentinel?.completedPhases ?? [];
+    const phase2CompletedPhases = [...new Set([...priorCompleted, "phase-2"])];
+
+    if (finalReviewStatus === "approved" && finalReviewDecision === "approved") {
+      await persistGateAndConfidence(
+        {
+          stores: {
+            gateLog: input.runtime?.stores?.gateLog,
+            confidence: input.runtime?.stores?.confidence,
+          },
+        },
+        [
+          toGateLogEntry({
+            gate: "FINAL_ADVERSARIAL_GATE",
+            hardness: "SOFT",
+            phase: "phase-3",
+            decision: "pass",
+            detail: "Final adversarial review completed successfully during controller-managed execution.",
+          }),
+        ],
+        input.session.confidenceScore ?? 1,
+      );
+    }
+
+    // IMP-02 + IMP-03: write phase_2_to_3 for ALL successful completion paths (adversarial or not).
+    await saveSentinelState(input.runtime, {
+      pipelineActive: true,
+      currentPhase: "phase-2",
+      currentAgent: "pipeline-controller",
+      expectedNext: ["sanity-checker", "final-validator"],
+      completedPhases: phase2CompletedPhases,
+      gateSummary: ["SENTINEL_CHECKPOINT"],
+      batchState: {
+        batchIndex: input.session.batchIndex ?? 0,
+        status: "phase-2-complete",
+      },
+      consecutiveCorrections: 0,
+      lastCheckpoint: "phase_2_to_3",
+    });
     await persistGateAndConfidence(
       {
         stores: {
@@ -356,11 +429,11 @@ async function executeApprovedContinuation(input: {
       },
       [
         toGateLogEntry({
-          gate: "FINAL_ADVERSARIAL_GATE",
-          hardness: "SOFT",
-          phase: "phase-3",
+          gate: "SENTINEL_CHECKPOINT",
+          hardness: "HARD",
+          phase: "phase-2",
           decision: "pass",
-          detail: "Final adversarial review completed successfully during controller-managed execution.",
+          detail: "Sentinel recorded phase_2_to_3 transition.",
         }),
       ],
       input.session.confidenceScore ?? 1,

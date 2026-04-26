@@ -8,7 +8,7 @@ export interface PlanMode {
   recordWriteAttempt(path: string): void;
 }
 
-export function createPlanMode(): PlanMode {
+export function createPlanSession(): PlanMode {
   let session: PlanSession | null = null;
 
   return {

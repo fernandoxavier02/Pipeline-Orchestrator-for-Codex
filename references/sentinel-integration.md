@@ -103,6 +103,12 @@ Plugin root: {CLAUDE_PLUGIN_ROOT} (for reading references/complexity-matrix.md)
 | 4 | phase_2_to_3 | After last batch + reviews, before Phase 3 | COHERENCE_VALIDATION | **Mandatory ALL** |
 | 5 | post_final_validator | After Pa de Cal returns | COHERENCE_VALIDATION | COMPLEXA mandatory, MEDIA recommended |
 
+**Runtime wiring (v0.4.0+):**
+
+- `post_orchestrator`, `phase_0_to_1`, `phase_1_to_2` — written by `src/controller/pipeline-controller.ts`.
+- `phase_2_to_3` — written by `src/controller/pipeline-controller.ts` inside `executeApprovedContinuation` when the executor returns an authoritative final-review with `status=approved` AND `finalDecision=approved`. Failed/blocked executions intentionally do not advance the checkpoint.
+- `post_final_validator` — written by `src/index.ts` `closeout.finalize` via `recordPostFinalValidatorCheckpoint(...)` immediately after `runtimeRunRole({ role: "final-validator" })` returns a parsed verdict. `pipelineActive` flips to `false` on `GO`/`CONDITIONAL` and stays `true` on `NO-GO`.
+
 **Prompt template for coherence checkpoints:**
 
 ```

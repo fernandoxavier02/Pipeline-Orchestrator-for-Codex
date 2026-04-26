@@ -1,6 +1,7 @@
 import { classifyGateHardness } from "./hardness-policy.js";
 import type { GateResult } from "./gate-types.js";
 import type { ReferenceProfileIndex } from "../references/reference-profiles.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 
 export function runInformationGate(input: {
   request: string;
@@ -9,7 +10,8 @@ export function runInformationGate(input: {
   referenceIndex?: ReferenceProfileIndex;
   mode?: string;
 }): GateResult {
-  const hotfixLike = input.mode === "--hotfix";
+  const policy = reductionPolicyForMode(input.mode);
+  const hotfixLike = policy?.infoGate === "blocker-only";
   const referenceQuestions = hotfixLike ? [] : input.referenceIndex?.getGateQuestions("macro") ?? [];
   const scopedQuestions =
     input.classification.type === "Audit"

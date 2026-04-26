@@ -3,6 +3,7 @@ import { evaluateCheckpointValidation } from "../execution/checkpoint-validator.
 import { derivePreTesterExecutionProof } from "../execution/pre-tester.js";
 import { planQualityGateBatches } from "../execution/quality-gate-router.js";
 import { runFinalValidator, runSanityChecker } from "../validation/final-validator.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 import type { DispatchRequest, DispatchResult } from "./dispatcher-types.js";
 
 type ReviewerFinding = {
@@ -49,10 +50,10 @@ function createDefaultReviewFindings(request: DispatchRequest): ReviewerFinding[
   const requestMode = typeof request.input.mode === "string" ? request.input.mode : undefined;
   const firstFile = files[0] ?? "unknown-file";
   const mandatoryDomains = changedDomains.filter(isMandatoryReviewDomain);
-  const hotfixInjectionDomains =
-    requestMode === "--hotfix"
-      ? changedDomains.filter((domain) => domain === "injection")
-      : [];
+  const reductionPolicy = reductionPolicyForMode(requestMode);
+  const hotfixInjectionDomains = reductionPolicy?.adversarialChecklists.includes("injection")
+    ? changedDomains.filter((domain) => domain === "injection")
+    : [];
 
   if (request.role === "batch-reviewer" && (mandatoryDomains.length > 0 || hotfixInjectionDomains.length > 0)) {
     const blockedDomains = mandatoryDomains.length > 0 ? mandatoryDomains : hotfixInjectionDomains;

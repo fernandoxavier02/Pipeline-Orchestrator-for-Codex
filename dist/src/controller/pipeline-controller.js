@@ -23,11 +23,16 @@ import { createGateLog } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
 import { createSentinelStateStore } from "../sentinel/sentinel-state.js";
 import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../execution/executor-controller.js";
+import { reductionPolicyForMode } from "../modes/mode-policy.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
 import ts from "typescript";
 function resolveExecutionComplexity(session, mode) {
-    if (mode === "--hotfix" || mode === "--complexa" || mode === "--plan") {
+    const policy = reductionPolicyForMode(mode);
+    if (policy) {
+        return policy.forcedClassification.complexity;
+    }
+    if (mode === "--complexa" || mode === "--plan") {
         return "COMPLEXA";
     }
     if (mode === "--simples") {
@@ -191,6 +196,35 @@ async function executeApprovedContinuation(input) {
                 phase: "phase-3",
                 decision: "pass",
                 detail: "Final adversarial review completed successfully during controller-managed execution.",
+            }),
+        ], input.session.confidenceScore ?? 1);
+        // B4: phase_2_to_3 sentinel checkpoint — execution succeeded and adversarial gate passed.
+        await saveSentinelState(input.runtime, {
+            pipelineActive: true,
+            currentPhase: "phase-2",
+            currentAgent: "pipeline-controller",
+            expectedNext: ["sanity-checker", "final-validator"],
+            completedPhases: ["phase-0", "phase-1", "phase-1.5", "phase-2"],
+            gateSummary: ["SENTINEL_CHECKPOINT"],
+            batchState: {
+                batchIndex: input.session.batchIndex ?? 0,
+                status: "phase-2-complete",
+            },
+            consecutiveCorrections: 0,
+            lastCheckpoint: "phase_2_to_3",
+        });
+        await persistGateAndConfidence({
+            stores: {
+                gateLog: input.runtime?.stores?.gateLog,
+                confidence: input.runtime?.stores?.confidence,
+            },
+        }, [
+            toGateLogEntry({
+                gate: "SENTINEL_CHECKPOINT",
+                hardness: "HARD",
+                phase: "phase-2",
+                decision: "pass",
+                detail: "Sentinel recorded phase_2_to_3 transition.",
             }),
         ], input.session.confidenceScore ?? 1);
     }
