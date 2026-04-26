@@ -134,3 +134,136 @@ describe("Feature: edit-guard gates write-capable dispatches", () => {
     expect(spawned).toBe(true);
   });
 });
+
+describe("IMP-01: pipeline-controller opens exec-window around executeApprovedWork", () => {
+  let workspaceRoot: string;
+
+  beforeEach(() => {
+    workspaceRoot = mkdtempSync(join(tmpdir(), "edit-guard-controller-"));
+  });
+
+  afterEach(() => {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  });
+
+  it("Scenario: exec-window exists on disk while executeApprovedWork runs and is deleted afterward", async () => {
+    const { existsSync } = await import("node:fs");
+    const { join: pathJoin } = await import("node:path");
+    const { createPipelineController } = await import("../../src/controller/pipeline-controller.js");
+    const { markAuthoritativeFinalReviewResult } = await import("../../src/execution/executor-controller.js");
+    const { execWindowPath } = await import("../../src/security/exec-window-store.js");
+
+    const sessionId = "ctrl-test-session";
+    let windowExistedDuringExecution = false;
+    // When no stateRoot is available the controller falls back to <workspaceRoot>/.codex/pipeline
+    const windowFilePath = execWindowPath(pathJoin(workspaceRoot, ".codex", "pipeline"), sessionId);
+
+    const session = {
+      sessionId,
+      currentPhase: "phase-1.5",
+      phase: "phase-1.5",
+      mode: "--complexa",
+      variant: "feature-heavy",
+      proposal: {
+        summary: "payment flow",
+        affectedFiles: ["src/payments.ts"],
+        validationIntent: "standard",
+        batchSize: 1,
+      },
+      approvalProof: { kind: "controller-managed-transition", from: "phase-1", to: "phase-1.5" },
+      executionProof: {
+        approvedScenarios: [],
+        tddApproval: "APPROVED",
+        redValidation: { status: "approved", reasons: [] },
+        checkpointEvidence: [],
+        fixAttempts: [],
+      },
+      unresolvedBlockers: [],
+      touchedFiles: ["src/payments.ts"],
+    };
+
+    // No store `root` props — forces the !stateRoot branch which uses mocked stores directly
+    const controller = createPipelineController({
+      workspaceRoot,
+      stores: {
+        session: { load: async () => session, save: async () => undefined },
+        checkpoints: { list: async () => [] },
+        gateLog: { append: async () => undefined, list: async () => [] },
+        confidence: { save: async () => undefined, load: async () => undefined as any },
+        sentinel: { save: async () => undefined, load: async () => undefined as any },
+      },
+      executionController: {
+        executeApprovedWork: async (_input: any) => {
+          windowExistedDuringExecution = existsSync(windowFilePath);
+          return markAuthoritativeFinalReviewResult({
+            status: "completed",
+            finalReview: { status: "approved", finalDecision: "approved" },
+          });
+        },
+      } as any,
+    });
+
+    await controller.start("/pipeline continue");
+
+    expect(windowExistedDuringExecution).toBe(true);
+    expect(existsSync(windowFilePath)).toBe(false);
+  });
+
+  it("Scenario: executeApprovedWork receives sessionRoot and sessionId from the session", async () => {
+    const { createPipelineController } = await import("../../src/controller/pipeline-controller.js");
+    const { markAuthoritativeFinalReviewResult } = await import("../../src/execution/executor-controller.js");
+
+    const sessionId = "pipe-session-99";
+    let capturedInput: any;
+
+    const session = {
+      sessionId,
+      currentPhase: "phase-1.5",
+      phase: "phase-1.5",
+      mode: "--complexa",
+      variant: "feature-heavy",
+      proposal: {
+        summary: "another feature",
+        affectedFiles: ["src/feature.ts"],
+        validationIntent: "standard",
+        batchSize: 1,
+      },
+      approvalProof: { kind: "controller-managed-transition", from: "phase-1", to: "phase-1.5" },
+      executionProof: {
+        approvedScenarios: [],
+        tddApproval: "APPROVED",
+        redValidation: { status: "approved", reasons: [] },
+        checkpointEvidence: [],
+        fixAttempts: [],
+      },
+      unresolvedBlockers: [],
+      touchedFiles: ["src/feature.ts"],
+    };
+
+    const controller = createPipelineController({
+      workspaceRoot,
+      stores: {
+        session: { load: async () => session, save: async () => undefined },
+        checkpoints: { list: async () => [] },
+        gateLog: { append: async () => undefined, list: async () => [] },
+        confidence: { save: async () => undefined, load: async () => undefined as any },
+        sentinel: { save: async () => undefined, load: async () => undefined as any },
+      },
+      executionController: {
+        executeApprovedWork: async (input: any) => {
+          capturedInput = input;
+          return markAuthoritativeFinalReviewResult({
+            status: "completed",
+            finalReview: { status: "approved", finalDecision: "approved" },
+          });
+        },
+      } as any,
+    });
+
+    await controller.start("/pipeline continue");
+
+    expect(capturedInput.sessionId).toBe(sessionId);
+    expect(typeof capturedInput.sessionRoot).toBe("string");
+    expect(capturedInput.sessionRoot.length).toBeGreaterThan(0);
+  });
+});

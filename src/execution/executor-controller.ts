@@ -275,6 +275,8 @@ async function defaultRunBatch(
     runRole?: typeof runRole;
     adversarialReview?: typeof runAdversarialReview;
     mode?: string;
+    sessionRoot?: string;
+    sessionId?: string;
   },
 ) {
   const executeRole = dependencies?.runRole ?? runRole;
@@ -284,6 +286,8 @@ async function defaultRunBatch(
     role: "executor-implementer",
     prompt: "Implement only the current batch.",
     input: { batch },
+    sessionRoot: dependencies?.sessionRoot,
+    sessionId: dependencies?.sessionId,
   });
   const changedFiles = extractExecutionChangedFiles(execution) ?? [];
 
@@ -482,6 +486,9 @@ export interface ExecuteApprovedWorkInput {
       save?: (session: unknown) => Promise<void>;
     };
   };
+  /** Passed from pipeline-controller to activate the edit-guard for write-capable roles. */
+  sessionRoot?: string;
+  sessionId?: string;
 }
 
 export interface ExecutorControllerDependencies {
@@ -523,6 +530,8 @@ async function dispatchExecutorFix(input: {
   strategy: string;
   findings?: unknown;
   changedDomains?: string[];
+  sessionRoot?: string;
+  sessionId?: string;
 }) {
   if (!input.runRole) {
     return undefined;
@@ -547,6 +556,8 @@ async function dispatchExecutorFix(input: {
     authorityLevel: "executor",
     freshContext: true,
     reviewOnly: false,
+    sessionRoot: input.sessionRoot,
+    sessionId: input.sessionId,
   });
 }
 
@@ -686,10 +697,16 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
     attemptFix: (input: { attempt: number; strategy: string }) => Promise<boolean> | boolean;
   }) => Promise<{ status: "FIXED"; attempts: number; strategy: string } | { status: "FIX_LOOP_EXHAUSTED"; attempts: number; strategyChangeRequired: boolean }>;
 } {
+  let currentExecutionMode: string | undefined;
+  let currentSessionRoot: string | undefined;
+  let currentSessionId: string | undefined;
+
   const runBatch = dependencies.runBatch ?? ((batch: ExecutionBatch) => defaultRunBatch(batch, {
     runRole: dependencies.runRole,
     adversarialReview: dependencies.adversarialReview,
     mode: currentExecutionMode,
+    sessionRoot: currentSessionRoot,
+    sessionId: currentSessionId,
   }));
   const qualityGateRouter = dependencies.qualityGateRouter ?? createQualityGateRouter();
   const preTester = dependencies.preTester ?? createPreTester();
@@ -700,7 +717,6 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
     ?? createReviewOrchestrator({
       runRole: dependencies.runRole,
     });
-  let currentExecutionMode: string | undefined;
   const runFixLoop = async (input: {
     strategy: string;
     attemptFix: (input: { attempt: number; strategy: string }) => Promise<boolean> | boolean;
@@ -732,6 +748,8 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
   return {
     async executeApprovedWork(input: ExecuteApprovedWorkInput) {
       currentExecutionMode = input.mode;
+      currentSessionRoot = input.sessionRoot;
+      currentSessionId = input.sessionId;
       const checkpointValidator = dependencies.checkpointValidator ?? createCheckpointValidator();
       checkpointValidator.reset?.();
       const tasks = input.batch?.files ?? input.tasks ?? input.proposal?.affectedFiles ?? [];
@@ -951,6 +969,8 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
                   strategy,
                   findings: resolveReworkFindings(activeBatchReview),
                   changedDomains,
+                  sessionRoot: currentSessionRoot,
+                  sessionId: currentSessionId,
                 });
                 const structuredResult = parseExecutorFixResult(
                   fixDispatch && typeof fixDispatch === "object" && "output" in fixDispatch
@@ -1076,6 +1096,8 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
                     ? batchResult.review.findings
                     : undefined,
                 changedDomains,
+                sessionRoot: currentSessionRoot,
+                sessionId: currentSessionId,
               });
               const structuredResult = parseExecutorFixResult(
                 fixDispatch && typeof fixDispatch === "object" && "output" in fixDispatch
