@@ -48,6 +48,37 @@ describe("continue state", () => {
     });
   });
 
+  it.each([
+    ["spec-artifacts-required", "SPEC_ARTIFACT_MISSING", "replan"],
+    ["spec-content-review-required", "SPEC_CONTENT_REVIEW_NOGO", "replan"],
+    ["spec-traceability-required", "SPEC_AC_TRACEABILITY_GAP", "revalidate"],
+    ["spec-post-implementation-required", "SPEC_POST_IMPL_FAIL", "replan"],
+  ])("normalizes %s into the matching Spec rollback route", (pendingDecision, gate, rollbackRoute) => {
+    const result = resolveContinueRollbackState({
+      session: {
+        currentPhase: gate === "SPEC_POST_IMPL_FAIL" ? "phase-3" : "phase-2",
+        pendingDecision,
+        unresolvedBlockers: [`${gate} blocked`],
+      },
+      gateLogEntries: [
+        {
+          gate,
+          decision: "block",
+          detail: `${gate} blocked`,
+          timestamp: "2026-05-05T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      resumeBlocked: true,
+      rollbackGate: gate,
+      rollbackRoute,
+      rollbackDecision: "block",
+      revalidationRequired: rollbackRoute === "revalidate",
+    });
+  });
+
   it("fails closed on malformed continue pending decisions", () => {
     expect(() =>
       resolveContinueRollbackState({

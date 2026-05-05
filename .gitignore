@@ -1,5 +1,10 @@
 node_modules/
-dist/
+dist/*
+!dist/src/
+dist/src/*
+!dist/src/spec/
+dist/src/spec/*
+!dist/src/spec/spec-lifecycle.js
 coverage/
 .codex/pipeline/
 .worktrees/

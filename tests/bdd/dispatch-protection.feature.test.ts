@@ -43,6 +43,16 @@ describe("Feature: dispatch-guard enforces the pipeline namespace", () => {
     expect(out.hookSpecificOutput?.permissionDecision).toBeUndefined();
   });
 
+  it("Scenario: Spec lifecycle Agent calls with codex FQNs are allowed", () => {
+    for (const leaf of ["spec-format-gate", "spec-content-reviewer", "spec-post-impl-validator", "spec-closer"]) {
+      const out = runHook({
+        tool_name: "Agent",
+        tool_input: { subagent_type: `pipeline-orchestrator-for-codex:quality:${leaf}` },
+      });
+      expect(out.hookSpecificOutput?.permissionDecision).toBeUndefined();
+    }
+  });
+
   it("Scenario: Agent call with bare leaf is denied with FQN hint", () => {
     const out = runHook({
       tool_name: "Agent",
@@ -52,6 +62,24 @@ describe("Feature: dispatch-guard enforces the pipeline namespace", () => {
     expect(out.hookSpecificOutput?.permissionDecisionReason).toContain(
       "pipeline-orchestrator-for-codex:core:task-orchestrator",
     );
+  });
+
+  it("Scenario: Agent call with forged codex folder is denied", () => {
+    const out = runHook({
+      tool_name: "Agent",
+      tool_input: { subagent_type: "pipeline-orchestrator-for-codex:wrong-folder:task-orchestrator" },
+    });
+    expect(out.hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect(out.hookSpecificOutput?.permissionDecisionReason).toContain("expected canonical FQN");
+  });
+
+  it("Scenario: Agent call with legacy pipeline namespace is denied", () => {
+    const out = runHook({
+      tool_name: "Agent",
+      tool_input: { subagent_type: "pipeline-orchestrator:core:task-orchestrator" },
+    });
+    expect(out.hookSpecificOutput?.permissionDecision).toBe("deny");
+    expect(out.hookSpecificOutput?.permissionDecisionReason).toContain("Use pipeline-orchestrator-for-codex");
   });
 
   it("Scenario: Agent call with the wrong (non-codex) namespace is allowed (other plugin)", () => {

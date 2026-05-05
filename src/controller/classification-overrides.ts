@@ -6,7 +6,7 @@ export type ValidationIntent = "standard" | "reduced";
 export type RouteFamily = "standard" | "adversarial";
 
 export interface PipelineClassification {
-  type: "Feature" | "Bug Fix" | "User Story" | "Audit" | "UX Simulation";
+  type: "Feature" | "Bug Fix" | "User Story" | "Audit" | "UX Simulation" | "Spec";
   complexity: PipelineComplexity;
   variant: string;
   routeFamily?: RouteFamily;
@@ -133,6 +133,26 @@ const FALLBACK_PROFILE_BY_ROUTE: Record<
       checklists: ["business-logic", "data-integrity", "error-handling", "injection", "input-validation"],
     },
   },
+  Spec: {
+    light: {
+      variant: "spec-light",
+      type: "Spec",
+      complexity: "MEDIA",
+      intensity: "light",
+      batchSize: 2,
+      summary: "Spec lifecycle flow with explicit artifact and traceability gates.",
+      checklists: ["business-logic", "error-handling", "input-validation"],
+    },
+    heavy: {
+      variant: "spec-heavy",
+      type: "Spec",
+      complexity: "COMPLEXA",
+      intensity: "heavy",
+      batchSize: 1,
+      summary: "Spec lifecycle flow with explicit artifact and traceability gates.",
+      checklists: ["business-logic", "data-integrity", "error-handling", "input-validation"],
+    },
+  },
 };
 
 function getFallbackProfile(type: PipelineClassification["type"], intensity: RouteIntensity) {
@@ -168,13 +188,14 @@ export function applyClassificationOverrides(
   classification: PipelineClassification,
   referenceIndex?: ReferenceProfileIndex,
 ): ClassificationOverrideResult {
+  const isSpecVariant = classification.variant.startsWith("spec-");
   let nextType = classification.type;
   let nextComplexity = classification.complexity;
   let intensity: RouteIntensity = classification.complexity === "COMPLEXA" ? "heavy" : "light";
   let validationIntent: ValidationIntent = "standard";
 
   if (mode === "--hotfix") {
-    nextType = "Bug Fix";
+    nextType = isSpecVariant ? classification.type : "Bug Fix";
     nextComplexity = "COMPLEXA";
     intensity = "heavy";
     validationIntent = "reduced";
@@ -189,11 +210,34 @@ export function applyClassificationOverrides(
     intensity = "light";
   }
 
+  const specProfile = isSpecVariant
+    ? {
+        variant: mode === "--complexa" || classification.variant === "spec-heavy"
+          ? "spec-heavy"
+          : classification.variant,
+        type: classification.type,
+        complexity: nextComplexity,
+        intensity,
+        batchSize: intensity === "heavy" ? 1 : 2,
+        summary: "Spec lifecycle flow with explicit artifact and traceability gates.",
+        checklists: ["business-logic", "error-handling", "input-validation"],
+      }
+    : undefined;
+
   const profile =
-    mode === "full" || mode === "diagnostic" || mode === "review-only" || mode === "continue" || mode === "--plan" || mode === "--grill"
-      ? referenceIndex
+    specProfile && referenceIndex
+      ? referenceIndex.getPipelineProfileForRoute("Spec", intensity)
+      : specProfile
+        ? {
+            ...specProfile,
+            complexity: nextComplexity,
+            intensity,
+            batchSize: intensity === "heavy" ? 1 : 2,
+          }
+      : mode === "full" || mode === "diagnostic" || mode === "review-only" || mode === "continue" || mode === "--plan" || mode === "--grill"
+      ? specProfile ?? (referenceIndex
         ? referenceIndex.getPipelineProfile(classification.variant)
-        : getProfileByVariant(classification.variant) ?? getFallbackProfile(nextType, intensity)
+        : getProfileByVariant(classification.variant) ?? getFallbackProfile(nextType, intensity))
       : resolveProfile(referenceIndex, nextType, intensity);
 
   return {

@@ -1,4 +1,4 @@
-export type PipelineTypeLabel = "Feature" | "Bug Fix" | "User Story" | "Audit" | "UX Simulation";
+export type PipelineTypeLabel = "Feature" | "Bug Fix" | "User Story" | "Audit" | "UX Simulation" | "Spec";
 export type ComplexityLabel = "SIMPLES" | "MEDIA" | "COMPLEXA";
 export type PipelineIntensity = "light" | "heavy";
 export type ChecklistId = string;

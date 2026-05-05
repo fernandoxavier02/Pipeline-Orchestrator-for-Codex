@@ -27,7 +27,10 @@ export type PipelineVariant =
   | "user-story-light"
   | "user-story-heavy"
   | "ux-sim-light"
-  | "ux-sim-heavy";
+  | "ux-sim-heavy"
+  | "spec-light"
+  | "spec-heavy"
+  | "spec-audit-only";
 
 export interface RuntimeOptions {
   cwd: string;

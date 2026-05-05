@@ -89,6 +89,28 @@ describe("exec-window-store", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("execWindowPath supports command-style sessionIds that contain Windows-invalid filename characters", () => {
+    const root = freshRoot();
+    try {
+      const store = createExecWindowStore(root);
+      const sessionId = "--complexa:stabilize login flow";
+      const path = store.pathFor(sessionId);
+      expect(path).not.toContain(sessionId);
+      const w = buildExecWindow({
+        session_id: sessionId,
+        now: 1,
+        ttl_seconds: 30,
+        purpose: "p",
+        spawning_agent: "a",
+      });
+      store.write(sessionId, w);
+      expect(store.read(sessionId)).toEqual(w);
+      expect(store.delete(sessionId)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("write/read/delete round-trip + atomic overwrite", () => {
     const root = freshRoot();
     try {

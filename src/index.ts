@@ -219,6 +219,22 @@ function resolveRuntimePromptName(role: string) {
     return "quality/architecture-reviewer";
   }
 
+  if (role === "spec-format-gate") {
+    return "quality/spec-format-gate";
+  }
+
+  if (role === "spec-content-reviewer") {
+    return "quality/spec-content-reviewer";
+  }
+
+  if (role === "spec-post-impl-validator") {
+    return "quality/spec-post-impl-validator";
+  }
+
+  if (role === "spec-closer") {
+    return "quality/spec-closer";
+  }
+
   if (role === "information-gate") {
     return "core/information-gate";
   }
@@ -468,6 +484,10 @@ export function createPipelineRuntime(options: RuntimeOptions) {
       "quality/quality-reviewer",
       "quality/review-orchestrator",
       "quality/security-reviewer",
+      "quality/spec-format-gate",
+      "quality/spec-content-reviewer",
+      "quality/spec-post-impl-validator",
+      "quality/spec-closer",
     ]);
   };
 

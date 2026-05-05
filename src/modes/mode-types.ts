@@ -18,7 +18,7 @@ export interface UserConfirmationPolicy {
 }
 
 export interface ForcedClassification {
-  type: "Bug Fix" | "Feature" | "User Story" | "Audit" | "UX Simulation";
+  type: "Bug Fix" | "Feature" | "User Story" | "Audit" | "UX Simulation" | "Spec";
   complexity: "SIMPLES" | "MEDIA" | "COMPLEXA";
   severity: "Critical" | "High" | "Medium" | "Low";
 }

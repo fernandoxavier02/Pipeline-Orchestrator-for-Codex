@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Codex_CLI-Plugin-14532D?style=for-the-badge&logo=openai&logoColor=white" alt="Codex Plugin" />
   <img src="https://img.shields.io/badge/version-0.4.0-blue?style=for-the-badge" alt="Version" />
-  <img src="https://img.shields.io/badge/agents-36-orange?style=for-the-badge" alt="Agents" />
+  <img src="https://img.shields.io/badge/agents-41-orange?style=for-the-badge" alt="Agents" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License" />
 </p>
 
@@ -10,7 +10,7 @@
 > **Full-depth, prompt-driven multi-agent pipeline for OpenAI Codex CLI.**
 > Ported from the canonical [Claude Code Pipeline Orchestrator v3.2.0](https://github.com/FX-Studio-AI/pipeline-orchestrator) with Codex-native tool adaptations.
 
-A single `/pipeline` command classifies any task, confirms a proposal with you, then orchestrates **36 specialist agents** across **4 structured phases** — with TDD gates, adversarial review loops, confidence scoring, and Go/No-Go validation. No more wall-of-text responses. Every phase is isolated, verified, and auditable.
+A single `/pipeline` command classifies any task, confirms a proposal with you, then orchestrates **41 specialist agents** across **4 structured phases** — with TDD gates, adversarial review loops, confidence scoring, Spec lifecycle gates, and Go/No-Go validation. No more wall-of-text responses. Every phase is isolated, verified, and auditable.
 
 ---
 
@@ -133,7 +133,7 @@ That's it. The orchestrator handles classification, proposal, execution, and val
 
 ---
 
-## 36 Specialist Agents
+## 41 Specialist Agents
 
 ### Core (8)
 
@@ -180,6 +180,15 @@ That's it. The orchestrator handles classification, proposal, execution, and val
 | `architecture-reviewer` | Verifies project patterns, abstractions, naming conventions |
 | `final-adversarial-orchestrator` | 3 independent reviewers (security, architecture, quality) with zero context |
 
+### Spec Lifecycle (4)
+
+| Agent | Role |
+|:------|:-----|
+| `spec-format-gate` | Validates required Kiro spec artifacts before execution |
+| `spec-content-reviewer` | Reviews requirements/design/tasks content against acceptance criteria |
+| `spec-post-impl-validator` | Verifies implementation evidence after execution |
+| `spec-closer` | Produces closeout evidence only after gates and reviewers pass |
+
 ---
 
 ## Pipeline Variants
@@ -215,6 +224,7 @@ That's it. The orchestrator handles classification, proposal, execution, and val
 | Mechanism | Description |
 |:----------|:------------|
 | **Strict Real-Agent Runtime** | `/pipeline` requires real `spawn_agent` execution; without an agent adapter it blocks with `blocked-no-agent-runtime` |
+| **Spec Lifecycle Gates** | Spec variants block on missing artifacts, format/content failures, AC traceability gaps, and post-implementation validation failures |
 | **Information Gate** | Blocks pipeline if critical info is missing — asks ONE focused question at a time |
 | **Non-Invention Rule** | Agents STOP and ask rather than guess when information is absent |
 | **Stop Rule** | 2 consecutive build/test failures → full stop and root cause analysis |
@@ -254,11 +264,11 @@ Layer 3: SKILL.md bottom (self-check + anti-patterns)
 pipeline-orchestrator-for-codex/
 ├── .codex-plugin/
 │   └── plugin.json              # Plugin manifest (v0.4.0)
-├── agents/                      # 36 agent prompt files (~24K lines)
+├── agents/                      # 41 agent prompt files (~24K lines)
 │   ├── core/                    #   8 core agents
 │   ├── executor/                #   5 executor agents
 │   │   └── type-specific/       #  16 domain-specific agents
-│   └── quality/                 #   7 quality agents
+│   └── quality/                 #  12 quality/spec lifecycle agents
 ├── commands/
 │   └── pipeline.md              # Full pipeline reference (1,058 lines)
 ├── hooks/
@@ -297,7 +307,7 @@ If absent, the orchestrator auto-detects from `package.json`, `Makefile`, or com
 
 | Metric | Value |
 |:-------|:------|
-| Specialist agents | 36 |
+| Specialist agents | 41 |
 | Agent prompt lines | ~24,000 |
 | Pipeline variants | 12 |
 | Reference documents | 25 |
@@ -334,7 +344,7 @@ The plugin does NOT require a build step for normal use. The runtime components 
 | Component | Files | Dependencies |
 |:---|:---|:---|
 | Skill (instructions) | `skills/pipeline/SKILL.md` | None |
-| Agents (prompts) | `agents/**/*.md` (36 files) | None |
+| Agents (prompts) | `agents/**/*.md` (41 files) | None |
 | Hooks (enforcement) | `hooks/*.cjs` (3 files) | Node.js builtins only (fs, path) |
 | Manifest | `.codex-plugin/plugin.json` | None |
 | References | `references/**/*.md` | None |

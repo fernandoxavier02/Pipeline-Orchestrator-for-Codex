@@ -213,6 +213,8 @@ async function defaultRunBatch(batch, dependencies) {
         role: "executor-implementer",
         prompt: "Implement only the current batch.",
         input: { batch },
+        sessionRoot: dependencies?.sessionRoot,
+        sessionId: dependencies?.sessionId,
     });
     const changedFiles = extractExecutionChangedFiles(execution) ?? [];
     if (changedFiles.length === 0) {
@@ -363,6 +365,8 @@ async function dispatchExecutorFix(input) {
         authorityLevel: "executor",
         freshContext: true,
         reviewOnly: false,
+        sessionRoot: input.sessionRoot,
+        sessionId: input.sessionId,
     });
 }
 async function resolveCheckpointValidation(input) {
@@ -449,10 +453,15 @@ async function resolveQualityGatePlan(input) {
     return parsed;
 }
 export function createExecutorController(dependencies = {}) {
+    let currentExecutionMode;
+    let currentSessionRoot;
+    let currentSessionId;
     const runBatch = dependencies.runBatch ?? ((batch) => defaultRunBatch(batch, {
         runRole: dependencies.runRole,
         adversarialReview: dependencies.adversarialReview,
         mode: currentExecutionMode,
+        sessionRoot: currentSessionRoot,
+        sessionId: currentSessionId,
     }));
     const qualityGateRouter = dependencies.qualityGateRouter ?? createQualityGateRouter();
     const preTester = dependencies.preTester ?? createPreTester();
@@ -462,7 +471,6 @@ export function createExecutorController(dependencies = {}) {
         ?? createReviewOrchestrator({
             runRole: dependencies.runRole,
         });
-    let currentExecutionMode;
     const runFixLoop = async (input) => {
         let strategy = input.strategy;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -487,6 +495,8 @@ export function createExecutorController(dependencies = {}) {
     return {
         async executeApprovedWork(input) {
             currentExecutionMode = input.mode;
+            currentSessionRoot = input.sessionRoot;
+            currentSessionId = input.sessionId;
             const checkpointValidator = dependencies.checkpointValidator ?? createCheckpointValidator();
             checkpointValidator.reset?.();
             const tasks = input.batch?.files ?? input.tasks ?? input.proposal?.affectedFiles ?? [];
@@ -674,6 +684,8 @@ export function createExecutorController(dependencies = {}) {
                                     strategy,
                                     findings: resolveReworkFindings(activeBatchReview),
                                     changedDomains,
+                                    sessionRoot: currentSessionRoot,
+                                    sessionId: currentSessionId,
                                 });
                                 const structuredResult = parseExecutorFixResult(fixDispatch && typeof fixDispatch === "object" && "output" in fixDispatch
                                     ? fixDispatch.output
@@ -788,6 +800,8 @@ export function createExecutorController(dependencies = {}) {
                                     ? batchResult.review.findings
                                     : undefined,
                                 changedDomains,
+                                sessionRoot: currentSessionRoot,
+                                sessionId: currentSessionId,
                             });
                             const structuredResult = parseExecutorFixResult(fixDispatch && typeof fixDispatch === "object" && "output" in fixDispatch
                                 ? fixDispatch.output

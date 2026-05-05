@@ -35,6 +35,30 @@ describe("agents/ vs prompts/agents/ — intentional split", () => {
     expect(sample.length).toBeGreaterThan(500); // stubs are ~300 chars; rich docs are 4000+
   });
 
+  it("new spec lifecycle reference docs declare required agent frontmatter", () => {
+    const specAgents = [
+      "spec-format-gate.md",
+      "spec-content-reviewer.md",
+      "spec-post-impl-validator.md",
+      "spec-closer.md",
+    ];
+
+    for (const agent of specAgents) {
+      const content = readFileSync(join(AGENTS_QUALITY, agent), "utf8");
+      expect(content).toMatch(/^---\n[\s\S]+?\n---/);
+      expect(content).toMatch(/agent_type:/);
+      expect(content).toMatch(/gates_at:/);
+      expect(content).toMatch(/sentinel_checkpoints:/);
+    }
+  });
+
+  it("spec content reviewer frontmatter matches the phase-2 runtime gate", () => {
+    const content = readFileSync(join(AGENTS_QUALITY, "spec-content-reviewer.md"), "utf8");
+
+    expect(content).toMatch(/gates_at:\s*\[phase-2\]/);
+    expect(content).toMatch(/sentinel_checkpoints:\s*\[phase_1_to_2\]/);
+  });
+
   it("prompts/agents/quality/ has runtime stubs for every role resolved to quality/", () => {
     const files = readdirSync(PROMPTS_AGENTS_QUALITY).filter((f) => f.endsWith(".md"));
     // Must have stubs for every role that prompt-registry.ts registers under quality/

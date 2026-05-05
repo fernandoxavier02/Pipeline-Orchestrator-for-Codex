@@ -1,0 +1,284 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { describe, expect, it } from "vitest";
+
+const ROOT = process.cwd();
+const HOOK = join(ROOT, "hooks", "dispatch-guard.cjs");
+
+type HookOutput = {
+  hookSpecificOutput?: {
+    permissionDecision?: "allow" | "deny" | "ask";
+    permissionDecisionReason?: string;
+  };
+};
+
+function runHook(cwd: string, payload: Record<string, unknown>, env: NodeJS.ProcessEnv = {}) {
+  const result = spawnSync(process.execPath, [HOOK], {
+    cwd,
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...env,
+    },
+  });
+  const stdout = result.stdout.trim();
+  return {
+    status: result.status,
+    output: stdout ? JSON.parse(stdout) as HookOutput : {},
+  };
+}
+
+function writeTrustedSkill(root: string, skillName: string, frontmatter: string) {
+  const skillDir = join(root, "skills", skillName);
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), [
+    "---",
+    frontmatter.trim(),
+    "---",
+    `# ${skillName}`,
+  ].join("\n"), "utf8");
+}
+
+function readLastHookEvent(cwd: string) {
+  const eventsPath = join(cwd, ".codex", "pipeline", "hook-events.jsonl");
+  expect(existsSync(eventsPath)).toBe(true);
+  const lines = readFileSync(eventsPath, "utf8").trim().split(/\r?\n/u);
+  return JSON.parse(lines.at(-1) ?? "{}") as Record<string, unknown>;
+}
+
+describe("dispatch-guard frontmatter enforcement", () => {
+  it("denies invalid skill frontmatter and writes an auditable JSONL event", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    const pluginRoot = mkdtempSync(join(tmpdir(), "pipeline-plugin-root-"));
+    try {
+      writeTrustedSkill(pluginRoot, "spec-light", [
+        "agent_type: worker",
+        "gates_at: [phase-1]",
+      ].join("\n"));
+
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "spec-light",
+        },
+      }, {
+        CLAUDE_PLUGIN_ROOT: pluginRoot,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("sentinel_checkpoints");
+      expect(readLastHookEvent(cwd)).toMatchObject({
+        hook: "dispatch-guard",
+        event: "PreToolUse",
+        decision: "deny",
+        reason: expect.stringContaining("sentinel_checkpoints"),
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("allows valid plugin-root skill frontmatter with agent_type, gates_at, and sentinel_checkpoints", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    const pluginRoot = mkdtempSync(join(tmpdir(), "pipeline-plugin-root-"));
+    try {
+      writeTrustedSkill(pluginRoot, "spec-light", [
+        "agent_type: worker",
+        "gates_at: [phase-1, phase-2]",
+        "sentinel_checkpoints: [post_orchestrator]",
+      ].join("\n"));
+
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "spec-light",
+        },
+      }, {
+        CLAUDE_PLUGIN_ROOT: pluginRoot,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+      expect(readLastHookEvent(cwd)).toMatchObject({
+        hook: "dispatch-guard",
+        event: "PreToolUse",
+        decision: "allow",
+        reason: "frontmatter contract valid",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("denies governed skills backed only by workspace-local SKILL.md frontmatter", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      writeTrustedSkill(cwd, "spec-light", [
+        "agent_type: worker",
+        "gates_at: [phase-1]",
+        "sentinel_checkpoints: [post_orchestrator]",
+      ].join("\n"));
+
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "spec-light",
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("missing required frontmatter");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("denies governed skills with tool-supplied valid frontmatter when no trusted skill file exists", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "spec-light",
+          frontmatter: {
+            agent_type: "worker",
+            gates_at: ["phase-1"],
+            sentinel_checkpoints: ["post_orchestrator"],
+          },
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("missing required frontmatter");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("allows the real governed pipeline skill by resolving trusted on-disk frontmatter", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "pipeline",
+        },
+      }, {
+        CLAUDE_PLUGIN_ROOT: ROOT,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+      expect(readLastHookEvent(cwd)).toMatchObject({
+        decision: "allow",
+        attempted: "pipeline",
+        reason: "frontmatter contract valid",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("denies governed skill calls when frontmatter cannot be resolved", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "spec-light",
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("frontmatter");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("denies invalid frontmatter enum values", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    const pluginRoot = mkdtempSync(join(tmpdir(), "pipeline-plugin-root-"));
+    try {
+      writeTrustedSkill(pluginRoot, "spec-light", [
+        "agent_type: root",
+        "gates_at: [not-a-phase]",
+        "sentinel_checkpoints: [skip-everything]",
+      ].join("\n"));
+
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "spec-light",
+        },
+      }, {
+        CLAUDE_PLUGIN_ROOT: pluginRoot,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("agent_type");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("allows non-governed skills with ordinary tool-supplied frontmatter", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "context",
+          frontmatter: {
+            name: "context",
+            description: "Ordinary non-pipeline skill.",
+          },
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not read tool-supplied arbitrary skill paths", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      const externalSkill = join(cwd, "external-skill.md");
+      writeFileSync(externalSkill, [
+        "---",
+        "agent_type: root",
+        "gates_at: [not-a-phase]",
+        "sentinel_checkpoints: [skip-everything]",
+        "---",
+        "# External",
+      ].join("\n"), "utf8");
+
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "context",
+          path: externalSkill,
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});

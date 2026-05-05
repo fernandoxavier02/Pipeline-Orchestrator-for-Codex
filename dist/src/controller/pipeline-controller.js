@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { buildExecWindow } from "../security/exec-window.js";
+import { createExecWindowStore } from "../security/exec-window-store.js";
 import { resumePipeline } from "../continue/resume-pipeline.js";
 import { findLatestRun } from "../continue/find-latest-run.js";
 import { buildProposal } from "./build-proposal.js";
@@ -26,6 +28,7 @@ import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../
 import { reductionPolicyForMode } from "../modes/mode-policy.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
+import { deriveSpecIdFromRequest, isSpecLifecycleVariant, validateSpecAcceptanceTraceability, validateSpecContentReviewGate, validateSpecFormatGate, validateSpecLifecycleArtifacts, validateSpecPostImplementationGate, } from "../spec/spec-lifecycle.js";
 import ts from "typescript";
 function resolveExecutionComplexity(session, mode) {
     const policy = reductionPolicyForMode(mode);
@@ -114,6 +117,20 @@ async function executeApprovedContinuation(input) {
             phase: input.session.currentPhase,
         };
     }
+    const specPhaseTwoBlock = evaluateSpecPhaseGate({
+        workspaceRoot: getWorkspaceRoot(input.runtime),
+        variant: input.session.variant ?? input.session.proposal?.variant ?? "",
+        specId: resolveSpecIdFromSession(input.session),
+        phase: "phase-2",
+    });
+    if (specPhaseTwoBlock) {
+        return blockForSpecPhaseGate({
+            runtime: input.runtime,
+            session: input.session,
+            mode: input.mode,
+            block: specPhaseTwoBlock,
+        });
+    }
     const executionController = getExecutionController(input.runtime);
     const validationIntent = (input.session.proposal?.validationIntent ?? "standard");
     const authoritativeExecutionProof = approveExecutionScenarios({
@@ -129,20 +146,61 @@ async function executeApprovedContinuation(input) {
             batchSize: input.session.proposal.batchSize ?? Math.max(1, (input.session.proposal.affectedFiles ?? []).length),
         }
         : undefined;
-    const executionResult = await executionController.executeApprovedWork({
-        phase: input.session.currentPhase,
-        mode: input.session.mode ?? input.mode,
-        complexity: resolveExecutionComplexity(input.session, input.session.mode ?? input.mode),
-        variant: input.session.variant ?? input.session.proposal?.variant ?? "implement-light",
-        proposal,
-        tasks: input.session.proposal?.affectedFiles ?? input.session.touchedFiles ?? [],
-        approvedScenarios: authoritativeExecutionProof.approvedScenarios,
-        workingDirectory: getWorkspaceRoot(input.runtime),
-        stores: input.runtime?.stores,
-    });
+    // IMP-01: derive exec-window root and open a write-authorization window for this dispatch.
+    // Falls back to <workspaceRoot>/.codex/pipeline when no stateRoot is available (legacy/test paths).
+    const execWindowRoot = getStateRoot(input.runtime)
+        ?? join(getWorkspaceRoot(input.runtime), ".codex", "pipeline");
+    const execWindowSessionId = input.session.sessionId;
+    const execWindowStore = execWindowSessionId
+        ? createExecWindowStore(execWindowRoot)
+        : undefined;
+    if (execWindowStore && execWindowSessionId) {
+        execWindowStore.write(execWindowSessionId, buildExecWindow({
+            session_id: execWindowSessionId,
+            now: Math.floor(Date.now() / 1000),
+            purpose: "controller-managed-execution-phase-2",
+            spawning_agent: "pipeline-controller",
+        }));
+    }
+    let executionResult;
+    try {
+        executionResult = await executionController.executeApprovedWork({
+            phase: input.session.currentPhase,
+            mode: input.session.mode ?? input.mode,
+            complexity: resolveExecutionComplexity(input.session, input.session.mode ?? input.mode),
+            variant: input.session.variant ?? input.session.proposal?.variant ?? "implement-light",
+            proposal,
+            tasks: input.session.proposal?.affectedFiles ?? input.session.touchedFiles ?? [],
+            approvedScenarios: authoritativeExecutionProof.approvedScenarios,
+            workingDirectory: getWorkspaceRoot(input.runtime),
+            stores: input.runtime?.stores,
+            sessionRoot: execWindowSessionId ? execWindowRoot : undefined,
+            sessionId: execWindowSessionId,
+        });
+    }
+    finally {
+        // Close exec-window — revokes write authorization regardless of outcome.
+        if (execWindowStore && execWindowSessionId) {
+            execWindowStore.delete(execWindowSessionId);
+        }
+    }
     const executionPayload = executionResult && typeof executionResult === "object"
         ? executionResult
         : {};
+    const specPhaseThreeBlock = evaluateSpecPhaseGate({
+        workspaceRoot: getWorkspaceRoot(input.runtime),
+        variant: input.session.variant ?? input.session.proposal?.variant ?? "",
+        specId: resolveSpecIdFromSession(input.session),
+        phase: "phase-3",
+    });
+    if (specPhaseThreeBlock) {
+        return blockForSpecPhaseGate({
+            runtime: input.runtime,
+            session: input.session,
+            mode: input.mode,
+            block: specPhaseThreeBlock,
+        });
+    }
     const executionStatus = "status" in executionPayload && typeof executionPayload.status === "string"
         ? executionPayload.status
         : undefined;
@@ -181,30 +239,34 @@ async function executeApprovedContinuation(input) {
         && typeof executionPayload.finalReview.finalDecision === "string"
         ? executionPayload.finalReview.finalDecision
         : undefined;
-    if (hasAuthoritativeFinalReviewResult(executionPayload)
-        && finalReviewStatus === "approved"
-        && finalReviewDecision === "approved") {
-        await persistGateAndConfidence({
-            stores: {
-                gateLog: input.runtime?.stores?.gateLog,
-                confidence: input.runtime?.stores?.confidence,
-            },
-        }, [
-            toGateLogEntry({
-                gate: "FINAL_ADVERSARIAL_GATE",
-                hardness: "SOFT",
-                phase: "phase-3",
-                decision: "pass",
-                detail: "Final adversarial review completed successfully during controller-managed execution.",
-            }),
-        ], input.session.confidenceScore ?? 1);
-        // B4: phase_2_to_3 sentinel checkpoint — execution succeeded and adversarial gate passed.
+    if (hasAuthoritativeFinalReviewResult(executionPayload) && !isFinalAdversarialRework && !isCircuitBreaker && !isCheckpointFailure) {
+        // IMP-02: load prior sentinel state so completedPhases is merged rather than hardcoded.
+        const priorSentinel = await loadSentinelState(input.runtime);
+        const priorCompleted = priorSentinel?.completedPhases ?? [];
+        const phase2CompletedPhases = [...new Set([...priorCompleted, "phase-2"])];
+        if (finalReviewStatus === "approved" && finalReviewDecision === "approved") {
+            await persistGateAndConfidence({
+                stores: {
+                    gateLog: input.runtime?.stores?.gateLog,
+                    confidence: input.runtime?.stores?.confidence,
+                },
+            }, [
+                toGateLogEntry({
+                    gate: "FINAL_ADVERSARIAL_GATE",
+                    hardness: "SOFT",
+                    phase: "phase-3",
+                    decision: "pass",
+                    detail: "Final adversarial review completed successfully during controller-managed execution.",
+                }),
+            ], input.session.confidenceScore ?? 1);
+        }
+        // IMP-02 + IMP-03: write phase_2_to_3 for ALL successful completion paths (adversarial or not).
         await saveSentinelState(input.runtime, {
             pipelineActive: true,
             currentPhase: "phase-2",
             currentAgent: "pipeline-controller",
             expectedNext: ["sanity-checker", "final-validator"],
-            completedPhases: ["phase-0", "phase-1", "phase-1.5", "phase-2"],
+            completedPhases: phase2CompletedPhases,
             gateSummary: ["SENTINEL_CHECKPOINT"],
             batchState: {
                 batchIndex: input.session.batchIndex ?? 0,
@@ -281,6 +343,97 @@ function createInitialExecutionProof() {
         },
         checkpointEvidence: [],
         fixAttempts: [],
+    };
+}
+function resolveSpecIdFromSession(session) {
+    const source = session.proposal?.summary ?? session.sessionId ?? session.variant ?? "spec-request";
+    return deriveSpecIdFromRequest(source);
+}
+function evaluateSpecPhaseGate(input) {
+    if (!isSpecLifecycleVariant(input.variant)) {
+        return undefined;
+    }
+    const artifactGate = validateSpecLifecycleArtifacts({
+        workspaceRoot: input.workspaceRoot,
+        variant: input.variant,
+        specId: input.specId,
+    });
+    if (artifactGate.status === "blocked") {
+        return {
+            gate: "SPEC_ARTIFACT_MISSING",
+            phase: input.phase,
+            detail: `Cannot evaluate Spec ${input.phase} gates because artifacts are missing at ${artifactGate.specPath}: ${artifactGate.missingArtifacts.join(", ")}`,
+            pendingDecision: "spec-artifacts-required",
+        };
+    }
+    if (input.phase === "phase-2") {
+        const contentGate = validateSpecContentReviewGate({
+            specPath: artifactGate.specPath,
+        });
+        if (contentGate.status === "blocked") {
+            return {
+                gate: "SPEC_CONTENT_REVIEW_NOGO",
+                phase: "phase-2",
+                detail: contentGate.detail,
+                pendingDecision: "spec-content-review-required",
+            };
+        }
+        const traceabilityGate = validateSpecAcceptanceTraceability({
+            specPath: artifactGate.specPath,
+        });
+        if (traceabilityGate.status === "blocked") {
+            return {
+                gate: "SPEC_AC_TRACEABILITY_GAP",
+                phase: "phase-2",
+                detail: `Missing spec traceability for: ${traceabilityGate.missingTraceability.join(", ")}`,
+                pendingDecision: "spec-traceability-required",
+            };
+        }
+    }
+    if (input.phase === "phase-3") {
+        const postImplementationGate = validateSpecPostImplementationGate({
+            specPath: artifactGate.specPath,
+        });
+        if (postImplementationGate.status === "blocked") {
+            return {
+                gate: "SPEC_POST_IMPL_FAIL",
+                phase: "phase-3",
+                detail: postImplementationGate.detail,
+                pendingDecision: "spec-post-implementation-required",
+            };
+        }
+    }
+    return undefined;
+}
+async function blockForSpecPhaseGate(input) {
+    await persistGateAndConfidence({
+        stores: {
+            gateLog: input.runtime?.stores?.gateLog,
+            confidence: input.runtime?.stores?.confidence,
+        },
+    }, [
+        toGateLogEntry({
+            gate: input.block.gate,
+            hardness: "HARD",
+            phase: input.block.phase,
+            decision: "block",
+            detail: input.block.detail,
+        }),
+    ], input.session.confidenceScore ?? 1);
+    await input.runtime?.stores?.session?.save?.({
+        ...input.session,
+        currentPhase: input.block.phase,
+        phase: input.block.phase,
+        unresolvedBlockers: [input.block.detail],
+        pendingDecision: input.block.pendingDecision,
+        touchedFiles: input.session.touchedFiles ?? input.session.proposal?.affectedFiles ?? [],
+    });
+    return {
+        mode: input.mode,
+        status: "blocked",
+        phase: input.block.phase,
+        blockedBy: input.block.gate,
+        reason: input.block.detail,
     };
 }
 function resolveScenarioWorkspaceRoot(preferredRoot) {
@@ -942,6 +1095,125 @@ export function createPipelineController(runtime) {
                     detail: designInterrogation.summary,
                 }),
             ];
+            const specArtifactGate = isSpecLifecycleVariant(classificationResult.classification.variant)
+                ? validateSpecLifecycleArtifacts({
+                    workspaceRoot: getWorkspaceRoot(runtime),
+                    variant: classificationResult.classification.variant,
+                    specId: deriveSpecIdFromRequest(normalizedRequest),
+                })
+                : undefined;
+            if (specArtifactGate?.status === "blocked") {
+                const detail = `Missing spec artifacts at ${specArtifactGate.specPath}: ${specArtifactGate.missingArtifacts.join(", ")}`;
+                const specGateEntry = toGateLogEntry({
+                    gate: "SPEC_ARTIFACT_MISSING",
+                    hardness: "HARD",
+                    phase: "phase-1",
+                    decision: "block",
+                    detail,
+                });
+                const blockedGates = [
+                    ...gateEntries,
+                    specGateEntry,
+                ];
+                await persistGateAndConfidence(runtime ?? {}, blockedGates, 1);
+                await runtime?.stores?.session?.save?.({
+                    sessionId: `${mode}:${normalizedRequest || "request"}`,
+                    runStartedAt: new Date().toISOString(),
+                    currentPhase: "phase-1",
+                    phase: "phase-1",
+                    batchIndex: 0,
+                    mode,
+                    variant: classificationResult.classification.variant,
+                    confidenceScore: 1,
+                    proposal: {
+                        ...authoritativeProposal,
+                        awaitingUserConfirmation: false,
+                    },
+                    unresolvedBlockers: [detail],
+                    pendingDecision: "spec-artifacts-required",
+                    touchedFiles: authoritativeProposal.affectedFiles,
+                });
+                return {
+                    mode,
+                    status: "blocked",
+                    blockedBy: "SPEC_ARTIFACT_MISSING",
+                    type: classificationResult.classification.type,
+                    complexity: classificationResult.classification.complexity,
+                    variant: classificationResult.classification.variant,
+                    proposal: authoritativeProposal,
+                    gates: [
+                        infoGate,
+                        designInterrogation,
+                        {
+                            gate: "SPEC_ARTIFACT_MISSING",
+                            status: "blocked",
+                            hardness: "HARD",
+                            reason: detail,
+                        },
+                    ],
+                    missingArtifacts: specArtifactGate.missingArtifacts,
+                    specPath: specArtifactGate.specPath,
+                };
+            }
+            const passedSpecPath = specArtifactGate?.status === "passed"
+                ? specArtifactGate.specPath
+                : undefined;
+            const specFormatGate = passedSpecPath
+                ? validateSpecFormatGate({
+                    specPath: passedSpecPath,
+                })
+                : undefined;
+            if (specFormatGate?.status === "blocked") {
+                const specGateEntry = toGateLogEntry({
+                    gate: "SPEC_FORMAT_GATE_FAIL",
+                    hardness: "HARD",
+                    phase: "phase-1",
+                    decision: "block",
+                    detail: specFormatGate.detail,
+                });
+                const blockedGates = [
+                    ...gateEntries,
+                    specGateEntry,
+                ];
+                await persistGateAndConfidence(runtime ?? {}, blockedGates, 1);
+                await runtime?.stores?.session?.save?.({
+                    sessionId: `${mode}:${normalizedRequest || "request"}`,
+                    runStartedAt: new Date().toISOString(),
+                    currentPhase: "phase-1",
+                    phase: "phase-1",
+                    batchIndex: 0,
+                    mode,
+                    variant: classificationResult.classification.variant,
+                    confidenceScore: 1,
+                    proposal: {
+                        ...authoritativeProposal,
+                        awaitingUserConfirmation: false,
+                    },
+                    unresolvedBlockers: [specFormatGate.detail],
+                    pendingDecision: "spec-format-required",
+                    touchedFiles: authoritativeProposal.affectedFiles,
+                });
+                return {
+                    mode,
+                    status: "blocked",
+                    blockedBy: "SPEC_FORMAT_GATE_FAIL",
+                    type: classificationResult.classification.type,
+                    complexity: classificationResult.classification.complexity,
+                    variant: classificationResult.classification.variant,
+                    proposal: authoritativeProposal,
+                    gates: [
+                        infoGate,
+                        designInterrogation,
+                        {
+                            gate: "SPEC_FORMAT_GATE_FAIL",
+                            status: "blocked",
+                            hardness: "HARD",
+                            reason: specFormatGate.detail,
+                        },
+                    ],
+                    specPath: passedSpecPath,
+                };
+            }
             if (mode === "diagnostic") {
                 await persistGateAndConfidence(runtime ?? {}, gateEntries, 1);
                 return {

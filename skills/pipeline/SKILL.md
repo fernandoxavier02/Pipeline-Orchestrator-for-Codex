@@ -1,6 +1,9 @@
 ---
 name: pipeline
 description: "Automated multi-agent pipeline for any project. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. A single /pipeline command auto-classifies, confirms with user, then executes with TDD, batch processing, context-independent adversarial review with user gates, final adversarial team (3 parallel agents), and Go/No-Go validation. Always use this for tasks affecting 2+ files or requiring careful orchestration. Even if the user doesn't mention 'pipeline' — if the task is non-trivial, this skill applies."
+agent_type: worker
+gates_at: [phase-0, phase-1, phase-1.5, phase-2, phase-3]
+sentinel_checkpoints: [post_orchestrator, phase_0_to_1, phase_1_to_2, phase_2_to_3, post_final_validator]
 ---
 
 # Pipeline Orchestrator — Execution Script
@@ -77,10 +80,10 @@ Project: [current working directory]
 ```
 
 Wait for the agent to return a `CLASSIFICATION` block with:
-- `type`: Bug Fix | Feature | User Story | Audit | UX Simulation
+- `type`: Bug Fix | Feature | User Story | Audit | UX Simulation | Spec
 - `complexity`: SIMPLES | MEDIA | COMPLEXA
 - `severity`: Critical | High | Medium | Low
-- `pipeline_variant`: bugfix-light, implement-heavy, etc.
+- `pipeline_variant`: bugfix-light, implement-heavy, spec-light, spec-heavy, spec-audit-only, etc.
 
 ### Step 0.2 — Check for information gaps
 
@@ -285,6 +288,7 @@ Dispatch a worker agent. It presents options:
 | User Story | user-story-light | user-story-heavy |
 | Audit | audit-light | audit-heavy |
 | UX Simulation | ux-sim-light | ux-sim-heavy |
+| Spec | spec-light | spec-heavy |
 
 SIMPLES = direct execution (no pipeline phases, just do the task).
 
@@ -368,9 +372,9 @@ These invariants apply to every controller decision:
 The gates below are the canonical set. The typed registry lives in `src/gates/gate-registry.ts`.
 
 MANDATORY: SSOT_CONFLICT, ADVERSARIAL_GATE_MANDATORY
-HARD: INFO_GATE_BLOCKED, TDD_APPROVAL, PLAN_REJECTED, MICRO_GATE_GAP, CHECKPOINT_FAIL, ADVERSARIAL_BLOCK, FINAL_ADVERSARIAL_REWORK, SENTINEL_CHECKPOINT, SENTINEL_SEQUENCE_BLOCK
+HARD: INFO_GATE_BLOCKED, TDD_APPROVAL, PLAN_REJECTED, MICRO_GATE_GAP, CHECKPOINT_FAIL, ADVERSARIAL_BLOCK, FINAL_ADVERSARIAL_REWORK, SENTINEL_CHECKPOINT, SENTINEL_SEQUENCE_BLOCK, SPEC_ARTIFACT_MISSING, SPEC_FORMAT_GATE_FAIL, SPEC_CONTENT_REVIEW_NOGO, SPEC_AC_TRACEABILITY_GAP, SPEC_POST_IMPL_FAIL
 CIRCUIT_BREAKER: STOP_RULE, FIX_LOOP_EXHAUSTED
-SOFT: STALE_CONTEXT, INFO_GATE_OK, DESIGN_INTERROGATION, REDUCED_VALIDATION_USAGE, ADVERSARIAL_GATE, FINAL_ADVERSARIAL_GATE, CLOSEOUT_CONFIRM
+SOFT: STALE_CONTEXT, INFO_GATE_OK, DESIGN_INTERROGATION, REDUCED_VALIDATION_USAGE, ADVERSARIAL_GATE, FINAL_ADVERSARIAL_GATE, CLOSEOUT_CONFIRM, ADVERSARIAL_LOOP_CHECKPOINT
 
 ## PHASE ROLLBACK PATHS
 

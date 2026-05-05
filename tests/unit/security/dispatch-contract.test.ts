@@ -69,6 +69,26 @@ describe("evaluateAgentDispatch", () => {
     expect(verdict.kind).toBe("block");
   });
 
+  it("blocks calls under the codex namespace whose folder does not match the canonical FQN", () => {
+    const verdict = evaluateAgentDispatch({
+      subagentType: `${PIPELINE_NAMESPACE}:wrong-folder:task-orchestrator`,
+    });
+    expect(verdict.kind).toBe("block");
+    if (verdict.kind === "block") {
+      expect(verdict.reason).toContain("expected canonical FQN");
+    }
+  });
+
+  it("blocks the legacy pipeline namespace", () => {
+    const verdict = evaluateAgentDispatch({
+      subagentType: "pipeline-orchestrator:core:task-orchestrator",
+    });
+    expect(verdict.kind).toBe("block");
+    if (verdict.kind === "block") {
+      expect(verdict.reason).toContain("legacy namespace");
+    }
+  });
+
   it("allows agents from other namespaces (no interference)", () => {
     const verdict = evaluateAgentDispatch({
       subagentType: "some-other-plugin:foo:bar",

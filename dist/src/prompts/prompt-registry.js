@@ -25,6 +25,10 @@ const REQUIRED_OUTPUT_BLOCKS = {
     "quality/quality-reviewer": ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"],
     "quality/security-reviewer": ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"],
     "quality/architecture-reviewer": ["FINDINGS", "SEVERITY", "EVIDENCE", "NEXT_ACTION"],
+    "quality/spec-format-gate": ["SPEC_FORMAT_GATE", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+    "quality/spec-content-reviewer": ["SPEC_CONTENT_REVIEW", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+    "quality/spec-post-impl-validator": ["SPEC_POST_IMPL_VALIDATION", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+    "quality/spec-closer": ["SPEC_CLOSEOUT", "STATUS", "EVIDENCE", "NEXT_ACTION"],
 };
 function normalizePromptName(name) {
     return name.replace(/^agents\//u, "").replace(/\\/g, "/");

@@ -16,6 +16,9 @@ types:
   - type: UX Simulation
     light: ux-sim-light
     heavy: ux-sim-heavy
+  - type: Spec
+    light: spec-light
+    heavy: spec-heavy
 ---
 # Complexity Matrix (SSOT)
 
@@ -76,6 +79,7 @@ Values at exact boundaries (e.g., exactly 3 files, exactly 30 lines) are classif
 | **User Story** | DIRETO | user-story-light | user-story-heavy |
 | **Audit** | DIRETO | audit-light | audit-heavy |
 | **UX Simulation** | DIRETO | ux-sim-light | ux-sim-heavy |
+| **Spec** | DIRETO | spec-light | spec-heavy |
 
 DIRETO = Direct execution without pipeline (build + test only, max 2 files, < 30 lines).
 

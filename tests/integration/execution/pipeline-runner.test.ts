@@ -335,6 +335,45 @@ Check requirement compliance directly from the changed files.
     }
   });
 
+  it.each([
+    ["spec-format-gate", "spec-format-gate.md", /quality\/spec-format-gate|required output block/i],
+    ["spec-content-reviewer", "spec-content-reviewer.md", /quality\/spec-content-reviewer|required output block/i],
+    ["spec-post-impl-validator", "spec-post-impl-validator.md", /quality\/spec-post-impl-validator|required output block/i],
+    ["spec-closer", "spec-closer.md", /quality\/spec-closer|required output block/i],
+  ])("consults the validated %s prompt file in the runtime dispatcher path", async (role, fileName, expectedError) => {
+    const root = await mkdtemp(join(tmpdir(), `pipeline-runtime-${role}-prompt-`));
+
+    try {
+      await cp(join(process.cwd(), "prompts"), join(root, "prompts"), { recursive: true });
+      await writeFile(
+        join(root, "prompts", "agents", "quality", fileName),
+        `# ${role}
+
+Review the spec lifecycle step.
+`,
+        "utf8",
+      );
+
+      const runtime = createPipelineRuntime({
+        cwd: root,
+        codexHome: "/codex-home",
+      });
+
+      await expect(runtime.dispatcher.runRole({
+        mode: "single-agent",
+        role,
+        prompt: "inline spec prompt should not be trusted",
+        input: {
+          specPath: ".kiro/specs/fluxo-pagamento",
+          files: ["requirements.md", "design.md", "tasks.md"],
+        },
+        freshContext: true,
+      })).rejects.toThrow(expectedError);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("fails controller startup when the design interrogator prompt contract is broken", async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-runtime-design-interrogator-prompt-"));
 

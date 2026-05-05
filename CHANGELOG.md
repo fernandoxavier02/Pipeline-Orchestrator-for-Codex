@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Spec lifecycle closure for `codex-harness-claude-absorption`: `spec-*` variants now block on required Kiro artifacts, AC traceability gaps, and registered `SPEC_*` gate decisions instead of relying on documentation-only promises.
+- Four Spec lifecycle agents and runtime prompts: `spec-format-gate`, `spec-content-reviewer`, `spec-post-impl-validator`, and `spec-closer`.
+- Hook frontmatter enforcement for governed pipeline skills, with deny decisions and audit events in `.codex/pipeline/hook-events.jsonl`.
+
+### Changed
+
+- `/pipeline` skill parity now documents all gate-registry entries, including the Spec gates and adversarial-loop checkpoint.
+- `exec-window` session files now use stable encoded filenames so Windows-safe logical session ids can contain `:` while path traversal remains blocked.
+
 ## [0.4.0] — 2026-04-25
 
 ### CC v4.1.0-rc.1 parity upgrade — security middleware, sentinel wiring, atomic stores

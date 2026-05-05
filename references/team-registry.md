@@ -90,6 +90,28 @@ routes:
     parallelGroups: []
     skipInLight:
       - ux-accessibility-auditor
+  - profile: spec-heavy
+    type: Spec
+    intensity: heavy
+    mode: code-changing
+    agents:
+      - spec-format-gate
+      - spec-content-reviewer
+      - spec-post-impl-validator
+      - spec-closer
+    parallelGroups: []
+    skipInLight: []
+  - profile: spec-light
+    type: Spec
+    intensity: light
+    mode: code-changing
+    agents:
+      - spec-format-gate
+      - spec-content-reviewer
+      - spec-post-impl-validator
+      - spec-closer
+    parallelGroups: []
+    skipInLight: []
   - profile: audit-heavy
     type: Audit
     intensity: heavy

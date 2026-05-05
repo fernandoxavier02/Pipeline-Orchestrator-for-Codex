@@ -38,7 +38,7 @@ describe("reference-backed runtime", () => {
       );
       await writeFile(
         join(copiedRefs, "complexity-matrix.md"),
-        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
+        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n  - type: Spec\n    light: spec-light\n    heavy: spec-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
       );
       await writeFile(
         join(copiedRefs, "gates", "macro-gate-questions.md"),

@@ -99,6 +99,26 @@ const FALLBACK_PROFILE_BY_ROUTE = {
             checklists: ["business-logic", "data-integrity", "error-handling", "injection", "input-validation"],
         },
     },
+    Spec: {
+        light: {
+            variant: "spec-light",
+            type: "Spec",
+            complexity: "MEDIA",
+            intensity: "light",
+            batchSize: 2,
+            summary: "Spec lifecycle flow with explicit artifact and traceability gates.",
+            checklists: ["business-logic", "error-handling", "input-validation"],
+        },
+        heavy: {
+            variant: "spec-heavy",
+            type: "Spec",
+            complexity: "COMPLEXA",
+            intensity: "heavy",
+            batchSize: 1,
+            summary: "Spec lifecycle flow with explicit artifact and traceability gates.",
+            checklists: ["business-logic", "data-integrity", "error-handling", "input-validation"],
+        },
+    },
 };
 function getFallbackProfile(type, intensity) {
     return FALLBACK_PROFILE_BY_ROUTE[type][intensity];
@@ -120,12 +140,13 @@ function resolveProfile(referenceIndex, type, intensity) {
     return getFallbackProfile(type, intensity);
 }
 export function applyClassificationOverrides(mode, classification, referenceIndex) {
+    const isSpecVariant = classification.variant.startsWith("spec-");
     let nextType = classification.type;
     let nextComplexity = classification.complexity;
     let intensity = classification.complexity === "COMPLEXA" ? "heavy" : "light";
     let validationIntent = "standard";
     if (mode === "--hotfix") {
-        nextType = "Bug Fix";
+        nextType = isSpecVariant ? classification.type : "Bug Fix";
         nextComplexity = "COMPLEXA";
         intensity = "heavy";
         validationIntent = "reduced";
@@ -142,11 +163,33 @@ export function applyClassificationOverrides(mode, classification, referenceInde
         nextComplexity = "SIMPLES";
         intensity = "light";
     }
-    const profile = mode === "full" || mode === "diagnostic" || mode === "review-only" || mode === "continue" || mode === "--plan" || mode === "--grill"
-        ? referenceIndex
-            ? referenceIndex.getPipelineProfile(classification.variant)
-            : getProfileByVariant(classification.variant) ?? getFallbackProfile(nextType, intensity)
-        : resolveProfile(referenceIndex, nextType, intensity);
+    const specProfile = isSpecVariant
+        ? {
+            variant: mode === "--complexa" || classification.variant === "spec-heavy"
+                ? "spec-heavy"
+                : classification.variant,
+            type: classification.type,
+            complexity: nextComplexity,
+            intensity,
+            batchSize: intensity === "heavy" ? 1 : 2,
+            summary: "Spec lifecycle flow with explicit artifact and traceability gates.",
+            checklists: ["business-logic", "error-handling", "input-validation"],
+        }
+        : undefined;
+    const profile = specProfile && referenceIndex
+        ? referenceIndex.getPipelineProfileForRoute("Spec", intensity)
+        : specProfile
+            ? {
+                ...specProfile,
+                complexity: nextComplexity,
+                intensity,
+                batchSize: intensity === "heavy" ? 1 : 2,
+            }
+            : mode === "full" || mode === "diagnostic" || mode === "review-only" || mode === "continue" || mode === "--plan" || mode === "--grill"
+                ? specProfile ?? (referenceIndex
+                    ? referenceIndex.getPipelineProfile(classification.variant)
+                    : getProfileByVariant(classification.variant) ?? getFallbackProfile(nextType, intensity))
+                : resolveProfile(referenceIndex, nextType, intensity);
     return {
         classification: {
             type: nextType,

@@ -30,12 +30,22 @@ export function resolveContinueRollbackState(input: {
   }
 
   const allowedDecisions = new Set(["stop", "revalidate", "phase-2-proof-required", "replan", "manual"]);
+  const specPendingDecisionRoutes = new Map<string, "revalidate" | "replan">([
+    ["spec-artifacts-required", "replan"],
+    ["spec-content-review-required", "replan"],
+    ["spec-traceability-required", "revalidate"],
+    ["spec-post-implementation-required", "replan"],
+  ]);
   const phaseOnePointFiveApprovalDecisions = new Set([
     "phase-1.5-approval-required",
     "phase-1.5-reapproval-required",
   ]);
 
-  if (!allowedDecisions.has(pendingDecision) && !phaseOnePointFiveApprovalDecisions.has(pendingDecision)) {
+  if (
+    !allowedDecisions.has(pendingDecision)
+    && !phaseOnePointFiveApprovalDecisions.has(pendingDecision)
+    && !specPendingDecisionRoutes.has(pendingDecision)
+  ) {
     throw new Error(`Unknown continue pending decision "${pendingDecision}"`);
   }
 
@@ -57,9 +67,10 @@ export function resolveContinueRollbackState(input: {
     };
   }
 
-  const normalizedRollbackRoute = pendingDecision === "phase-2-proof-required"
+  const normalizedRollbackRoute = specPendingDecisionRoutes.get(pendingDecision)
+    ?? (pendingDecision === "phase-2-proof-required"
     ? "revalidate"
-    : pendingDecision;
+    : pendingDecision);
 
   const rollbackFromGateLog = resolveRollbackRoute(input.gateLogEntries ?? []);
   const hasGateHistory = (input.gateLogEntries ?? []).length > 0;

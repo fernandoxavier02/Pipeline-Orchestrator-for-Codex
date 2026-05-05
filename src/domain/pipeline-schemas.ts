@@ -13,7 +13,7 @@ const confidenceBandSchema = z.enum(["low", "medium", "high"]);
 
 export const orchestratorDecisionSchema = z.object({
   mode: z.string(),
-  type: z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation"]),
+  type: z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation", "Spec"]),
   complexity: z.enum(["SIMPLES", "MEDIA", "COMPLEXA"]),
   variant: z.string(),
   summary: z.string(),

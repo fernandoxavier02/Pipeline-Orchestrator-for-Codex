@@ -9,6 +9,7 @@
  */
 
 export const PIPELINE_NAMESPACE = "pipeline-orchestrator-for-codex";
+export const LEGACY_PIPELINE_NAMESPACE = "pipeline-orchestrator";
 
 export type DispatchTool = "Agent" | "Skill";
 
@@ -59,6 +60,10 @@ const RAW_AGENT_LEAVES: ReadonlyArray<readonly [FolderName, string]> = [
   ["quality", "review-orchestrator"],
   // B9: adversarial-quality-reviewer (introduced in this batch series)
   ["quality", "adversarial-quality-reviewer"],
+  ["quality", "spec-format-gate"],
+  ["quality", "spec-content-reviewer"],
+  ["quality", "spec-post-impl-validator"],
+  ["quality", "spec-closer"],
 ];
 
 function buildFqn(folder: FolderName, leaf: string): string {
@@ -97,6 +102,15 @@ export function evaluateAgentDispatch(input: {
     return { kind: "allow" }; // not a pipeline-orchestrator dispatch
   }
 
+  if (value.startsWith(`${LEGACY_PIPELINE_NAMESPACE}:`)) {
+    return {
+      kind: "block",
+      reason:
+        `DISPATCH_GUARD: legacy namespace "${LEGACY_PIPELINE_NAMESPACE}" is not allowed. ` +
+        `Use ${PIPELINE_NAMESPACE}.`,
+    };
+  }
+
   if (isFullyQualifiedPipelineAgent(value)) {
     const leaf = value.split(":").pop() ?? "";
     if (!isPipelineAgentLeaf(leaf)) {
@@ -106,6 +120,15 @@ export function evaluateAgentDispatch(input: {
           `DISPATCH_GUARD: subagent_type="${value}" uses the pipeline namespace ` +
           `but its leaf "${leaf}" is not a registered pipeline agent. ` +
           `Registered leaves: ${Array.from(LEAF_TO_FQN_MAP.keys()).join(", ")}.`,
+      };
+    }
+    const expectedFqn = fqnFor(leaf);
+    if (value !== expectedFqn) {
+      return {
+        kind: "block",
+        reason:
+          `DISPATCH_GUARD: subagent_type="${value}" is not the expected canonical FQN. ` +
+          `Use "${expectedFqn}".`,
       };
     }
     return {

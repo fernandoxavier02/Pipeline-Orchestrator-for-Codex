@@ -16,8 +16,21 @@
  */
 
 const { recordHookEvent } = require('./hook-events.cjs');
+const fs = require('fs');
+const path = require('path');
 
 const PIPELINE_NAMESPACE = 'pipeline-orchestrator-for-codex';
+const LEGACY_PIPELINE_NAMESPACE = 'pipeline-orchestrator';
+const GOVERNED_SKILLS = new Set(['pipeline', 'spec-light', 'spec-heavy', 'spec-audit-only']);
+const ALLOWED_AGENT_TYPES = new Set(['worker', 'default', 'explorer']);
+const ALLOWED_GATES_AT = new Set(['phase-0', 'phase-1', 'phase-1.5', 'phase-2', 'phase-3', 'continue']);
+const ALLOWED_SENTINEL_CHECKPOINTS = new Set([
+  'post_orchestrator',
+  'phase_0_to_1',
+  'phase_1_to_2',
+  'phase_2_to_3',
+  'post_final_validator',
+]);
 
 const PIPELINE_AGENT_LEAVES = [
   ['core', 'adversarial-batch'],
@@ -57,6 +70,10 @@ const PIPELINE_AGENT_LEAVES = [
   ['quality', 'quality-gate-router'],
   ['quality', 'review-orchestrator'],
   ['quality', 'adversarial-quality-reviewer'],
+  ['quality', 'spec-format-gate'],
+  ['quality', 'spec-content-reviewer'],
+  ['quality', 'spec-post-impl-validator'],
+  ['quality', 'spec-closer'],
 ];
 
 const LEAF_TO_FQN = new Map(
@@ -69,6 +86,11 @@ function isPipelineAgentLeaf(name) {
 
 function fqnFor(leaf) {
   return LEAF_TO_FQN.get(leaf);
+}
+
+function skillLeafName(toolInput) {
+  const skillName = (toolInput && (toolInput.skill || toolInput.skill_name || toolInput.skillName || toolInput.name)) || '';
+  return skillName.includes(':') ? skillName.split(':').pop() : skillName;
 }
 
 function deny(reason, attempted, expected) {
@@ -93,12 +115,163 @@ function allow() {
   // Silent allow (consistent with sentinel hook)
 }
 
+function extractFrontmatterBlock(raw) {
+  if (typeof raw !== 'string') return undefined;
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  return match ? match[1] : undefined;
+}
+
+function parseFrontmatterScalar(value) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function parseFrontmatterValue(raw) {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed
+      .slice(1, -1)
+      .split(',')
+      .map(parseFrontmatterScalar)
+      .filter(Boolean);
+  }
+  return parseFrontmatterScalar(trimmed);
+}
+
+function parseFrontmatterYaml(raw) {
+  if (typeof raw !== 'string') return undefined;
+  const frontmatter = {};
+  for (const line of raw.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$/);
+    if (!match) continue;
+    frontmatter[match[1]] = parseFrontmatterValue(match[2] || '');
+  }
+  return frontmatter;
+}
+
+function loadTrustedSkillFrontmatter(skillName) {
+  if (!skillName) return undefined;
+  const leaf = skillName.includes(':') ? skillName.split(':').pop() : skillName;
+  const roots = [
+    process.env.CLAUDE_PLUGIN_ROOT,
+  ].filter((entry) => typeof entry === 'string' && entry.length > 0);
+
+  for (const root of roots) {
+    const candidate = path.join(root, 'skills', leaf, 'SKILL.md');
+    try {
+      const block = extractFrontmatterBlock(fs.readFileSync(candidate, 'utf8'));
+      if (block) return parseFrontmatterYaml(block);
+    } catch {
+      // Try the next trusted root.
+    }
+  }
+
+  return undefined;
+}
+
+function resolveSkillFrontmatter(toolInput) {
+  if (!toolInput || typeof toolInput !== 'object') return undefined;
+  if (toolInput.frontmatter && typeof toolInput.frontmatter === 'object') {
+    return toolInput.frontmatter;
+  }
+  if (typeof toolInput.frontmatter === 'string') {
+    return parseFrontmatterYaml(toolInput.frontmatter);
+  }
+  const content = toolInput.content || toolInput.skill_content || toolInput.skillContent;
+  const block = extractFrontmatterBlock(content);
+  if (block) {
+    return parseFrontmatterYaml(block);
+  }
+  return loadTrustedSkillFrontmatter(toolInput.skill || toolInput.skill_name || toolInput.skillName || toolInput.name);
+}
+
+function asStringArray(value) {
+  if (Array.isArray(value)) {
+    return value.filter((entry) => typeof entry === 'string' && entry.trim().length > 0);
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return [value.trim()];
+  }
+  return [];
+}
+
+function validateSkillFrontmatter(toolInput) {
+  const leaf = skillLeafName(toolInput);
+  if (!GOVERNED_SKILLS.has(leaf)) {
+    return { kind: 'allow' };
+  }
+
+  const frontmatter = loadTrustedSkillFrontmatter(leaf);
+  if (!frontmatter) {
+    return {
+      kind: 'deny',
+      reason: `DISPATCH_GUARD: governed skill "${leaf}" is missing required frontmatter.`,
+      attempted: leaf,
+      expected: 'agent_type,gates_at,sentinel_checkpoints',
+    };
+  }
+
+  const agentType = frontmatter.agent_type;
+  if (typeof agentType !== 'string' || !ALLOWED_AGENT_TYPES.has(agentType.trim())) {
+    return {
+      kind: 'deny',
+      reason: `DISPATCH_GUARD: skill frontmatter agent_type must be one of: ${Array.from(ALLOWED_AGENT_TYPES).join(', ')}.`,
+      attempted: leaf,
+      expected: 'agent_type',
+    };
+  }
+
+  const gatesAt = asStringArray(frontmatter.gates_at);
+  if (gatesAt.length === 0 || gatesAt.some((entry) => !ALLOWED_GATES_AT.has(entry))) {
+    return {
+      kind: 'deny',
+      reason: `DISPATCH_GUARD: skill frontmatter gates_at must use known phases: ${Array.from(ALLOWED_GATES_AT).join(', ')}.`,
+      attempted: leaf,
+      expected: 'gates_at',
+    };
+  }
+
+  const sentinelCheckpoints = asStringArray(frontmatter.sentinel_checkpoints);
+  if (sentinelCheckpoints.length === 0 || sentinelCheckpoints.some((entry) => !ALLOWED_SENTINEL_CHECKPOINTS.has(entry))) {
+    return {
+      kind: 'deny',
+      reason: `DISPATCH_GUARD: skill frontmatter sentinel_checkpoints must use known checkpoints: ${Array.from(ALLOWED_SENTINEL_CHECKPOINTS).join(', ')}.`,
+      attempted: leaf,
+      expected: 'sentinel_checkpoints',
+    };
+  }
+
+  recordHookEvent({
+    hook: 'dispatch-guard',
+    event: 'PreToolUse',
+    decision: 'allow',
+    attempted: leaf,
+    expected: 'agent_type,gates_at,sentinel_checkpoints',
+    reason: 'frontmatter contract valid',
+  });
+  return { kind: 'allow' };
+}
+
 function evaluateAgent(toolInput) {
   const subagentType = (toolInput && (toolInput.subagent_type || toolInput.subagentType)) || '';
   if (!subagentType) return { kind: 'allow' };
 
+  if (subagentType.startsWith(`${LEGACY_PIPELINE_NAMESPACE}:`)) {
+    return {
+      kind: 'deny',
+      reason: `DISPATCH_GUARD: legacy namespace "${LEGACY_PIPELINE_NAMESPACE}" is not allowed. Use ${PIPELINE_NAMESPACE}.`,
+      attempted: subagentType,
+      expected: PIPELINE_NAMESPACE,
+    };
+  }
+
   if (subagentType.startsWith(`${PIPELINE_NAMESPACE}:`)) {
-    const leaf = subagentType.split(':').pop();
+    const segments = subagentType.split(':');
+    const leaf = segments.pop();
     if (!isPipelineAgentLeaf(leaf)) {
       return {
         kind: 'deny',
@@ -106,6 +279,17 @@ function evaluateAgent(toolInput) {
           `DISPATCH_GUARD: subagent_type="${subagentType}" uses the pipeline namespace ` +
           `but its leaf "${leaf}" is not a registered pipeline agent.`,
         attempted: subagentType,
+      };
+    }
+    const expectedFqn = fqnFor(leaf);
+    if (subagentType !== expectedFqn) {
+      return {
+        kind: 'deny',
+        reason:
+          `DISPATCH_GUARD: subagent_type="${subagentType}" is not the expected canonical FQN. ` +
+          `Use "${expectedFqn}".`,
+        attempted: subagentType,
+        expected: expectedFqn,
       };
     }
     return { kind: 'allow' };
@@ -126,6 +310,11 @@ function evaluateAgent(toolInput) {
 }
 
 function evaluateSkill(toolInput) {
+  const frontmatterVerdict = validateSkillFrontmatter(toolInput);
+  if (frontmatterVerdict.kind === 'deny') {
+    return frontmatterVerdict;
+  }
+
   const skillName = (toolInput && (toolInput.skill || toolInput.skill_name || toolInput.skillName || toolInput.name)) || '';
   if (!skillName) return { kind: 'allow' };
   const leaf = skillName.includes(':') ? skillName.split(':').pop() : skillName;

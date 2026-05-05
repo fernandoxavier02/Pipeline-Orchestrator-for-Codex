@@ -11,7 +11,7 @@ describe("reference bundle", () => {
     const index = createReferenceProfileIndex(bundle);
     const profile = index.getPipelineProfile("bugfix-heavy");
 
-    expect(Object.keys(bundle.pipelineProfiles)).toHaveLength(12);
+    expect(Object.keys(bundle.pipelineProfiles)).toHaveLength(14);
     expect(profile.variant).toBe("bugfix-heavy");
     expect(profile.type).toBe("Bug Fix");
     expect(profile.complexity).toBe("COMPLEXA");
@@ -27,6 +27,16 @@ describe("reference bundle", () => {
       type: "Audit",
       intensity: "heavy",
       complexity: "COMPLEXA",
+    });
+    expect(index.getPipelineProfileForRoute("Spec", "light")).toMatchObject({
+      variant: "spec-light",
+      type: "Spec",
+      intensity: "light",
+    });
+    expect(index.getPipelineProfileForRoute("Spec", "heavy")).toMatchObject({
+      variant: "spec-heavy",
+      type: "Spec",
+      intensity: "heavy",
     });
   });
 
@@ -54,6 +64,16 @@ describe("reference bundle", () => {
       mode: "review-fix",
       skipInLight: ["adversarial-architecture-critic"],
     });
+  });
+
+  it("keeps spec-light aligned with mandatory post-implementation validation", async () => {
+    const bundle = await loadReferenceBundle(process.cwd());
+    const specLight = bundle.teamRegistry.routes.find((route) => route.profile === "spec-light");
+
+    expect(specLight?.agents).toEqual(
+      expect.arrayContaining(["spec-post-impl-validator"]),
+    );
+    expect(specLight?.skipInLight).not.toContain("spec-post-impl-validator");
   });
 
   it("loads gate question banks and checklist selection by touched domain", async () => {
@@ -132,7 +152,7 @@ describe("reference bundle", () => {
       );
       await writeFile(
         join(copiedRefs, "complexity-matrix.md"),
-        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
+        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n  - type: Spec\n    light: spec-light\n    heavy: spec-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
       );
 
       const bundle = await loadReferenceBundle(root);

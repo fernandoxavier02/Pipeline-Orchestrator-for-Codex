@@ -9,7 +9,7 @@ describe("reference bundle", () => {
         const bundle = await loadReferenceBundle(process.cwd());
         const index = createReferenceProfileIndex(bundle);
         const profile = index.getPipelineProfile("bugfix-heavy");
-        expect(Object.keys(bundle.pipelineProfiles)).toHaveLength(12);
+        expect(Object.keys(bundle.pipelineProfiles)).toHaveLength(14);
         expect(profile.variant).toBe("bugfix-heavy");
         expect(profile.type).toBe("Bug Fix");
         expect(profile.complexity).toBe("COMPLEXA");
@@ -23,6 +23,16 @@ describe("reference bundle", () => {
             type: "Audit",
             intensity: "heavy",
             complexity: "COMPLEXA",
+        });
+        expect(index.getPipelineProfileForRoute("Spec", "light")).toMatchObject({
+            variant: "spec-light",
+            type: "Spec",
+            intensity: "light",
+        });
+        expect(index.getPipelineProfileForRoute("Spec", "heavy")).toMatchObject({
+            variant: "spec-heavy",
+            type: "Spec",
+            intensity: "heavy",
         });
     });
     it("loads the team registry and exposes the adversarial team composition", async () => {
@@ -46,6 +56,12 @@ describe("reference bundle", () => {
             mode: "review-fix",
             skipInLight: ["adversarial-architecture-critic"],
         });
+    });
+    it("keeps spec-light aligned with mandatory post-implementation validation", async () => {
+        const bundle = await loadReferenceBundle(process.cwd());
+        const specLight = bundle.teamRegistry.routes.find((route) => route.profile === "spec-light");
+        expect(specLight?.agents).toEqual(expect.arrayContaining(["spec-post-impl-validator"]));
+        expect(specLight?.skipInLight).not.toContain("spec-post-impl-validator");
     });
     it("loads gate question banks and checklist selection by touched domain", async () => {
         const bundle = await loadReferenceBundle(process.cwd());
@@ -98,7 +114,7 @@ describe("reference bundle", () => {
         try {
             await cp(sourceRefs, copiedRefs, { recursive: true });
             await writeFile(join(copiedRefs, "pipelines", "implement-light.md"), `---\nkind: pipeline-profile\nvariant: feature-light\ntype: Feature\ncomplexity: MEDIA\nintensity: light\nbatchSize: 3\nsummary: Feature work with a renamed light variant for team-route resolution.\nchecklists:\n  - business-logic\n  - error-handling\n  - input-validation\n---\n# feature-light\nRuntime proof variant.\n`);
-            await writeFile(join(copiedRefs, "complexity-matrix.md"), `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`);
+            await writeFile(join(copiedRefs, "complexity-matrix.md"), `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n  - type: Spec\n    light: spec-light\n    heavy: spec-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`);
             const bundle = await loadReferenceBundle(root);
             const index = createReferenceProfileIndex(bundle);
             const route = index.getTeamRoute("feature-light");

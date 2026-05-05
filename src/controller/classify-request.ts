@@ -7,6 +7,7 @@ const FALLBACK_VARIANTS = {
   Audit: "audit-heavy",
   "User Story": "user-story-heavy",
   "UX Simulation": "ux-sim-heavy",
+  Spec: "spec-light",
 } as const;
 
 export function classifyRequest(
@@ -17,6 +18,9 @@ export function classifyRequest(
   const adversarialRequested = /\b(adversarial|threat model|security audit|red team)\b/.test(lower);
   const explicitlySimple = /\b(simple|small|tiny|quick)\b/.test(lower);
   const explicitlyComplex = /\b(complex|critical|security|boundary|platform|workflow|journey|system|cross[- ]cutting)\b/.test(lower);
+
+  const specRequested = /\bspec\b/.test(lower);
+  const specAuditOnly = specRequested && /\b(audit-only|audit only|review-only|review only)\b/.test(lower);
   const route = (type: keyof typeof FALLBACK_VARIANTS, intensity: "light" | "heavy" = "heavy") => {
     const profile = referenceIndex
       ? referenceIndex.getPipelineProfileForRoute(type, intensity)
@@ -40,6 +44,27 @@ export function classifyRequest(
 
     return defaultsToHeavy ? "heavy" as const : "light" as const;
   };
+
+  if (specAuditOnly) {
+    return {
+      type: "Spec",
+      complexity: "MEDIA",
+      variant: "spec-audit-only",
+      routeFamily: adversarialRequested ? "adversarial" as const : "standard" as const,
+      adversarialRequested,
+    };
+  }
+
+  if (specRequested) {
+    const heavy = resolveIntensity(false) === "heavy";
+    return {
+      type: "Spec",
+      complexity: heavy ? "COMPLEXA" : "MEDIA",
+      variant: heavy ? "spec-heavy" : "spec-light",
+      routeFamily: adversarialRequested ? "adversarial" as const : "standard" as const,
+      adversarialRequested,
+    };
+  }
 
   if (adversarialRequested || lower.includes("audit")) {
     return route("Audit", resolveIntensity(true));

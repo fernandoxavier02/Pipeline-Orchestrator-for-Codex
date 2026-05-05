@@ -66,6 +66,39 @@ describe("prompt registry", () => {
         const prompt = await registry.load("executor/executor-spec-reviewer");
         expect(prompt).toContain("Check requirement compliance directly from the changed files.");
     });
+    it("loads spec lifecycle prompts and validates their required output blocks", async () => {
+        const registry = createPromptRegistry(process.cwd());
+        const cases = [
+            {
+                name: "quality/spec-format-gate",
+                marker: "Spec Format Gate",
+                blocks: ["SPEC_FORMAT_GATE", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+            },
+            {
+                name: "quality/spec-content-reviewer",
+                marker: "Spec Content Reviewer",
+                blocks: ["SPEC_CONTENT_REVIEW", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+            },
+            {
+                name: "quality/spec-post-impl-validator",
+                marker: "Spec Post-Implementation Validator",
+                blocks: ["SPEC_POST_IMPL_VALIDATION", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+            },
+            {
+                name: "quality/spec-closer",
+                marker: "Spec Closer",
+                blocks: ["SPEC_CLOSEOUT", "STATUS", "EVIDENCE", "NEXT_ACTION"],
+            },
+        ];
+        for (const specPrompt of cases) {
+            const prompt = await registry.load(specPrompt.name);
+            expect(prompt).toContain(specPrompt.marker);
+            expect(prompt).toContain("Required output block:");
+            for (const block of specPrompt.blocks) {
+                expect(prompt).toMatch(new RegExp(`(^|\\n)-\\s+${block}\\s*(\\n|$)`));
+            }
+        }
+    });
     it("loads the adversarial-quality-reviewer prompt and validates the required output blocks (B9)", async () => {
         const registry = createPromptRegistry(process.cwd());
         const prompt = await registry.load("quality/adversarial-quality-reviewer");

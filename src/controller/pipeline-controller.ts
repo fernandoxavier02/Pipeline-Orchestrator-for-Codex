@@ -1,3 +1,4 @@
+import type { PipelinePhase } from "../domain/pipeline-types.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -30,6 +31,15 @@ import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../
 import { reductionPolicyForMode } from "../modes/mode-policy.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
+import {
+  deriveSpecIdFromRequest,
+  isSpecLifecycleVariant,
+  validateSpecAcceptanceTraceability,
+  validateSpecContentReviewGate,
+  validateSpecFormatGate,
+  validateSpecLifecycleArtifacts,
+  validateSpecPostImplementationGate,
+} from "../spec/spec-lifecycle.js";
 import type { ValidationIntent } from "./classification-overrides.js";
 import type { ReferenceProfileIndex } from "../references/reference-profiles.js";
 import type { SentinelState } from "../sentinel/sentinel-state.js";
@@ -69,6 +79,21 @@ type ExecutionController = {
   executeApprovedWork: (input: any) => Promise<any>;
   runFixLoop?: (input: any) => Promise<any>;
 };
+
+type SpecBlockingGateId =
+  | "SPEC_ARTIFACT_MISSING"
+  | "SPEC_CONTENT_REVIEW_NOGO"
+  | "SPEC_AC_TRACEABILITY_GAP"
+  | "SPEC_POST_IMPL_FAIL";
+
+type SpecPhaseGateBlock =
+  | {
+      gate: SpecBlockingGateId;
+      phase: "phase-2" | "phase-3";
+      detail: string;
+      pendingDecision: string;
+    }
+  | undefined;
 
 interface SessionProposalState {
   summary?: string;
@@ -264,6 +289,22 @@ async function executeApprovedContinuation(input: {
     };
   }
 
+  const specPhaseTwoBlock = evaluateSpecPhaseGate({
+    workspaceRoot: getWorkspaceRoot(input.runtime),
+    variant: input.session.variant ?? input.session.proposal?.variant ?? "",
+    specId: resolveSpecIdFromSession(input.session),
+    phase: "phase-2",
+  });
+
+  if (specPhaseTwoBlock) {
+    return blockForSpecPhaseGate({
+      runtime: input.runtime,
+      session: input.session,
+      mode: input.mode,
+      block: specPhaseTwoBlock,
+    });
+  }
+
   const executionController = getExecutionController(input.runtime);
   const validationIntent = (input.session.proposal?.validationIntent ?? "standard") as ValidationIntent;
   const authoritativeExecutionProof = approveExecutionScenarios({
@@ -324,6 +365,22 @@ async function executeApprovedContinuation(input: {
     ? executionResult
     : {};
 
+  const specPhaseThreeBlock = evaluateSpecPhaseGate({
+    workspaceRoot: getWorkspaceRoot(input.runtime),
+    variant: input.session.variant ?? input.session.proposal?.variant ?? "",
+    specId: resolveSpecIdFromSession(input.session),
+    phase: "phase-3",
+  });
+
+  if (specPhaseThreeBlock) {
+    return blockForSpecPhaseGate({
+      runtime: input.runtime,
+      session: input.session,
+      mode: input.mode,
+      block: specPhaseThreeBlock,
+    });
+  }
+
   const executionStatus =
     "status" in executionPayload && typeof executionPayload.status === "string"
       ? executionPayload.status
@@ -382,7 +439,7 @@ async function executeApprovedContinuation(input: {
     // IMP-02: load prior sentinel state so completedPhases is merged rather than hardcoded.
     const priorSentinel = await loadSentinelState(input.runtime);
     const priorCompleted = priorSentinel?.completedPhases ?? [];
-    const phase2CompletedPhases = [...new Set([...priorCompleted, "phase-2"])];
+    const phase2CompletedPhases = [...new Set<PipelinePhase>([...(priorCompleted as PipelinePhase[]), "phase-2"])];
 
     if (finalReviewStatus === "approved" && finalReviewDecision === "approved") {
       await persistGateAndConfidence(
@@ -502,6 +559,125 @@ function createInitialExecutionProof() {
     },
     checkpointEvidence: [],
     fixAttempts: [],
+  };
+}
+
+function resolveSpecIdFromSession(session: PipelineSessionState) {
+  const source = session.proposal?.summary ?? session.sessionId ?? session.variant ?? "spec-request";
+  return deriveSpecIdFromRequest(source);
+}
+
+function evaluateSpecPhaseGate(input: {
+  workspaceRoot: string;
+  variant: string;
+  specId: string;
+  phase: "phase-2" | "phase-3";
+}): SpecPhaseGateBlock {
+  if (!isSpecLifecycleVariant(input.variant)) {
+    return undefined;
+  }
+
+  const artifactGate = validateSpecLifecycleArtifacts({
+    workspaceRoot: input.workspaceRoot,
+    variant: input.variant,
+    specId: input.specId,
+  });
+
+  if (artifactGate.status === "blocked") {
+    return {
+      gate: "SPEC_ARTIFACT_MISSING",
+      phase: input.phase,
+      detail: `Cannot evaluate Spec ${input.phase} gates because artifacts are missing at ${artifactGate.specPath}: ${artifactGate.missingArtifacts.join(", ")}`,
+      pendingDecision: "spec-artifacts-required",
+    };
+  }
+
+  if (input.phase === "phase-2") {
+    const contentGate = validateSpecContentReviewGate({
+      specPath: artifactGate.specPath,
+    });
+
+    if (contentGate.status === "blocked") {
+      return {
+        gate: "SPEC_CONTENT_REVIEW_NOGO",
+        phase: "phase-2",
+        detail: contentGate.detail,
+        pendingDecision: "spec-content-review-required",
+      };
+    }
+
+    const traceabilityGate = validateSpecAcceptanceTraceability({
+      specPath: artifactGate.specPath,
+    });
+
+    if (traceabilityGate.status === "blocked") {
+      return {
+        gate: "SPEC_AC_TRACEABILITY_GAP",
+        phase: "phase-2",
+        detail: `Missing spec traceability for: ${traceabilityGate.missingTraceability.join(", ")}`,
+        pendingDecision: "spec-traceability-required",
+      };
+    }
+  }
+
+  if (input.phase === "phase-3") {
+    const postImplementationGate = validateSpecPostImplementationGate({
+      specPath: artifactGate.specPath,
+    });
+
+    if (postImplementationGate.status === "blocked") {
+      return {
+        gate: "SPEC_POST_IMPL_FAIL",
+        phase: "phase-3",
+        detail: postImplementationGate.detail,
+        pendingDecision: "spec-post-implementation-required",
+      };
+    }
+  }
+
+  return undefined;
+}
+
+async function blockForSpecPhaseGate(input: {
+  runtime: Parameters<typeof createPipelineController>[0] | undefined;
+  session: PipelineSessionState;
+  mode: string;
+  block: Exclude<SpecPhaseGateBlock, undefined>;
+}) {
+  await persistGateAndConfidence(
+    {
+      stores: {
+        gateLog: input.runtime?.stores?.gateLog,
+        confidence: input.runtime?.stores?.confidence,
+      },
+    },
+    [
+      toGateLogEntry({
+        gate: input.block.gate,
+        hardness: "HARD",
+        phase: input.block.phase,
+        decision: "block",
+        detail: input.block.detail,
+      }),
+    ],
+    input.session.confidenceScore ?? 1,
+  );
+
+  await input.runtime?.stores?.session?.save?.({
+    ...input.session,
+    currentPhase: input.block.phase,
+    phase: input.block.phase,
+    unresolvedBlockers: [input.block.detail],
+    pendingDecision: input.block.pendingDecision,
+    touchedFiles: input.session.touchedFiles ?? input.session.proposal?.affectedFiles ?? [],
+  });
+
+  return {
+    mode: input.mode,
+    status: "blocked",
+    phase: input.block.phase,
+    blockedBy: input.block.gate,
+    reason: input.block.detail,
   };
 }
 
@@ -1340,6 +1516,143 @@ export function createPipelineController(runtime?: {
           detail: designInterrogation.summary,
         }),
       ];
+      const specArtifactGate = isSpecLifecycleVariant(classificationResult.classification.variant)
+        ? validateSpecLifecycleArtifacts({
+            workspaceRoot: getWorkspaceRoot(runtime),
+            variant: classificationResult.classification.variant,
+            specId: deriveSpecIdFromRequest(normalizedRequest),
+          })
+        : undefined;
+
+      if (specArtifactGate?.status === "blocked") {
+        const detail = `Missing spec artifacts at ${specArtifactGate.specPath}: ${specArtifactGate.missingArtifacts.join(", ")}`;
+        const specGateEntry = toGateLogEntry({
+          gate: "SPEC_ARTIFACT_MISSING",
+          hardness: "HARD",
+          phase: "phase-1",
+          decision: "block",
+          detail,
+        });
+        const blockedGates = [
+          ...gateEntries,
+          specGateEntry,
+        ];
+
+        await persistGateAndConfidence(
+          runtime ?? {},
+          blockedGates,
+          1,
+        );
+
+        await runtime?.stores?.session?.save?.({
+          sessionId: `${mode}:${normalizedRequest || "request"}`,
+          runStartedAt: new Date().toISOString(),
+          currentPhase: "phase-1",
+          phase: "phase-1",
+          batchIndex: 0,
+          mode,
+          variant: classificationResult.classification.variant,
+          confidenceScore: 1,
+          proposal: {
+            ...authoritativeProposal,
+            awaitingUserConfirmation: false,
+          },
+          unresolvedBlockers: [detail],
+          pendingDecision: "spec-artifacts-required",
+          touchedFiles: authoritativeProposal.affectedFiles,
+        });
+
+        return {
+          mode,
+          status: "blocked",
+          blockedBy: "SPEC_ARTIFACT_MISSING",
+          type: classificationResult.classification.type,
+          complexity: classificationResult.classification.complexity,
+          variant: classificationResult.classification.variant,
+          proposal: authoritativeProposal,
+          gates: [
+            infoGate,
+            designInterrogation,
+            {
+              gate: "SPEC_ARTIFACT_MISSING",
+              status: "blocked",
+              hardness: "HARD",
+              reason: detail,
+            },
+          ],
+          missingArtifacts: specArtifactGate.missingArtifacts,
+          specPath: specArtifactGate.specPath,
+        };
+      }
+
+      const passedSpecPath = specArtifactGate?.status === "passed"
+        ? specArtifactGate.specPath
+        : undefined;
+
+      const specFormatGate = passedSpecPath
+        ? validateSpecFormatGate({
+            specPath: passedSpecPath,
+          })
+        : undefined;
+
+      if (specFormatGate?.status === "blocked") {
+        const specGateEntry = toGateLogEntry({
+          gate: "SPEC_FORMAT_GATE_FAIL",
+          hardness: "HARD",
+          phase: "phase-1",
+          decision: "block",
+          detail: specFormatGate.detail,
+        });
+        const blockedGates = [
+          ...gateEntries,
+          specGateEntry,
+        ];
+
+        await persistGateAndConfidence(
+          runtime ?? {},
+          blockedGates,
+          1,
+        );
+
+        await runtime?.stores?.session?.save?.({
+          sessionId: `${mode}:${normalizedRequest || "request"}`,
+          runStartedAt: new Date().toISOString(),
+          currentPhase: "phase-1",
+          phase: "phase-1",
+          batchIndex: 0,
+          mode,
+          variant: classificationResult.classification.variant,
+          confidenceScore: 1,
+          proposal: {
+            ...authoritativeProposal,
+            awaitingUserConfirmation: false,
+          },
+          unresolvedBlockers: [specFormatGate.detail],
+          pendingDecision: "spec-format-required",
+          touchedFiles: authoritativeProposal.affectedFiles,
+        });
+
+        return {
+          mode,
+          status: "blocked",
+          blockedBy: "SPEC_FORMAT_GATE_FAIL",
+          type: classificationResult.classification.type,
+          complexity: classificationResult.classification.complexity,
+          variant: classificationResult.classification.variant,
+          proposal: authoritativeProposal,
+          gates: [
+            infoGate,
+            designInterrogation,
+            {
+              gate: "SPEC_FORMAT_GATE_FAIL",
+              status: "blocked",
+              hardness: "HARD",
+              reason: specFormatGate.detail,
+            },
+          ],
+          specPath: passedSpecPath,
+        };
+      }
 
       if (mode === "diagnostic") {
         await persistGateAndConfidence(

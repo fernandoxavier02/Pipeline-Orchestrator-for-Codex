@@ -4,6 +4,11 @@ import { type ExecWindow, parseExecWindow } from "./exec-window.js";
 
 const SESSIONS_DIRNAME = "sessions";
 const EXEC_WINDOW_SUFFIX = ".exec-window";
+const SESSION_FILENAME_PREFIX = "session-";
+
+function encodeSessionId(sessionId: string): string {
+  return `${SESSION_FILENAME_PREFIX}${Buffer.from(sessionId, "utf8").toString("base64url")}`;
+}
 
 export function execWindowDir(stateRoot: string): string {
   return join(stateRoot, SESSIONS_DIRNAME);
@@ -14,7 +19,7 @@ export function execWindowPath(stateRoot: string, sessionId: string): string {
   if (sessionId.includes("/") || sessionId.includes("\\") || sessionId.includes("..")) {
     throw new Error("execWindowPath: sessionId must not contain path separators");
   }
-  return join(execWindowDir(stateRoot), `${sessionId}${EXEC_WINDOW_SUFFIX}`);
+  return join(execWindowDir(stateRoot), `${encodeSessionId(sessionId)}${EXEC_WINDOW_SUFFIX}`);
 }
 
 export function readExecWindow(path: string): ExecWindow | null {
