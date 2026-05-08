@@ -39,7 +39,7 @@ export async function runAdversarialReview(input: {
           changedFiles: files,
           mode: input.mode,
         });
-  const findings = review.findings ?? [];
+  const findings = (review.findings ?? []) as Array<{ severity: string }>;
   const blocking = findings.some(
     (finding) =>
       finding.severity === "critical" || finding.severity === "important",

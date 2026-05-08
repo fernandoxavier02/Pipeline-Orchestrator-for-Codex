@@ -7,16 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-05-07
+
 ### Added
 
 - Spec lifecycle closure for `codex-harness-claude-absorption`: `spec-*` variants now block on required Kiro artifacts, AC traceability gaps, and registered `SPEC_*` gate decisions instead of relying on documentation-only promises.
 - Four Spec lifecycle agents and runtime prompts: `spec-format-gate`, `spec-content-reviewer`, `spec-post-impl-validator`, and `spec-closer`.
 - Hook frontmatter enforcement for governed pipeline skills, with deny decisions and audit events in `.codex/pipeline/hook-events.jsonl`.
+- Execution identity tracing for Codex portability: `gate-decisions.jsonl`, `session.json`, `hook-events.jsonl`, real-agent dispatch requests, multi-agent child results, and dispatcher results now carry an `execution_identity` / `executionIdentity` payload with workflow-stable `trace_id`, per-surface `event_id`, plugin name/version, runtime, surface, cwd, pid, Node version, timestamp, and session/state context when available.
 
 ### Changed
 
 - `/pipeline` skill parity now documents all gate-registry entries, including the Spec gates and adversarial-loop checkpoint.
 - `exec-window` session files now use stable encoded filenames so Windows-safe logical session ids can contain `:` while path traversal remains blocked.
+- The SessionStart banner and plugin manifest now advertise execution tracing so installed Codex copies can be distinguished from older `v0.4.0` builds.
 
 ## [0.4.0] — 2026-04-25
 

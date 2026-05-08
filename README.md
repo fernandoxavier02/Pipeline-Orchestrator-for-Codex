@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Codex_CLI-Plugin-14532D?style=for-the-badge&logo=openai&logoColor=white" alt="Codex Plugin" />
-  <img src="https://img.shields.io/badge/version-0.4.0-blue?style=for-the-badge" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.4.1-blue?style=for-the-badge" alt="Version" />
   <img src="https://img.shields.io/badge/agents-41-orange?style=for-the-badge" alt="Agents" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License" />
 </p>
@@ -225,6 +225,7 @@ That's it. The orchestrator handles classification, proposal, execution, and val
 |:----------|:------------|
 | **Strict Real-Agent Runtime** | `/pipeline` requires real `spawn_agent` execution; without an agent adapter it blocks with `blocked-no-agent-runtime` |
 | **Spec Lifecycle Gates** | Spec variants block on missing artifacts, format/content failures, AC traceability gaps, and post-implementation validation failures |
+| **Execution Identity** | Runtime stores, gate logs, hook logs, and dispatch results include a workflow trace id, event id, and plugin/runtime/version metadata |
 | **Information Gate** | Blocks pipeline if critical info is missing — asks ONE focused question at a time |
 | **Non-Invention Rule** | Agents STOP and ask rather than guess when information is absent |
 | **Stop Rule** | 2 consecutive build/test failures → full stop and root cause analysis |
@@ -235,9 +236,9 @@ That's it. The orchestrator handles classification, proposal, execution, and val
 
 ## Hook Observability
 
-Hooks append audit events to `.codex/pipeline/hook-events.jsonl` using `JSON.stringify`. Each line records `hook`, `event`, `decision`, `attempted`, `expected`, `timestamp`, `cwd`, and `reason`.
+Hooks append audit events to `.codex/pipeline/hook-events.jsonl` using `JSON.stringify`. Each line records `hook`, `event`, `decision`, `attempted`, `expected`, `timestamp`, `cwd`, `reason`, and `execution_identity`.
 
-Use this file with `.codex/pipeline/gate-decisions.jsonl` to verify whether enforcement actually ran during a session.
+Use `execution_identity.trace_id` to correlate one workflow across `.codex/pipeline/gate-decisions.jsonl`, `session.json`, hook logs, real-agent dispatch requests, child reviewer outputs, and dispatcher output. Use `execution_identity.event_id` to identify the specific surface event that produced a line.
 
 ---
 
@@ -263,7 +264,7 @@ Layer 3: SKILL.md bottom (self-check + anti-patterns)
 ```
 pipeline-orchestrator-for-codex/
 ├── .codex-plugin/
-│   └── plugin.json              # Plugin manifest (v0.4.0)
+│   └── plugin.json              # Plugin manifest (v0.4.1)
 ├── agents/                      # 41 agent prompt files (~24K lines)
 │   ├── core/                    #   8 core agents
 │   ├── executor/                #   5 executor agents

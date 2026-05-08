@@ -5,6 +5,9 @@ dist/src/*
 !dist/src/spec/
 dist/src/spec/*
 !dist/src/spec/spec-lifecycle.js
+!dist/src/observability/
+dist/src/observability/*
+!dist/src/observability/execution-identity.js
 coverage/
 .codex/pipeline/
 .worktrees/

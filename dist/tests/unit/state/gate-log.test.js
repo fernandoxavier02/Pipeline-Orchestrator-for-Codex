@@ -19,6 +19,13 @@ describe("gate log", () => {
         })).resolves.toBeUndefined();
         const raw = readFileSync(join(root, "gate-decisions.jsonl"), "utf8");
         expect(raw).toContain("\"gate\":\"INFO_GATE_BLOCKED\"");
+        const entry = JSON.parse(raw.trim());
+        expect(entry.execution_identity).toMatchObject({
+            plugin_name: "pipeline-orchestrator-for-codex",
+            surface: "gate-log",
+            source: "runtime",
+        });
+        expect(entry.execution_identity.trace_id).toMatch(/^pipe-/);
     });
     it("rejects malformed current gate log rows", async () => {
         const root = mkdtempSync(join(tmpdir(), "pipeline-gates-current-"));

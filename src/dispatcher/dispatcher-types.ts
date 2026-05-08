@@ -1,3 +1,5 @@
+import type { ExecutionIdentity } from "../observability/execution-identity.js";
+
 export type DispatchMode = "single-agent" | "multi-agent";
 export type AuthorityLevel = "controller" | "reviewer" | "executor";
 export type AgentDispatchMode = "real-agent" | "blocked-no-agent-runtime";
@@ -14,11 +16,16 @@ export interface AgentDispatchRequest {
   reviewOnly: boolean;
   filesInScope: string[];
   authorityLevel: AuthorityLevel;
+  executionIdentity: ExecutionIdentity;
 }
 
 export interface AgentRuntimeAdapter {
   spawnAgent: (request: AgentDispatchRequest) => Promise<DispatchResult>;
 }
+
+export type DispatchOutputWithIdentity = Record<string, unknown> & {
+  executionIdentity: ExecutionIdentity;
+};
 
 export interface DispatchTeamMember {
   role: string;
@@ -52,10 +59,17 @@ export interface DispatchRequest {
    */
   sessionRoot?: string;
   sessionId?: string;
+  executionIdentity?: ExecutionIdentity;
 }
 
 export interface DispatchResult {
   mode: DispatchMode;
   role: string;
   output: Record<string, unknown>;
+  executionIdentity?: ExecutionIdentity;
+}
+
+export interface RunRoleResult extends Omit<DispatchResult, "output" | "executionIdentity"> {
+  output: DispatchOutputWithIdentity;
+  executionIdentity: ExecutionIdentity;
 }

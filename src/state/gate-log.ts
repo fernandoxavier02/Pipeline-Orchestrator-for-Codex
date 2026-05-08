@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { gateDecisionSchema } from "../domain/pipeline-schemas.js";
+import { createExecutionIdentity } from "../observability/execution-identity.js";
 
 export function createGateLog(root: string) {
   const file = join(root, "gate-decisions.jsonl");
@@ -9,9 +10,18 @@ export function createGateLog(root: string) {
     root,
     async append(decision: unknown) {
       const parsed = gateDecisionSchema.parse(decision);
+      const enriched = {
+        ...parsed,
+        execution_identity: parsed.execution_identity ?? createExecutionIdentity({
+          surface: "gate-log",
+          cwd: process.cwd(),
+          stateRoot: root,
+          source: "runtime",
+        }),
+      };
 
       await mkdir(root, { recursive: true });
-      await appendFile(file, `${JSON.stringify(parsed)}\n`, "utf8");
+      await appendFile(file, `${JSON.stringify(enriched)}\n`, "utf8");
     },
     async list() {
       try {

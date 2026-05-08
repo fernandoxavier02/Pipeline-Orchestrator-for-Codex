@@ -1,5 +1,6 @@
 import { runSingleAgentRole } from "./single-agent-runner.js";
 import type { DispatchRequest, DispatchResult, DispatchTeamMember } from "./dispatcher-types.js";
+import { createExecutionIdentity } from "../observability/execution-identity.js";
 
 type Finding = {
   id?: string;
@@ -61,8 +62,17 @@ function resolveStatus(dispatches: DispatchResult[], findings: Finding[]) {
 export async function runMultiAgentRole(request: DispatchRequest): Promise<DispatchResult> {
   const team = normalizeTeam(request);
   const dispatches = await Promise.all(
-    team.map((member) =>
-      runSingleAgentRole({
+    team.map(async (member, index) => {
+      const executionIdentity = createExecutionIdentity({
+        surface: `dispatch:${member.role}`,
+        traceId: request.executionIdentity?.trace_id,
+        workflowId: request.executionIdentity?.workflow_id,
+        sessionId: request.sessionId,
+        stateRoot: request.sessionRoot,
+        eventKey: `child-${index}`,
+        source: "multi-agent-child",
+      });
+      const dispatch = await runSingleAgentRole({
         mode: "single-agent",
         role: member.role,
         prompt: member.prompt,
@@ -71,8 +81,20 @@ export async function runMultiAgentRole(request: DispatchRequest): Promise<Dispa
         reviewOnly: member.reviewOnly ?? request.reviewOnly ?? false,
         filesInScope: member.filesInScope ?? request.filesInScope,
         authorityLevel: member.authorityLevel ?? request.authorityLevel ?? "reviewer",
-      }),
-    ),
+        sessionRoot: request.sessionRoot,
+        sessionId: request.sessionId,
+        executionIdentity,
+      });
+
+      return {
+        ...dispatch,
+        executionIdentity,
+        output: {
+          ...dispatch.output,
+          executionIdentity,
+        },
+      };
+    }),
   );
   const findings = collectFindings(dispatches);
 
@@ -84,6 +106,7 @@ export async function runMultiAgentRole(request: DispatchRequest): Promise<Dispa
       findings,
       agents: dispatches.map((dispatch) => ({
         role: dispatch.role,
+        executionIdentity: dispatch.executionIdentity,
         output: dispatch.output,
       })),
       reviewOnly: request.reviewOnly ?? false,

@@ -11,6 +11,24 @@ const gateHardnessSchema = z.enum(["MANDATORY", "HARD", "CIRCUIT_BREAKER", "SOFT
 const gateDecisionValueSchema = z.enum(["pass", "block", "skip", "partial"]);
 const confidenceBandSchema = z.enum(["low", "medium", "high"]);
 
+const executionIdentitySchema = z.object({
+  trace_id: z.string(),
+  workflow_id: z.string(),
+  event_id: z.string(),
+  plugin_name: z.string(),
+  plugin_version: z.string(),
+  runtime: z.enum(["codex", "claude-code", "unknown"]),
+  surface: z.string(),
+  cwd: z.string(),
+  pid: z.number().int(),
+  node_version: z.string(),
+  timestamp: z.string(),
+  session_id: z.string().optional(),
+  state_root: z.string().optional(),
+  plugin_root: z.string().optional(),
+  source: z.string().optional(),
+});
+
 export const orchestratorDecisionSchema = z.object({
   mode: z.string(),
   type: z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation", "Spec"]),
@@ -116,6 +134,7 @@ export const sessionStateSchema = z.object({
   unresolvedBlockers: z.array(z.string()).default([]),
   pendingDecision: z.string().optional(),
   touchedFiles: z.array(z.string()).default([]),
+  execution_identity: executionIdentitySchema.optional(),
 });
 
 export const gateDecisionSchema = z.object({
@@ -127,6 +146,7 @@ export const gateDecisionSchema = z.object({
   timestamp: z.string(),
   detail: z.string(),
   confidence_impact: z.number(),
+  execution_identity: executionIdentitySchema.optional(),
 });
 
 export const controllerRevalidationLockSchema = z.object({

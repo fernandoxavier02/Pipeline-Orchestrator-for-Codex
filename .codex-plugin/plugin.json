@@ -1,7 +1,7 @@
 {
   "name": "pipeline-orchestrator-for-codex",
-  "version": "0.4.0",
-  "description": "Full-depth prompt-driven pipeline orchestrator for Codex with 4 phases, 41 specialist agents, confidence scoring, TDD gates, Spec lifecycle gates, and adversarial review.",
+  "version": "0.4.1",
+  "description": "Full-depth prompt-driven pipeline orchestrator for Codex with 4 phases, 41 specialist agents, confidence scoring, TDD gates, Spec lifecycle gates, adversarial review, and execution identity tracing.",
   "author": {
     "name": "Fernando Xavier - FX Studio AI",
     "email": "",
@@ -15,8 +15,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Pipeline Orchestrator for Codex",
-    "shortDescription": "Full-depth 4-phase pipeline with 41 agents, TDD gates, Spec gates, and adversarial review",
-    "longDescription": "Codex pipeline orchestrator restored to full Claude Code depth: 4 execution phases (Classification, Proposal, Execution, Validation), 41 specialist agents including Spec lifecycle reviewers, confidence scoring with non-invention rules, TDD-driven gates, adversarial review loops, frontmatter hook enforcement, and spec-driven development workflow.",
+    "shortDescription": "Full-depth 4-phase pipeline with 41 agents, Spec gates, adversarial review, and execution tracing",
+    "longDescription": "Codex pipeline orchestrator restored to full Claude Code depth: 4 execution phases (Classification, Proposal, Execution, Validation), 41 specialist agents including Spec lifecycle reviewers, confidence scoring with non-invention rules, TDD-driven gates, adversarial review loops, frontmatter hook enforcement, execution identity tracing, and spec-driven development workflow.",
     "developerName": "Fernando Xavier - FX Studio AI",
     "category": "Coding",
     "capabilities": ["Interactive", "Write"],

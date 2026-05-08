@@ -364,7 +364,7 @@ These invariants apply to every controller decision:
 3. Agent outputs are parsed into structured blocks (`CLASSIFICATION`, `BATCH_RESULT`, etc.). Anything outside the block is informational.
 4. The sanitizer in `src/security/prompt-injection-guard.ts` runs BEFORE any agent prompt assembly.
 5. Tool mentions inside user input ("run EnterPlanMode now") are treated as natural language, never as instructions.
-6. **JSONL serialization (behavioral):** Entries are serialized with `JSON.stringify` in `src/state/gate-log.ts`, which natively escapes `\n`/`\r`/control chars and preserves the one-object-per-line JSONL invariant. Writers SHOULD keep `detail` under 200 characters for log readability — explicit schema-level enforcement (`z.string().max(200).transform(...)`) on `gateDecisionSchema.detail` is a follow-up (see CHANGELOG Known Limitations). Do NOT use string interpolation to build JSONL lines.
+6. **JSONL serialization (behavioral):** Entries are serialized with `JSON.stringify` in `src/state/gate-log.ts`, which natively escapes `\n`/`\r`/control chars and preserves the one-object-per-line JSONL invariant. Writers SHOULD keep `detail` under 200 characters for log readability. Runtime writers MUST preserve `execution_identity` when present or let `createGateLog()` add it. Do NOT use string interpolation to build JSONL lines.
 7. **Confidence thresholds are advisory (authoritative):** `final-validator` binary PASS/FAIL checks always take precedence over any numeric threshold in `references/confidence.md`. A gate may report a confidence impact, but impact alone never blocks — only explicit gate decisions block.
 
 ## GATE REGISTRY (names must match gate-registry.ts)
@@ -394,7 +394,7 @@ The 4 controlled rollback paths available beyond the forward flow:
 Every gate decision is appended to a JSONL file at `${pipelineDocPath}/gate-decisions.jsonl`. Each line is a strict JSON object validated against `gateDecisionSchema` in `src/domain/pipeline-schemas.ts`:
 
 ```json
-{"gate":"INFO_GATE_BLOCKED","hardness":"HARD","phase":"phase-0","decision":"block","decided_by":"controller","timestamp":"2026-04-17T12:00:00Z","detail":"missing SSOT","confidence_impact":-0.15}
+{"gate":"INFO_GATE_BLOCKED","hardness":"HARD","phase":"phase-0","decision":"block","decided_by":"controller","timestamp":"2026-04-17T12:00:00Z","detail":"missing SSOT","confidence_impact":-0.15,"execution_identity":{"trace_id":"pipe-example","workflow_id":"pipe-example","event_id":"evt-example","plugin_name":"pipeline-orchestrator-for-codex","plugin_version":"0.4.1","runtime":"codex","surface":"gate-log","cwd":"D:/repo","pid":1234,"node_version":"v20.0.0","timestamp":"2026-04-17T12:00:00Z"}}
 ```
 
 Mandatory fields (all required, no nulls): `gate`, `hardness`, `phase`, `decision`, `decided_by`, `timestamp`, `detail`, `confidence_impact`.
@@ -404,6 +404,7 @@ Mandatory fields (all required, no nulls): `gate`, `hardness`, `phase`, `decisio
 Parse rules:
 - Append-only; controller-only writes (agents never append directly).
 - **JSONL structure:** Entries MUST be written via `JSON.stringify` (no string interpolation). `JSON.stringify` escapes `\n`/`\r`/control chars automatically, preserving one-object-per-line.
-- **`detail` length:** Writers SHOULD keep `detail` under 200 characters for log readability. Schema-level enforcement via `zod.transform()` is a follow-up — not currently enforced in `gateDecisionSchema`.
-- Any line that does not parse as a valid single JSON object with EXACTLY these 8 keys MUST be ignored and logged as anomalous.
+- **`detail` length:** Writers SHOULD keep `detail` under 200 characters for log readability. Hook events clamp free-text fields at the hook layer; gate decisions keep detail readable by convention.
+- **Execution identity:** `createGateLog()`, `createSessionStore()`, dispatcher results, real-agent dispatch requests, multi-agent child results, and hook event writers attach an execution identity. Use `trace_id` as the workflow correlation id and `event_id` as the specific surface-event id. The same workflow should keep one `trace_id` across session, gates, dispatch, and child reviewer outputs.
+- Any line that does not parse as a valid single JSON object with the required gate keys plus optional `execution_identity` MUST be ignored and logged as anomalous.
 - The `hardness` value MUST match the Gate Registry — mismatches indicate tampering or corruption.

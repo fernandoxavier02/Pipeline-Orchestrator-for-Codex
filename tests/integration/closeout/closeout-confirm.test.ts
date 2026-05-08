@@ -11,6 +11,7 @@ import { createCheckpointStore } from "../../../src/state/checkpoint-store.js";
 import { createConfidenceScoreStore } from "../../../src/state/confidence-score.js";
 import { createGateLog } from "../../../src/state/gate-log.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
+import { createExecutionIdentity } from "../../../src/observability/execution-identity.js";
 import * as dispatchRunRoleModule from "../../../src/dispatcher/run-role.js";
 
 type CloseoutGateLogEntry = {
@@ -23,6 +24,23 @@ type CloseoutGateLogEntry = {
   detail: string;
   confidence_impact: number;
 };
+
+function createMockRunRoleResult(role: string, output: Record<string, unknown>) {
+  const executionIdentity = createExecutionIdentity({
+    surface: `dispatch:${role}`,
+    source: "test",
+  });
+
+  return {
+    mode: "single-agent" as const,
+    role,
+    executionIdentity,
+    output: {
+      ...output,
+      executionIdentity,
+    },
+  };
+}
 
 async function seedExecutionProof(input: {
   stateDir: string;
@@ -102,17 +120,13 @@ describe("closeout confirmation", () => {
     const originalRunRole = dispatchRunRoleModule.runRole;
     const runRoleSpy = vi.spyOn(dispatchRunRoleModule, "runRole").mockImplementation(async (request) => {
       if (request.role === "sanity-checker") {
-        return {
-          mode: "single-agent",
-          role: "sanity-checker",
-          output: {
+        return createMockRunRoleResult("sanity-checker", {
             SANITY_CHECK: "final-proof-rejected",
             STATUS: "blocked",
             EVIDENCE: ["final proof drift detected"],
             NEXT_ACTION: "stop-closeout",
             status: "blocked",
-          },
-        };
+        });
       }
 
       return originalRunRole(request);
@@ -161,10 +175,7 @@ describe("closeout confirmation", () => {
     const originalRunRole = dispatchRunRoleModule.runRole;
     const runRoleSpy = vi.spyOn(dispatchRunRoleModule, "runRole").mockImplementation(async (request) => {
       if (request.role === "final-validator") {
-        return {
-          mode: "single-agent",
-          role: "final-validator",
-          output: {
+        return createMockRunRoleResult("final-validator", {
             PA_DE_CAL: "final-verdict-issued",
             DECISION: "NO-GO",
             BLOCKERS: ["runtime final validator blocked release"],
@@ -183,8 +194,7 @@ describe("closeout confirmation", () => {
             skippedSoftGates: [],
             blockedReviews: 0,
             rollbackHint: "revalidate",
-          },
-        };
+        });
       }
 
       return originalRunRole(request);

@@ -1,7 +1,8 @@
-import type { AgentDispatchMode, AgentDispatchRequest, DispatchRequest } from "./dispatcher-types.js";
+import type { AgentDispatchMode, AgentDispatchRequest, DispatchRequest, RunRoleResult } from "./dispatcher-types.js";
 import { runMultiAgentRole } from "./multi-agent-runner.js";
 import { runSingleAgentRole } from "./single-agent-runner.js";
 import { ensureWriteAuthorized } from "../security/edit-guard.js";
+import { createExecutionIdentity } from "../observability/execution-identity.js";
 
 export { EditGuardBlockedError } from "../security/edit-guard.js";
 
@@ -15,7 +16,11 @@ export class AgentRuntimeUnavailableError extends Error {
   }
 }
 
-function buildAgentDispatchRequest(request: DispatchRequest): AgentDispatchRequest {
+type DispatchRequestWithIdentity = DispatchRequest & {
+  executionIdentity: ReturnType<typeof createExecutionIdentity>;
+};
+
+function buildAgentDispatchRequest(request: DispatchRequestWithIdentity): AgentDispatchRequest {
   return {
     role: request.role,
     phase: request.phase ?? "phase-2",
@@ -27,14 +32,40 @@ function buildAgentDispatchRequest(request: DispatchRequest): AgentDispatchReque
     reviewOnly: request.reviewOnly ?? false,
     filesInScope: request.filesInScope ?? [],
     authorityLevel: request.authorityLevel ?? "reviewer",
+    executionIdentity: request.executionIdentity,
   };
 }
 
-export async function runRole(request: DispatchRequest) {
+function withExecutionIdentity<T extends { output: Record<string, unknown> }>(
+  result: T,
+  executionIdentity: ReturnType<typeof createExecutionIdentity>,
+): RunRoleResult {
+  return {
+    mode: "mode" in result && (result as { mode?: unknown }).mode === "multi-agent" ? "multi-agent" : "single-agent",
+    role: "role" in result && typeof (result as { role?: unknown }).role === "string" ? (result as { role: string }).role : "unknown-role",
+    executionIdentity,
+    output: {
+      ...result.output,
+      executionIdentity,
+    },
+  };
+}
+
+export async function runRole(request: DispatchRequest): Promise<RunRoleResult> {
   const normalizedRequest: DispatchRequest = {
     ...request,
     freshContext: request.freshContext ?? request.role.includes("review"),
     reviewOnly: request.reviewOnly ?? false,
+  };
+  const executionIdentity = normalizedRequest.executionIdentity ?? createExecutionIdentity({
+    surface: `dispatch:${normalizedRequest.role}`,
+    sessionId: normalizedRequest.sessionId,
+    stateRoot: normalizedRequest.sessionRoot,
+    source: normalizedRequest.requireRealAgent ? "real-agent-dispatch" : normalizedRequest.mode,
+  });
+  const requestWithIdentity: DispatchRequestWithIdentity = {
+    ...normalizedRequest,
+    executionIdentity,
   };
 
   // B2: edit-guard middleware. Throws EditGuardBlockedError when a
@@ -51,19 +82,21 @@ export async function runRole(request: DispatchRequest) {
       throw new AgentRuntimeUnavailableError(normalizedRequest.role);
     }
 
-    const result = await normalizedRequest.agentRuntime.spawnAgent(buildAgentDispatchRequest(normalizedRequest));
-    return {
+    const result = await normalizedRequest.agentRuntime.spawnAgent(buildAgentDispatchRequest(requestWithIdentity));
+    return withExecutionIdentity({
       ...result,
       output: {
         ...result.output,
         dispatchMode: "real-agent",
       },
-    };
+    }, executionIdentity);
   }
 
   if (request.mode === "multi-agent") {
-    return runMultiAgentRole(normalizedRequest);
+    const result = await runMultiAgentRole(requestWithIdentity);
+    return withExecutionIdentity(result, executionIdentity);
   }
 
-  return runSingleAgentRole(normalizedRequest);
+  const result = await runSingleAgentRole(requestWithIdentity);
+  return withExecutionIdentity(result, executionIdentity);
 }
