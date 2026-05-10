@@ -8,6 +8,16 @@ dist/src/spec/*
 !dist/src/observability/
 dist/src/observability/*
 !dist/src/observability/execution-identity.js
+!dist/src/protocol/
+dist/src/protocol/*
+!dist/src/protocol/protocol-events.js
+!dist/src/protocol/protocol-handler.js
+!dist/src/run/
+dist/src/run/*
+!dist/src/run/run-directory.js
+!dist/src/trace/
+dist/src/trace/*
+!dist/src/trace/trace.js
 coverage/
 .codex/pipeline/
 .worktrees/

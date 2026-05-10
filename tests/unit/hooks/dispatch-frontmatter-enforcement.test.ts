@@ -187,6 +187,74 @@ describe("dispatch-guard frontmatter enforcement", () => {
     }
   });
 
+  it("allows imported v5.2 governed skills with manual-only frontmatter and step gates", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "bugfix-light",
+        },
+      }, {
+        CLAUDE_PLUGIN_ROOT: ROOT,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+      expect(readLastHookEvent(cwd)).toMatchObject({
+        decision: "allow",
+        attempted: "bugfix-light",
+        reason: "frontmatter contract valid",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("allows every imported v5.2 governed skill through trusted on-disk frontmatter", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    const governedSkills = [
+      "pipeline",
+      "brainstorm",
+      "audit",
+      "audit-heavy",
+      "audit-light",
+      "bugfix",
+      "bugfix-heavy",
+      "bugfix-light",
+      "feature",
+      "feature-heavy",
+      "feature-light",
+      "review",
+      "spec",
+      "spec-audit-only",
+      "spec-design",
+      "spec-heavy",
+      "spec-init",
+      "spec-light",
+      "spec-requirements",
+      "spec-tasks",
+      "validate-design",
+      "validate-gap",
+      "verify-completion",
+    ];
+    try {
+      for (const skill of governedSkills) {
+        const result = runHook(cwd, {
+          tool_name: "Skill",
+          tool_input: { skill },
+        }, {
+          CLAUDE_PLUGIN_ROOT: ROOT,
+        });
+
+        expect(result.status, skill).toBe(0);
+        expect(result.output.hookSpecificOutput?.permissionDecision, skill).toBeUndefined();
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 20_000);
+
   it("denies governed skill calls when frontmatter cannot be resolved", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
     try {

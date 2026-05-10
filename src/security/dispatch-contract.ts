@@ -19,14 +19,16 @@ export type DispatchContract = Readonly<{
   tool: DispatchTool;
 }>;
 
-type FolderName = "core" | "quality" | "executor" | "executor/type-specific";
+type FolderName = "core" | "quality" | "executor" | "executor/type-specific" | "brainstorm";
 
 const RAW_AGENT_LEAVES: ReadonlyArray<readonly [FolderName, string]> = [
   ["core", "adversarial-batch"],
+  ["core", "brainstorm-controller"],
   ["core", "checkpoint-validator"],
   ["core", "final-validator"],
   ["core", "finishing-branch"],
   ["core", "information-gate"],
+  ["core", "pipeline-controller"],
   ["core", "sanity-checker"],
   ["core", "sentinel"],
   ["core", "task-orchestrator"],
@@ -51,6 +53,8 @@ const RAW_AGENT_LEAVES: ReadonlyArray<readonly [FolderName, string]> = [
   ["executor/type-specific", "ux-accessibility-auditor"],
   ["executor/type-specific", "ux-qa-validator"],
   ["executor/type-specific", "ux-simulator"],
+  ["brainstorm", "step-00-intake"],
+  ["brainstorm", "step-01-explore"],
   ["quality", "architecture-reviewer"],
   ["quality", "design-interrogator"],
   ["quality", "final-adversarial-orchestrator"],

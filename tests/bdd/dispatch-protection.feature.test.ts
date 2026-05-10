@@ -43,6 +43,14 @@ describe("Feature: dispatch-guard enforces the pipeline namespace", () => {
     expect(out.hookSpecificOutput?.permissionDecision).toBeUndefined();
   });
 
+  it("Scenario: documented pipeline-controller Agent FQN is allowed", () => {
+    const out = runHook({
+      tool_name: "Agent",
+      tool_input: { subagent_type: "pipeline-orchestrator-for-codex:core:pipeline-controller" },
+    });
+    expect(out.hookSpecificOutput?.permissionDecision).toBeUndefined();
+  });
+
   it("Scenario: Spec lifecycle Agent calls with codex FQNs are allowed", () => {
     for (const leaf of ["spec-format-gate", "spec-content-reviewer", "spec-post-impl-validator", "spec-closer"]) {
       const out = runHook({

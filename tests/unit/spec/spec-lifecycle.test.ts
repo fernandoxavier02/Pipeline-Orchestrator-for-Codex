@@ -65,6 +65,28 @@ describe("spec lifecycle artifact validation", () => {
     }
   });
 
+  it("prefers v5.2 pipeline-run spec artifacts before falling back to .kiro specs", () => {
+    const root = freshRoot();
+    try {
+      const specDir = join(root, "pipeline-runs", "001-payment-flow", "01-spec");
+      mkdirSync(specDir, { recursive: true });
+      writeFileSync(join(specDir, "requirements.md"), "# Requirements\n", "utf8");
+      writeFileSync(join(specDir, "design.md"), "# Design\n", "utf8");
+      writeFileSync(join(specDir, "tasks.md"), "# Tasks\n", "utf8");
+
+      const result = validateSpecLifecycleArtifacts({
+        workspaceRoot: root,
+        variant: "spec-heavy",
+        specId: "001-payment-flow",
+      });
+
+      expect(result.status).toBe("passed");
+      expect(result.specPath.replace(/\\/g, "/")).toContain("/pipeline-runs/001-payment-flow/01-spec");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("blocks the target spec even when an unrelated spec is complete", () => {
     const root = freshRoot();
     try {

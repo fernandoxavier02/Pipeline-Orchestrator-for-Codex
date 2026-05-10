@@ -23,9 +23,24 @@ describe("dispatch-contract value object", () => {
     expect(AGENT_LEAF_TO_FQN["task-orchestrator"]).toBe(
       `${PIPELINE_NAMESPACE}:core:task-orchestrator`,
     );
+    expect(AGENT_LEAF_TO_FQN["pipeline-controller"]).toBe(
+      `${PIPELINE_NAMESPACE}:core:pipeline-controller`,
+    );
     expect(AGENT_LEAF_TO_FQN["sentinel"]).toBe(`${PIPELINE_NAMESPACE}:core:sentinel`);
     expect(AGENT_LEAF_TO_FQN["finishing-branch"]).toBe(
       `${PIPELINE_NAMESPACE}:core:finishing-branch`,
+    );
+  });
+
+  it("registers v5.2 brainstorm agents with canonical Codex FQNs", () => {
+    expect(AGENT_LEAF_TO_FQN["brainstorm-controller"]).toBe(
+      `${PIPELINE_NAMESPACE}:core:brainstorm-controller`,
+    );
+    expect(AGENT_LEAF_TO_FQN["step-00-intake"]).toBe(
+      `${PIPELINE_NAMESPACE}:brainstorm:step-00-intake`,
+    );
+    expect(AGENT_LEAF_TO_FQN["step-01-explore"]).toBe(
+      `${PIPELINE_NAMESPACE}:brainstorm:step-01-explore`,
     );
   });
 

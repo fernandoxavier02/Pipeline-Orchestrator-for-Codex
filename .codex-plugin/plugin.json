@@ -1,7 +1,7 @@
 {
   "name": "pipeline-orchestrator-for-codex",
   "version": "0.4.1",
-  "description": "Full-depth prompt-driven pipeline orchestrator for Codex with 4 phases, 41 specialist agents, confidence scoring, TDD gates, Spec lifecycle gates, adversarial review, and execution identity tracing.",
+  "description": "Prompt-driven Codex pipeline orchestrator with 4 phases, 44 agent prompts, v5.2 protocol events, brainstorm run directories, TRACE.md validation, TDD gates, Spec lifecycle gates, adversarial review, and execution identity tracing.",
   "author": {
     "name": "Fernando Xavier - FX Studio AI",
     "email": "",
@@ -15,8 +15,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Pipeline Orchestrator for Codex",
-    "shortDescription": "Full-depth 4-phase pipeline with 41 agents, Spec gates, adversarial review, and execution tracing",
-    "longDescription": "Codex pipeline orchestrator restored to full Claude Code depth: 4 execution phases (Classification, Proposal, Execution, Validation), 41 specialist agents including Spec lifecycle reviewers, confidence scoring with non-invention rules, TDD-driven gates, adversarial review loops, frontmatter hook enforcement, execution identity tracing, and spec-driven development workflow.",
+    "shortDescription": "4-phase Codex pipeline with 44 agent prompts, Spec gates, protocol events, TRACE.md, and adversarial review",
+    "longDescription": "Codex pipeline orchestrator targeting Claude Code Pipeline Orchestrator v5.2 parity: 4 execution phases (Classification, Proposal, Execution, Validation), 44 agent prompts including brainstorm and Spec lifecycle reviewers, GATE_REQUEST/DISPATCH_REQUEST/PLAN_MODE_REQUEST protocol event persistence, brainstorm run directories, TRACE.md validation, confidence scoring with non-invention rules, TDD-driven gates, adversarial review loops, frontmatter hook enforcement, execution identity tracing, and strict real-agent blocking when spawn_agent is unavailable.",
     "developerName": "Fernando Xavier - FX Studio AI",
     "category": "Coding",
     "capabilities": ["Interactive", "Write"],

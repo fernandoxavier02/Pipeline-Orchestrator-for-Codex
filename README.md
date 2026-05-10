@@ -1,16 +1,16 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Codex_CLI-Plugin-14532D?style=for-the-badge&logo=openai&logoColor=white" alt="Codex Plugin" />
   <img src="https://img.shields.io/badge/version-0.4.1-blue?style=for-the-badge" alt="Version" />
-  <img src="https://img.shields.io/badge/agents-41-orange?style=for-the-badge" alt="Agents" />
+  <img src="https://img.shields.io/badge/agents-44-orange?style=for-the-badge" alt="Agents" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License" />
 </p>
 
 # Pipeline Orchestrator for Codex
 
 > **Full-depth, prompt-driven multi-agent pipeline for OpenAI Codex CLI.**
-> Ported from the canonical [Claude Code Pipeline Orchestrator v3.2.0](https://github.com/FX-Studio-AI/pipeline-orchestrator) with Codex-native tool adaptations.
+> Ported toward parity with the local canonical Claude Code Pipeline Orchestrator v5.2.0, with Codex-native runtime constraints made explicit.
 
-A single `/pipeline` command classifies any task, confirms a proposal with you, then orchestrates **41 specialist agents** across **4 structured phases** — with TDD gates, adversarial review loops, confidence scoring, Spec lifecycle gates, and Go/No-Go validation. No more wall-of-text responses. Every phase is isolated, verified, and auditable.
+A single `/pipeline` command classifies any task, confirms a proposal with you, then orchestrates **44 agent prompts** across **4 structured phases** when a real `spawn_agent` adapter is available. Without that adapter, strict pipeline execution blocks as `blocked-no-agent-runtime` rather than simulating multi-agent parity. The runtime now includes v5.2 protocol events, brainstorm run directories, Spec lifecycle gates, TRACE.md validation, TDD gates, adversarial review loops, confidence scoring, and Go/No-Go validation.
 
 ---
 
@@ -52,12 +52,12 @@ codex install fx-studio-ai/pipeline-orchestrator-for-codex
 git clone https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git
 
 # Install into Codex plugins cache
-mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.3.0
-cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.3.0/
+mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.4.1
+cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.4.1/
 
 # Optional: Install Node.js dependencies (only needed for TypeScript development/testing)
 # The plugin works WITHOUT npm install — hooks use only Node.js builtins (fs, path)
-# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.3.0
+# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.4.1
 # npm install --production
 ```
 
@@ -70,7 +70,7 @@ npm install
 
 # Create a symlink in the plugins cache
 mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex
-ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.3.0
+ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.4.1
 ```
 
 ### Verify Installation
@@ -133,7 +133,7 @@ That's it. The orchestrator handles classification, proposal, execution, and val
 
 ---
 
-## 41 Specialist Agents
+## 44 Agent Prompts
 
 ### Core (8)
 
@@ -265,7 +265,7 @@ Layer 3: SKILL.md bottom (self-check + anti-patterns)
 pipeline-orchestrator-for-codex/
 ├── .codex-plugin/
 │   └── plugin.json              # Plugin manifest (v0.4.1)
-├── agents/                      # 41 agent prompt files (~24K lines)
+├── agents/                      # 44 agent prompt files plus inventory README
 │   ├── core/                    #   8 core agents
 │   ├── executor/                #   5 executor agents
 │   │   └── type-specific/       #  16 domain-specific agents
@@ -308,7 +308,7 @@ If absent, the orchestrator auto-detects from `package.json`, `Makefile`, or com
 
 | Metric | Value |
 |:-------|:------|
-| Specialist agents | 41 |
+| Agent prompts | 44 |
 | Agent prompt lines | ~24,000 |
 | Pipeline variants | 12 |
 | Reference documents | 25 |
@@ -345,7 +345,7 @@ The plugin does NOT require a build step for normal use. The runtime components 
 | Component | Files | Dependencies |
 |:---|:---|:---|
 | Skill (instructions) | `skills/pipeline/SKILL.md` | None |
-| Agents (prompts) | `agents/**/*.md` (41 files) | None |
+| Agents (prompts) | `agents/**/*.md` (44 prompt files plus README) | None |
 | Hooks (enforcement) | `hooks/*.cjs` (3 files) | Node.js builtins only (fs, path) |
 | Manifest | `.codex-plugin/plugin.json` | None |
 | References | `references/**/*.md` | None |
@@ -356,7 +356,7 @@ The `src/`, `dist/`, and `tests/` directories are for development only and are N
 
 ## Origin
 
-This plugin is a **full-depth port** of the [Pipeline Orchestrator for Claude Code v3.2.0](https://github.com/FX-Studio-AI/pipeline-orchestrator) by FX Studio AI. The intelligence of the pipeline lives in the **markdown prompts**, not in the TypeScript runtime — the prompts are the program.
+This plugin is a Codex port targeting the local Pipeline Orchestrator for Claude Code v5.2.0 by FX Studio AI. The intelligence of the pipeline is split between markdown prompts and the TypeScript runtime: prompts define the operating contract, while runtime code enforces strict real-agent dispatch, protocol event persistence, run directories, gates, and TRACE.md validation.
 
 **Key adaptation**: Claude naturally converts spawn instructions into tool calls. GPT does not. The port includes imperative enforcement layers (hook + SKILL.md + self-check) to ensure deterministic agent dispatch in the Codex runtime.
 

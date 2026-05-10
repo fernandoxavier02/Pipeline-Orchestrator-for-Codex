@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { basename, join } from "node:path";
 import { loadPipelineConfig } from "./config/load-pipeline-config.js";
 import { buildPersistedCloseout, type PersistedCloseout } from "./closeout/persisted-closeout.js";
 import { renderCloseout } from "./closeout/render-closeout.js";
@@ -11,6 +12,7 @@ import { createExecutorController } from "./execution/executor-controller.js";
 import { createConfidenceModel } from "./gates/confidence-model.js";
 import { createGateRegistry } from "./gates/gate-registry.js";
 import { createPromptRegistry } from "./prompts/prompt-registry.js";
+import { persistProtocolBlocksFromDispatch } from "./protocol/protocol-handler.js";
 import { loadReferenceBundle } from "./references/load-reference-bundle.js";
 import { createReferenceProfileIndex } from "./references/reference-profiles.js";
 import { runAdversarialReview } from "./review/adversarial-review.js";
@@ -20,6 +22,7 @@ import { createConfidenceScoreStore } from "./state/confidence-score.js";
 import { createGateLog } from "./state/gate-log.js";
 import { createSessionStore } from "./state/session-store.js";
 import { createSentinelStateStore } from "./sentinel/sentinel-state.js";
+import { writeTrace } from "./trace/trace.js";
 import {
   recordPostFinalValidatorCheckpoint,
   resolveEffectiveGateLog,
@@ -437,13 +440,39 @@ export function createPipelineRuntime(options: RuntimeOptions) {
         )
       : undefined;
 
-    return runRole({
+    const result = await runRole({
       ...request,
       requireRealAgent: request.requireRealAgent ?? options.strictAgents ?? false,
       agentRuntime: request.agentRuntime ?? options.agentRuntime,
       prompt,
       team,
     });
+    const protocolBlocks = await persistProtocolBlocksFromDispatch({
+      stateRoot: stateDir,
+      dispatch: result,
+      source: request.role,
+    });
+
+    if (protocolBlocks.length === 0) {
+      return result;
+    }
+
+    return {
+      ...result,
+      output: {
+        ...result.output,
+        protocolStatus: "awaiting-parent-action",
+        protocolEvents: protocolBlocks.map((block) => ({
+          kind: block.kind,
+          id:
+            block.kind === "GATE_REQUEST"
+              ? block.gate_id
+              : block.kind === "DISPATCH_REQUEST"
+                ? block.dispatch_id
+                : block.plan_id,
+        })),
+      },
+    };
   };
   const runtimeReviewOrchestrator = createReviewOrchestrator({
     runRole: runtimeRunRole,
@@ -686,6 +715,21 @@ export function createPipelineRuntime(options: RuntimeOptions) {
         if (!validation) {
           throw new Error("final-validator returned an invalid runtime result");
         }
+        const tracePath = join(closeoutStores.runDir, "TRACE.md");
+        await writeTrace(tracePath, {
+          runId: basename(closeoutStores.runDir),
+          classification: {
+            type: "Unknown",
+            complexity: "unknown",
+            variant: "unknown",
+          },
+          pipeline: {
+            mode: input.mode ?? "FULL",
+            dispatchMode: options.strictAgents ? "real-agent" : "harness",
+          },
+          executionLog: effectiveGateLog.map((entry) => `${entry.phase ?? "unknown"}:${entry.gate}:${entry.decision}`),
+          finalVerdict: validation.decision,
+        });
         await recordPostFinalValidatorCheckpoint({
           sentinelStore: closeoutStores.sentinel,
           decision: validation.decision,
@@ -710,6 +754,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
           return {
             ...validation,
             text,
+            tracePath,
           };
         }
         const text = renderCloseout({
@@ -719,6 +764,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
         return {
           ...validation,
           text,
+          tracePath,
         };
       },
     },

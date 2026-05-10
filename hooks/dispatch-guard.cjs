@@ -21,7 +21,31 @@ const path = require('path');
 
 const PIPELINE_NAMESPACE = 'pipeline-orchestrator-for-codex';
 const LEGACY_PIPELINE_NAMESPACE = 'pipeline-orchestrator';
-const GOVERNED_SKILLS = new Set(['pipeline', 'spec-light', 'spec-heavy', 'spec-audit-only']);
+const GOVERNED_SKILLS = new Set([
+  'pipeline',
+  'brainstorm',
+  'audit',
+  'audit-heavy',
+  'audit-light',
+  'bugfix',
+  'bugfix-heavy',
+  'bugfix-light',
+  'feature',
+  'feature-heavy',
+  'feature-light',
+  'review',
+  'spec',
+  'spec-audit-only',
+  'spec-design',
+  'spec-heavy',
+  'spec-init',
+  'spec-light',
+  'spec-requirements',
+  'spec-tasks',
+  'validate-design',
+  'validate-gap',
+  'verify-completion',
+]);
 const ALLOWED_AGENT_TYPES = new Set(['worker', 'default', 'explorer']);
 const ALLOWED_GATES_AT = new Set(['phase-0', 'phase-1', 'phase-1.5', 'phase-2', 'phase-3', 'continue']);
 const ALLOWED_SENTINEL_CHECKPOINTS = new Set([
@@ -33,11 +57,15 @@ const ALLOWED_SENTINEL_CHECKPOINTS = new Set([
 ]);
 
 const PIPELINE_AGENT_LEAVES = [
+  ['brainstorm', 'step-00-intake'],
+  ['brainstorm', 'step-01-explore'],
+  ['core', 'brainstorm-controller'],
   ['core', 'adversarial-batch'],
   ['core', 'checkpoint-validator'],
   ['core', 'final-validator'],
   ['core', 'finishing-branch'],
   ['core', 'information-gate'],
+  ['core', 'pipeline-controller'],
   ['core', 'sanity-checker'],
   ['core', 'sentinel'],
   ['core', 'task-orchestrator'],
@@ -191,12 +219,22 @@ function resolveSkillFrontmatter(toolInput) {
 
 function asStringArray(value) {
   if (Array.isArray(value)) {
-    return value.filter((entry) => typeof entry === 'string' && entry.trim().length > 0);
+    return value
+      .filter((entry) => (typeof entry === 'string' || typeof entry === 'number') && String(entry).trim().length > 0)
+      .map((entry) => String(entry).trim());
   }
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return [value.trim()];
+  if ((typeof value === 'string' || typeof value === 'number') && String(value).trim().length > 0) {
+    return [String(value).trim()];
   }
   return [];
+}
+
+function isAllowedGateToken(entry) {
+  return ALLOWED_GATES_AT.has(entry) || /^\d+$/.test(entry);
+}
+
+function isAllowedSentinelCheckpoint(entry) {
+  return ALLOWED_SENTINEL_CHECKPOINTS.has(entry) || /^pre_\d+$/.test(entry) || /^post_[a-z0-9_-]+$/i.test(entry);
 }
 
 function validateSkillFrontmatter(toolInput) {
@@ -216,30 +254,34 @@ function validateSkillFrontmatter(toolInput) {
   }
 
   const agentType = frontmatter.agent_type;
-  if (typeof agentType !== 'string' || !ALLOWED_AGENT_TYPES.has(agentType.trim())) {
+  const disableModelInvocation = frontmatter['disable-model-invocation'];
+  const hasValidAgentType = typeof agentType === 'string' && ALLOWED_AGENT_TYPES.has(agentType.trim());
+  const isManualOnlySkill = disableModelInvocation === true || disableModelInvocation === 'true';
+
+  if (!hasValidAgentType && !isManualOnlySkill) {
     return {
       kind: 'deny',
-      reason: `DISPATCH_GUARD: skill frontmatter agent_type must be one of: ${Array.from(ALLOWED_AGENT_TYPES).join(', ')}.`,
+      reason: `DISPATCH_GUARD: skill frontmatter must declare agent_type (${Array.from(ALLOWED_AGENT_TYPES).join(', ')}) or disable-model-invocation: true.`,
       attempted: leaf,
-      expected: 'agent_type',
+      expected: 'agent_type|disable-model-invocation',
     };
   }
 
   const gatesAt = asStringArray(frontmatter.gates_at);
-  if (gatesAt.length === 0 || gatesAt.some((entry) => !ALLOWED_GATES_AT.has(entry))) {
+  if (gatesAt.length === 0 || gatesAt.some((entry) => !isAllowedGateToken(entry))) {
     return {
       kind: 'deny',
-      reason: `DISPATCH_GUARD: skill frontmatter gates_at must use known phases: ${Array.from(ALLOWED_GATES_AT).join(', ')}.`,
+      reason: `DISPATCH_GUARD: skill frontmatter gates_at must use known phases or numeric step gates.`,
       attempted: leaf,
       expected: 'gates_at',
     };
   }
 
   const sentinelCheckpoints = asStringArray(frontmatter.sentinel_checkpoints);
-  if (sentinelCheckpoints.length === 0 || sentinelCheckpoints.some((entry) => !ALLOWED_SENTINEL_CHECKPOINTS.has(entry))) {
+  if (sentinelCheckpoints.length === 0 || sentinelCheckpoints.some((entry) => !isAllowedSentinelCheckpoint(entry))) {
     return {
       kind: 'deny',
-      reason: `DISPATCH_GUARD: skill frontmatter sentinel_checkpoints must use known checkpoints: ${Array.from(ALLOWED_SENTINEL_CHECKPOINTS).join(', ')}.`,
+      reason: `DISPATCH_GUARD: skill frontmatter sentinel_checkpoints must use known checkpoints or step checkpoints like pre_3.`,
       attempted: leaf,
       expected: 'sentinel_checkpoints',
     };

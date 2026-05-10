@@ -12,6 +12,7 @@ import { createConfidenceScoreStore } from "../../../src/state/confidence-score.
 import { createGateLog } from "../../../src/state/gate-log.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
 import { createExecutionIdentity } from "../../../src/observability/execution-identity.js";
+import { validateTrace } from "../../../src/trace/trace.js";
 import * as dispatchRunRoleModule from "../../../src/dispatcher/run-role.js";
 
 type CloseoutGateLogEntry = {
@@ -97,6 +98,76 @@ async function seedExecutionProof(input: {
 }
 
 describe("closeout confirmation", () => {
+  it("writes a valid TRACE.md before returning a GO closeout", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-trace-runtime-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+    await createCheckpointStore(runtime.stateDir).save({
+      name: "batch-1",
+      phase: "phase-2",
+      batchIndex: 0,
+      status: "completed",
+      timestamp: "2026-04-02T12:00:00.000Z",
+      detail: "Authoritative checkpoint proof",
+    });
+    await seedExecutionProof({
+      stateDir: runtime.stateDir,
+      batches: ["batch-1"],
+      includeFinalReview: true,
+    });
+
+    const runRoleSpy = vi.spyOn(dispatchRunRoleModule, "runRole").mockImplementation(async (request) => {
+      if (request.role === "sanity-checker") {
+        return createMockRunRoleResult("sanity-checker", {
+          status: "approved",
+          evidence: ["build", "tests", "final adversarial review"],
+          missingEvidence: [],
+        });
+      }
+
+      if (request.role === "final-validator") {
+        return createMockRunRoleResult("final-validator", {
+          decision: "GO",
+          confidenceScore: 1,
+          confidenceBand: "high",
+          requiredEvidence: ["build", "tests", "final-review"],
+          missingEvidence: [],
+          verificationEvidence: [
+            { kind: "build", passed: true, label: "npm run build" },
+            { kind: "tests", passed: true, label: "npm test" },
+            { kind: "final-review", passed: true, label: "final adversarial review" },
+          ],
+          blockingGates: [],
+          skippedSoftGates: [],
+          blockedReviews: 0,
+        });
+      }
+
+      throw new Error(`unexpected role ${request.role}`);
+    });
+
+    try {
+      const result = await runtime.closeout.finalize({
+        reviews: [{ status: "approved" }],
+        batches: [{ name: "batch-1" }],
+        verificationEvidence: [
+          { kind: "build", passed: true },
+          { kind: "tests", passed: true },
+          { kind: "final-review", passed: true },
+        ],
+        confirmed: true,
+      });
+
+      expect(result.tracePath).toBe(join(runtime.stateDir, "TRACE.md"));
+      const trace = await readFile(result.tracePath, "utf8");
+      expect(validateTrace(trace)).toMatchObject({ valid: true, errors: [] });
+    } finally {
+      runRoleSpy.mockRestore();
+    }
+  });
+
   it("dispatches sanity-checker before final closeout decision and honors a blocked structured result", async () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-closeout-sanity-checker-runtime-"));
     const runtime = createPipelineRuntime({

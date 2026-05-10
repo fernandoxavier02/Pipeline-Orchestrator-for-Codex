@@ -61,7 +61,9 @@ export function validateSpecLifecycleArtifacts(input: {
   variant: string;
   specId: string;
 }): SpecLifecycleValidation {
-  const specPath = join(input.workspaceRoot, ".kiro", "specs", input.specId);
+  const runSpecPath = join(input.workspaceRoot, "pipeline-runs", input.specId, "01-spec");
+  const legacySpecPath = join(input.workspaceRoot, ".kiro", "specs", input.specId);
+  const specPath = existsSync(runSpecPath) ? runSpecPath : legacySpecPath;
   const missingArtifacts = SPEC_REQUIRED_FILES
     .filter((file) => !existsSync(join(specPath, file)));
 

@@ -408,3 +408,13 @@ Parse rules:
 - **Execution identity:** `createGateLog()`, `createSessionStore()`, dispatcher results, real-agent dispatch requests, multi-agent child results, and hook event writers attach an execution identity. Use `trace_id` as the workflow correlation id and `event_id` as the specific surface-event id. The same workflow should keep one `trace_id` across session, gates, dispatch, and child reviewer outputs.
 - Any line that does not parse as a valid single JSON object with the required gate keys plus optional `execution_identity` MUST be ignored and logged as anomalous.
 - The `hardness` value MUST match the Gate Registry — mismatches indicate tampering or corruption.
+
+## Achado #7 Protocol Hoisting (v5.2 parity)
+
+When any dispatched worker returns one or more structured protocol blocks, the parent controller MUST process them before continuing:
+
+- `=== GATE_REQUEST v1 ===` asks the parent context to collect a user decision. The Codex runtime persists the emitted block with `status: emitted` and returns `protocolStatus: awaiting-parent-action`. After the parent collects the user answer, record it with the response recorder so `protocol-events.jsonl` receives `status: answered`; if the gate maps to a canonical gate such as `ADVERSARIAL_GATE`, `FINAL_ADVERSARIAL_GATE`, `CLOSEOUT_CONFIRM`, `TDD_APPROVAL`, `PLAN_REJECTED`, or `INFO_GATE_BLOCKED`, the recorder also appends a validated `gate-decisions.jsonl` entry.
+- `=== DISPATCH_REQUEST v1 ===` asks the parent context to dispatch a child agent or skill. Use real `spawn_agent` for `target_kind: agent`; use the Codex skill mechanism for `target_kind: skill`.
+- `=== PLAN_MODE_REQUEST v1 ===` asks the parent context to enter or exit a planning checkpoint and persist the result in `protocol-events.jsonl`.
+
+Never silently default a malformed block. Stop, surface the malformed protocol event, and require correction before continuing.
