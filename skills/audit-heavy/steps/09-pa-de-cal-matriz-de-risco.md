@@ -2,7 +2,7 @@
 step_number: 9
 step_name: "pa-de-cal-matriz-de-risco"
 execution_mode: subagent
-agent_type: "pipeline-orchestrator-for-codex:executor:type-specific:audit-risk-matrix-generator"
+agent_type: "pipeline-orchestrator-for-codex:executor/type-specific:audit-risk-matrix-generator"
 production_writes_allowed: false
 expected_inputs:
   - AuditIntake: from_step_1

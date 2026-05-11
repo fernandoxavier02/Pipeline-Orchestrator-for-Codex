@@ -2,7 +2,7 @@
 step_number: 2
 step_name: "arquitetura-limites-dependencias"
 execution_mode: subagent
-agent_type: "pipeline-orchestrator-for-codex:executor:type-specific:audit-domain-analyzer"
+agent_type: "pipeline-orchestrator-for-codex:executor/type-specific:audit-domain-analyzer"
 production_writes_allowed: false
 expected_inputs:
   - AuditIntake: from_step_1

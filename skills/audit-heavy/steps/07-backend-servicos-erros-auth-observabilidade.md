@@ -2,7 +2,7 @@
 step_number: 7
 step_name: "backend-servicos-erros-auth-observabilidade"
 execution_mode: subagent
-agent_type: "pipeline-orchestrator-for-codex:executor:type-specific:audit-compliance-checker"
+agent_type: "pipeline-orchestrator-for-codex:executor/type-specific:audit-compliance-checker"
 production_writes_allowed: false
 expected_inputs:
   - AuditIntake: from_step_1

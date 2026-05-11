@@ -2,7 +2,7 @@
 step_number: 1
 step_name: "intake-spec-inventario"
 execution_mode: subagent
-agent_type: "pipeline-orchestrator-for-codex:executor:type-specific:audit-intake"
+agent_type: "pipeline-orchestrator-for-codex:executor/type-specific:audit-intake"
 production_writes_allowed: false
 expected_inputs:
   - audit_request: from_user
