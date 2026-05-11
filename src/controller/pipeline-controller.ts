@@ -573,6 +573,10 @@ function resolveSpecIdFromSession(session: PipelineSessionState) {
   return deriveSpecIdFromRequest(source);
 }
 
+function requiresSpecArtifacts(variant: string) {
+  return isSpecLifecycleVariant(variant) || (variant.endsWith("-heavy") && variant !== "audit-heavy");
+}
+
 function evaluateSpecPhaseGate(input: {
   workspaceRoot: string;
   variant: string;
@@ -1612,7 +1616,7 @@ export function createPipelineController(runtime?: {
           detail: designInterrogation.summary,
         }),
       ];
-      const specArtifactGate = isSpecLifecycleVariant(classificationResult.classification.variant)
+      const specArtifactGate = requiresSpecArtifacts(classificationResult.classification.variant)
         ? validateSpecLifecycleArtifacts({
             workspaceRoot: getWorkspaceRoot(runtime),
             variant: classificationResult.classification.variant,

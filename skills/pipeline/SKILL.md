@@ -317,6 +317,10 @@ Dispatch a worker agent. It presents options:
 
 SIMPLES = direct execution (no pipeline phases, just do the task).
 
+### Heavy Spec Gate
+
+Before any `*-heavy` execution variant can move past proposal into implementation, the controller must prove that the matching spec artifacts exist. The runtime gate is `SPEC_ARTIFACT_MISSING`, and it checks `pipeline-runs/<run_id>/01-spec/` or `.kiro/specs/<spec_id>/` for `requirements.md`, `design.md`, and `tasks.md`. `audit-heavy` is the only exception because it is report-only and must not modify code.
+
 ## Modes
 
 | Mode | Trigger | Behavior |

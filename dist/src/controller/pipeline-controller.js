@@ -350,6 +350,9 @@ function resolveSpecIdFromSession(session) {
     const source = session.proposal?.summary ?? session.sessionId ?? session.variant ?? "spec-request";
     return deriveSpecIdFromRequest(source);
 }
+function requiresSpecArtifacts(variant) {
+    return isSpecLifecycleVariant(variant) || (variant.endsWith("-heavy") && variant !== "audit-heavy");
+}
 function evaluateSpecPhaseGate(input) {
     if (!isSpecLifecycleVariant(input.variant)) {
         return undefined;
@@ -1178,7 +1181,7 @@ export function createPipelineController(runtime) {
                     detail: designInterrogation.summary,
                 }),
             ];
-            const specArtifactGate = isSpecLifecycleVariant(classificationResult.classification.variant)
+            const specArtifactGate = requiresSpecArtifacts(classificationResult.classification.variant)
                 ? validateSpecLifecycleArtifacts({
                     workspaceRoot: getWorkspaceRoot(runtime),
                     variant: classificationResult.classification.variant,

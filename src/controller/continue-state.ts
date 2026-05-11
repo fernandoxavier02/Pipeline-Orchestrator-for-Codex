@@ -54,8 +54,13 @@ export function resolveContinueRollbackState(input: {
       throw new Error(`Unknown continue pending decision "${pendingDecision}"`);
     }
 
-    const rollbackGate = input.session.unresolvedBlockers?.[0] ?? "TDD_APPROVAL";
-    createGateRegistry().get(rollbackGate);
+    const candidateRollbackGate = input.session.unresolvedBlockers?.[0] ?? "TDD_APPROVAL";
+    let rollbackGate = candidateRollbackGate;
+    try {
+      createGateRegistry().get(candidateRollbackGate);
+    } catch {
+      rollbackGate = "TDD_APPROVAL";
+    }
 
     return {
       phase: input.session.currentPhase,

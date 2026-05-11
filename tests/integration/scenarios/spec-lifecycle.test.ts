@@ -28,6 +28,86 @@ function writeSpecContentReviewPass(specDir: string) {
 }
 
 describe("spec lifecycle controller gating", () => {
+  it("blocks non-spec heavy proposals when required spec artifacts are missing", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "pipeline-heavy-spec-required-"));
+    const gateEntries: Array<Record<string, unknown>> = [];
+    let savedSession: unknown;
+    try {
+      const controller = createPipelineController({
+        workspaceRoot,
+        stores: {
+          gateLog: {
+            append: async (entry) => {
+              gateEntries.push(entry as Record<string, unknown>);
+            },
+          },
+          confidence: {
+            save: async () => undefined,
+          },
+          session: {
+            load: async () => ({}),
+            save: async (session) => {
+              savedSession = session;
+            },
+          },
+          sentinel: {
+            save: async () => undefined,
+          },
+        },
+      });
+
+      const result = await controller.start("/pipeline --complexa feature onboarding flow");
+
+      expect(result.status).toBe("blocked");
+      expect(result.blockedBy).toBe("SPEC_ARTIFACT_MISSING");
+      expect(result.type).toBe("Feature");
+      expect(result.variant).toBe("implement-heavy");
+      expect(result.gates.map((gate: { gate: string }) => gate.gate)).toContain("SPEC_ARTIFACT_MISSING");
+      expect(gateEntries.some((entry) => entry.gate === "SPEC_ARTIFACT_MISSING" && entry.decision === "block")).toBe(true);
+      expect(savedSession).toMatchObject({
+        currentPhase: "phase-1",
+        pendingDecision: "spec-artifacts-required",
+        unresolvedBlockers: [expect.stringContaining("requirements.md")],
+      });
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("allows non-spec heavy proposals only after the matching spec artifacts exist", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "pipeline-heavy-spec-present-"));
+    try {
+      writeCompleteSpec(workspaceRoot, "feature-onboarding-flow");
+      const controller = createPipelineController({
+        workspaceRoot,
+        stores: {
+          gateLog: {
+            append: async () => undefined,
+          },
+          confidence: {
+            save: async () => undefined,
+          },
+          session: {
+            load: async () => ({}),
+            save: async () => undefined,
+          },
+          sentinel: {
+            save: async () => undefined,
+          },
+        },
+      });
+
+      const result = await controller.start("/pipeline --complexa feature onboarding flow");
+
+      expect(result.status).not.toBe("blocked");
+      expect(result.type).toBe("Feature");
+      expect(result.complexity).toBe("COMPLEXA");
+      expect(result.variant).toBe("implement-heavy");
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   it("blocks spec lifecycle proposals when required spec artifacts are missing", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "pipeline-spec-controller-"));
     const gateEntries: Array<Record<string, unknown>> = [];

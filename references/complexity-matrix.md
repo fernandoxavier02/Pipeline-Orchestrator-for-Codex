@@ -35,7 +35,7 @@ All agents MUST reference this file â€” never define complexity rules inlin
 | Lines changed | < 30 | 30-100 | > 100 |
 | Domains | 1 | 2 | 3+ |
 | Risk | Low | Medium | High |
-| Has spec | No | Optional | Required |
+| Has spec | No | Optional | Required and enforced before heavy execution |
 | Auth impact | No | Maybe | Yes |
 | Data model change | No | Minor | Structural |
 
@@ -82,6 +82,10 @@ Values at exact boundaries (e.g., exactly 3 files, exactly 30 lines) are classif
 | **Spec** | DIRETO | spec-light | spec-heavy |
 
 DIRETO = Direct execution without pipeline (build + test only, max 2 files, < 30 lines).
+
+### Heavy Spec Gate
+
+COMPLEXA execution variants must have spec artifacts before implementation can start. Runtime enforces this with `SPEC_ARTIFACT_MISSING` for `*-heavy` variants, except `audit-heavy` because it is report-only and must not modify code. The accepted artifact locations are `pipeline-runs/<run_id>/01-spec/` and `.kiro/specs/<spec_id>/`, each with `requirements.md`, `design.md`, and `tasks.md`.
 
 ---
 
