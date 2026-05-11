@@ -20,14 +20,40 @@
 // ============================================================
 
 const { recordHookEvent } = require('./hook-events.cjs');
+const { GOVERNED_SKILLS, GOVERNED_SKILL_SET } = require('./governed-workflows.cjs');
 
 // Padrões de SKILLS - usa skill, não precisa de orchestrator externo
 const SKILL_PATTERNS = [
-  /^\/(context|commit|code-review|fix|verify|deploy|qa|test|pipeline)/i,
+  /^\/(context|commit|code-review|fix|verify|deploy|qa|test|pipeline)\b/i,
+  /^\/pipeline-orchestrator(?:-for-codex)?:[a-z0-9-]+\b/i,
   /^\/kiro:/i,
   /^\/prompts:/i,
   /^\/vertical/i,
 ];
+
+const WORKFLOW_ALIASES = new Map([
+  ['auditoria', 'audit'],
+  ['bug-fix', 'bugfix'],
+  ['bug fix', 'bugfix'],
+  ['correcao', 'bugfix'],
+  ['correção', 'bugfix'],
+  ['implement', 'feature'],
+  ['implementacao', 'feature'],
+  ['implementação', 'feature'],
+  ['ux', 'ux'],
+]);
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const GOVERNED_WORKFLOW_PATTERN = new RegExp(
+  `(?:^|\\s)(${[...GOVERNED_SKILLS, ...WORKFLOW_ALIASES.keys()]
+    .sort((left, right) => right.length - left.length)
+    .map(escapeRegex)
+    .join('|')})(?=$|[\\s,.;:!?])`,
+  'i',
+);
 
 // Padrões de IMPLEMENTAÇÃO - OBRIGATÓRIO usar Task tool
 const IMPLEMENTATION_PATTERNS = [
@@ -89,6 +115,53 @@ function isSkillCommand(prompt) {
   }
 
   return false;
+}
+
+function normalizeWorkflowName(name) {
+  const normalized = (name || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (GOVERNED_SKILL_SET.has(normalized)) {
+    return normalized;
+  }
+
+  return WORKFLOW_ALIASES.get(normalized);
+}
+
+function detectExplicitWorkflow(prompt) {
+  const trimmed = (prompt || '').trim();
+  if (!trimmed) return undefined;
+
+  const slashMatch = trimmed.match(/^\/pipeline-orchestrator(?:-for-codex)?:(?<workflow>[a-z0-9-]+)\b/i);
+  if (slashMatch?.groups?.workflow) {
+    const workflow = normalizeWorkflowName(slashMatch.groups.workflow);
+    if (workflow) {
+      return { workflow, source: 'slash-command' };
+    }
+  }
+
+  if (/^\/pipeline(?:\s|$)/i.test(trimmed)) {
+    return { workflow: 'pipeline', source: 'slash-command' };
+  }
+
+  const pluginMention = trimmed.match(/\[(?:@)?pipeline-orchestrator-for-codex\]\(plugin:\/\/pipeline-orchestrator-for-codex@[^)]+\)(?<tail>[\s\S]*)/i)
+    || trimmed.match(/@pipeline-orchestrator-for-codex(?<tail>[\s\S]*)/i);
+
+  const tail = pluginMention?.groups?.tail;
+  if (tail) {
+    const workflowMatch = tail.match(GOVERNED_WORKFLOW_PATTERN);
+    if (workflowMatch?.[1]) {
+      const workflow = normalizeWorkflowName(workflowMatch[1].trim());
+      if (workflow) {
+        return { workflow, source: 'plugin-mention' };
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function isImplementationRequest(prompt) {
@@ -179,6 +252,46 @@ Phase 2: spawn executor-controller → spawn checkpoint-validator → spawn revi
 Phase 3: spawn sanity-checker → spawn final-validator → spawn finishing-branch
 `.trim();
 
+function workflowSkillMessage(workflow) {
+  if (workflow === 'pipeline') {
+    return PIPELINE_SKILL_MESSAGE;
+  }
+
+  if (workflow === 'brainstorm') {
+    return `
+⛔ BRAINSTORM WORKFLOW SELECTED ⛔
+
+The user explicitly selected the Pipeline Orchestrator brainstorm workflow.
+
+DO NOT route this as generic /pipeline. DO NOT implement directly.
+
+YOUR FIRST ACTION must be:
+1. Call update_plan for the visible brainstorm plan.
+2. Present the WORKFLOW_METHOD_GATE for brainstorm and wait for approval.
+3. Run /pipeline-orchestrator-for-codex:brainstorm with the user's task.
+4. Process any GATE_REQUEST, DISPATCH_REQUEST, or PLAN_MODE_REQUEST blocks before advancing.
+
+If the workflow cannot be started, stop and report the blocker instead of falling back to implementation.
+`.trim();
+  }
+
+  return `
+⛔ PIPELINE ORCHESTRATOR WORKFLOW SELECTED ⛔
+
+The user explicitly selected /pipeline-orchestrator-for-codex:${workflow}.
+
+DO NOT route this as generic /pipeline. DO NOT implement directly.
+
+YOUR FIRST ACTION must be:
+1. Call update_plan for the visible ${workflow} plan.
+2. Present the WORKFLOW_METHOD_GATE for ${workflow} and wait for approval.
+3. Run /pipeline-orchestrator-for-codex:${workflow} with the user's task.
+4. Process any GATE_REQUEST, DISPATCH_REQUEST, or PLAN_MODE_REQUEST blocks before advancing.
+
+If the workflow cannot be started, stop and report the blocker instead of falling back to implementation.
+`.trim();
+}
+
 // ============================================================
 // MAIN
 // ============================================================
@@ -226,18 +339,33 @@ process.stdin.on('end', () => {
       return;
     }
 
-    // 2. Se é skill → passa direto (skill tem seu próprio fluxo)
-    if (isSkillCommand(prompt)) {
-      const isPipelineSkill = /^\/(pipeline-orchestrator(-for-codex)?:pipeline|pipeline)\b/i.test(prompt.trim());
+    const explicitWorkflow = detectExplicitWorkflow(prompt);
+    if (explicitWorkflow) {
       recordHookEvent({
         hook: 'force-pipeline-agents',
         event: 'UserPromptSubmit',
-        decision: isPipelineSkill ? 'inject_pipeline_skill_message' : 'allow_skill',
-        reason: isPipelineSkill ? 'pipeline command invoked' : 'skill command detected',
+        decision: explicitWorkflow.workflow === 'pipeline' ? 'inject_pipeline_skill_message' : 'inject_workflow_skill_message',
+        attempted: explicitWorkflow.workflow,
+        reason: `explicit ${explicitWorkflow.source} workflow`,
       });
       console.log(JSON.stringify({
         continue: true,
-        systemMessage: isPipelineSkill ? PIPELINE_SKILL_MESSAGE : SKILL_MESSAGE
+        systemMessage: workflowSkillMessage(explicitWorkflow.workflow)
+      }));
+      return;
+    }
+
+    // 2. Se é skill → passa direto (skill tem seu próprio fluxo)
+    if (isSkillCommand(prompt)) {
+      recordHookEvent({
+        hook: 'force-pipeline-agents',
+        event: 'UserPromptSubmit',
+        decision: 'allow_skill',
+        reason: 'skill command detected',
+      });
+      console.log(JSON.stringify({
+        continue: true,
+        systemMessage: SKILL_MESSAGE
       }));
       return;
     }

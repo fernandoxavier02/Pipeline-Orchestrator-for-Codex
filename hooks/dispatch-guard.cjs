@@ -16,36 +16,13 @@
  */
 
 const { recordHookEvent } = require('./hook-events.cjs');
+const { GOVERNED_SKILL_SET } = require('./governed-workflows.cjs');
 const fs = require('fs');
 const path = require('path');
 
 const PIPELINE_NAMESPACE = 'pipeline-orchestrator-for-codex';
 const LEGACY_PIPELINE_NAMESPACE = 'pipeline-orchestrator';
-const GOVERNED_SKILLS = new Set([
-  'pipeline',
-  'brainstorm',
-  'audit',
-  'audit-heavy',
-  'audit-light',
-  'bugfix',
-  'bugfix-heavy',
-  'bugfix-light',
-  'feature',
-  'feature-heavy',
-  'feature-light',
-  'review',
-  'spec',
-  'spec-audit-only',
-  'spec-design',
-  'spec-heavy',
-  'spec-init',
-  'spec-light',
-  'spec-requirements',
-  'spec-tasks',
-  'validate-design',
-  'validate-gap',
-  'verify-completion',
-]);
+const GOVERNED_SKILLS = GOVERNED_SKILL_SET;
 const ALLOWED_AGENT_TYPES = new Set(['worker', 'default', 'explorer']);
 const ALLOWED_GATES_AT = new Set(['phase-0', 'phase-1', 'phase-1.5', 'phase-2', 'phase-3', 'continue']);
 const ALLOWED_SENTINEL_CHECKPOINTS = new Set([
