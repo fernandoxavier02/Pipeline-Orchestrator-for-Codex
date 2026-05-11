@@ -1,6 +1,8 @@
 # Visible Plan Contract
 
-Every public command or skill workflow must open a Codex-visible plan before execution. This mirrors the Superpowers Codex pattern: the parent model calls `update_plan`, the UI shows the plan, and the workflow keeps that plan current as work advances.
+Every public command or skill workflow must open a Codex-visible plan as its first assistant action. This mirrors the Superpowers Codex pattern: the parent model calls `update_plan`, the UI shows the plan, and the workflow keeps that plan current as work advances.
+
+The visible plan is not the same as the internal `PLAN_MODE_REQUEST v1` event. `PLAN_MODE_REQUEST v1` is protocol telemetry for planning checkpoints. The user-facing Codex plan panel is opened by calling `update_plan`.
 
 ## Block Shape
 
@@ -25,7 +27,7 @@ VISIBLE_PLAN:
 
 ## Required Behavior
 
-- Call `update_plan` before file edits, dispatch, code execution, report generation, or completion claims.
+- Call `update_plan` as the first assistant action, before workflow/method confirmation, file edits, dispatch, code execution, report generation, terminal responses, phase transitions, or completion claims.
 - Keep exactly one plan item `in_progress`.
 - Update the plan after each batch, checkpoint, adversarial review, fix attempt, user gate, and final validation.
 - Every workflow uses batches. For report-only workflows, a batch is an analysis axis, journey, artifact, or validation slice.

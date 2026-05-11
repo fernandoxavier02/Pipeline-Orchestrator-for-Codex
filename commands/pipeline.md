@@ -30,7 +30,13 @@ When the skill orchestrates user confirmation, workflow selection, or plan mode,
 
 ## VISIBLE_PLAN
 
-Before dispatching or executing the workflow, open a visible Codex plan with `update_plan` using the contract in `references/visible-plan-contract.md`. The plan must cover the selected workflow, batches, adversarial review after every batch, and mandatory PDD, DDD, ATDD, and TDD or report-only evidence-first equivalents. Keep one item `in_progress` and update it after every gate, batch, review, and final validation.
+As the first assistant action, open a visible Codex plan with `update_plan` using the contract in `references/visible-plan-contract.md`. Do this before the workflow method gate, before Phase 0 dispatch, and before any execution, report, validation claim, or file edit. The plan must cover the selected workflow, batches, adversarial review after every batch, and mandatory PDD, DDD, ATDD, and TDD or report-only evidence-first equivalents. Keep one item `in_progress` and update it after every gate, batch, review, and final validation.
+
+## WORKFLOW_METHOD_GATE
+
+After the visible plan is open, and still before dispatching Phase 0, spawning any agent, opening execution, editing files, or producing a report, show the first visible method gate from `references/workflow-method-gate.md` and wait for the user's answer. This is the first user-decision contract for `/pipeline`: state the auto-selected workflow/mode, explain the reason in one sentence, and allow the user to keep it or switch to `audit`, `bugfix`, `feature`, `ux`, `spec`, `brainstorm`, `review`, or `verify-completion`.
+
+If the user switches the workflow, rebuild the gate and ask again. If the later task-orchestrator classification disagrees with the approved workflow, surface the changed recommendation and ask again before execution.
 
 ## Instructions
 

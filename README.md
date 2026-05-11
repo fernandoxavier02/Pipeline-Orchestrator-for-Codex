@@ -88,11 +88,11 @@ ls ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/*/skills/
 /pipeline <your task description>
 ```
 
-The first response is not execution yet. The orchestrator shows the workflow it selected, for example Bug Fix, Audit, Implement, UX, or Spec, and asks whether you want to keep it. Reply `yes` to keep it, `adjust` to revise it manually, `no` to stop, or reply with `audit`, `bugfix`, `feature`, `ux`, or `spec` to switch workflow before any execution.
+The first assistant action is visible planning: the orchestrator calls `update_plan` so Codex opens the plan panel before it dispatches agents, edits files, or writes a report. The first user decision is then `WORKFLOW_METHOD_GATE` from `references/workflow-method-gate.md`: it names the workflow it selected, for example Bug Fix, Audit, Implement, UX, Spec, Brainstorm, Review, or Verify Completion, and asks whether you want to keep it. Reply `yes` to keep it, `adjust` to revise it manually, `no` to stop, or reply with `audit`, `bugfix`, `feature`, `ux`, `spec`, `brainstorm`, `review`, or `verify-completion` to switch workflow before any execution. For `/pipeline`, both the visible plan and this gate happen before Phase 0 agent dispatch.
 
 For complex work or `--plan`, the proposal also emits `PLAN_MODE_REQUEST v1`. Hosts that support native Codex Plan Mode should surface the planning checkpoint there; otherwise the generated implementation plan is shown and must be approved before edits.
 
-Every public workflow also follows the `VISIBLE_PLAN` contract in `references/visible-plan-contract.md`: the parent Codex context must call `update_plan` before execution, keep one step in progress, execute in batches, run adversarial review after every batch, and preserve PDD, DDD, ATDD, and TDD or the report-only evidence-first equivalent.
+Every public workflow also follows the `VISIBLE_PLAN` contract in `references/visible-plan-contract.md`: the parent Codex context must call `update_plan` as the first assistant action, keep one step in progress, execute in batches, run adversarial review after every batch, and preserve PDD, DDD, ATDD, and TDD or the report-only evidence-first equivalent.
 
 ---
 

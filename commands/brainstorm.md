@@ -9,7 +9,11 @@ Entry command for the pre-execution brainstorm + spec lifecycle pipeline.
 
 ## VISIBLE_PLAN
 
-Before dispatching or executing the workflow, open a visible Codex plan with `update_plan` using the contract in `references/visible-plan-contract.md`. The plan must cover the selected workflow, batches, adversarial review after every batch, and mandatory PDD, DDD, ATDD, and TDD or report-only evidence-first equivalents. Keep one item `in_progress` and update it after every gate, batch, review, and final validation.
+As the first assistant action, open a visible Codex plan with `update_plan` using the contract in `references/visible-plan-contract.md`. Do this before the workflow method gate, before creating a run directory, before dispatching, and before any execution, report, validation claim, or file edit. The plan must cover the selected workflow, batches, adversarial review after every batch, and mandatory PDD, DDD, ATDD, and TDD or report-only evidence-first equivalents. Keep one item `in_progress` and update it after every gate, batch, review, and final validation.
+
+## WORKFLOW_METHOD_GATE
+
+After the visible plan is open, and still before dispatching, executing, editing files, generating a report, or creating a run directory, show the first visible method gate from `references/workflow-method-gate.md` and wait for the user's answer. State that the selected workflow is `brainstorm`, explain whether implementation handoff is planned, and allow the user to keep it or switch to `audit`, `bugfix`, `feature`, `ux`, `spec`, `review`, `verify-completion`, or `/pipeline`.
 
 ## Behavior
 
