@@ -1,3 +1,5 @@
+import { renderNextStepBlock, resolveNextStep } from "../workflow/next-step.js";
+
 export function renderCloseout(input: {
   closeout: {
     decision: "GO" | "CONDITIONAL" | "NO-GO";
@@ -36,6 +38,11 @@ export function renderCloseout(input: {
   if (input.closeout.rollbackHint) {
     lines.push(`Rollback hint: ${input.closeout.rollbackHint}`);
   }
+
+  lines.push(renderNextStepBlock(resolveNextStep({
+    workflow: "pipeline",
+    status: input.closeout.decision === "NO-GO" ? "blocked" : "passed",
+  })));
 
   return lines.join("\n");
 }

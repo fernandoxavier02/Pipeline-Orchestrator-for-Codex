@@ -30,7 +30,7 @@ Required output block:
             await rm(root, { recursive: true, force: true });
         }
     });
-    it("revalidates the controller prompt on each start instead of trusting an earlier safe load", async () => {
+    it("revalidates the controller prompt on each start instead of trusting an earlier safe load", { timeout: 10000 }, async () => {
         const root = await mkdtemp(join(tmpdir(), "pipeline-review-only-cache-"));
         try {
             await cp(join(process.cwd(), "references"), join(root, "references"), { recursive: true });

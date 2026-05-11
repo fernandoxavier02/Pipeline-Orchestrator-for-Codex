@@ -4,6 +4,15 @@ import type { ProposalConfirmationStatus } from "./confirm-proposal.js";
 
 export type PlanModeStatus = "required" | "optional" | "skipped";
 
+export interface PlanModeRequest {
+  kind: "PLAN_MODE_REQUEST";
+  protocol_version: 1;
+  source: "pipeline-controller";
+  plan_id: string;
+  research_scope: string;
+  expected_deliverables: string[];
+}
+
 export interface ImplementationPlan {
   kind: "IMPLEMENTATION_PLAN";
   status: ProposalConfirmationStatus;
@@ -24,6 +33,53 @@ export function getPlanModeStatus(mode: PipelineMode, complexity: PipelineComple
   }
 
   return "skipped";
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "request";
+}
+
+export function createPlanModeRequest(input: {
+  request: string;
+  variant: string;
+  affectedFiles: string[];
+}): PlanModeRequest {
+  return {
+    kind: "PLAN_MODE_REQUEST",
+    protocol_version: 1,
+    source: "pipeline-controller",
+    plan_id: `plan-${slugify(input.variant)}-${slugify(input.request)}`,
+    research_scope: `Plan the ${input.variant} workflow before execution: ${input.request}`,
+    expected_deliverables: [
+      "Confirmed workflow and user-approved adjustments",
+      "PDD: visible update_plan protocol before editing, dispatching, or claiming completion",
+      "DDD: domain boundaries, invariants, and SSOT ownership before implementation choices",
+      "ATDD: acceptance criteria or report acceptance checks before execution",
+      "TDD: failing test or report-only evidence-first equivalent before change/claim",
+      "Batch plan with checkpoint validation and adversarial review after every batch",
+      `Affected files: ${input.affectedFiles.length > 0 ? input.affectedFiles.join(", ") : "to be discovered"}`,
+    ],
+  };
+}
+
+export function renderPlanModeRequestBlock(request: PlanModeRequest) {
+  const lines = [
+    "=== PLAN_MODE_REQUEST v1 ===",
+    `kind: ${request.kind}`,
+    `protocol_version: ${request.protocol_version}`,
+    `source: ${request.source}`,
+    `plan_id: ${JSON.stringify(request.plan_id)}`,
+    `research_scope: ${JSON.stringify(request.research_scope)}`,
+    "expected_deliverables:",
+    ...request.expected_deliverables.map((deliverable) => `  - ${JSON.stringify(deliverable)}`),
+    "=== END PLAN_MODE_REQUEST ===",
+  ];
+
+  return lines.join("\n");
 }
 
 export function createImplementationPlan(input: {

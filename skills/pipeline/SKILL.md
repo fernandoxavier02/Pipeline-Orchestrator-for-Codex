@@ -8,6 +8,16 @@ sentinel_checkpoints: [post_orchestrator, phase_0_to_1, phase_1_to_2, phase_2_to
 
 # Pipeline Orchestrator — Execution Script
 
+## VISIBLE_PLAN Contract
+
+Before any execution, file edit, dispatch, report generation, validation claim, or terminal response, call `update_plan` so the user sees the workflow plan in Codex. This is mandatory for this workflow and uses `references/visible-plan-contract.md` as the SSOT.
+
+The visible plan must name the selected workflow/mode, declare the planned batches, and track PDD, DDD, ATDD, and TDD or the report-only evidence-first equivalent. Every batch must be followed by checkpoint validation, adversarial review, and a fix loop capped at 3 attempts before continuing. Keep exactly one item `in_progress` and update the plan after every gate, batch, review, correction, and final validation. If the visible plan cannot be opened or updated, stop and surface the blocker instead of proceeding invisibly.
+
+## NEXT_STEP Contract
+
+When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
 <MANDATORY-SUBAGENT-RULE>
 ## YOU MUST ALWAYS SPAWN SUBAGENTS. THIS IS NOT OPTIONAL.
 
@@ -109,7 +119,7 @@ Wait for design decisions to be resolved before proceeding.
 
 ## Phase 1: Proposal + User Confirmation
 
-Present the classification results to the user:
+Present the auto-selected workflow before execution. This is a hard user-visible checkpoint; do not hide it inside generic proposal text.
 
 ```
 PIPELINE PROPOSAL:
@@ -120,11 +130,18 @@ PIPELINE PROPOSAL:
   Estimated agents: [count]
   Phases: 0 (triage) → 1 (confirm) → 2 (execute) → 3 (validate)
 
-Proceed? (yes / no / adjust)
+WORKFLOW SELECTED:
+  Type: [Feature|Bug Fix|Audit|UX Simulation|Spec]
+  Complexity: [SIMPLES|MEDIA|COMPLEXA]
+  Pipeline: [variant]
+  Reason: [classification reason]
+
+Quer manter esse workflow? (yes / adjust / no / audit / bugfix / feature / ux / spec)
 ```
 
 Wait for user confirmation. Do NOT proceed without it.
 
+If user says `audit`, `bugfix`, `feature`, `ux`, or `spec` → switch the workflow, rebuild the proposal, and ask again.
 If user says "adjust" → modify classification and re-propose.
 If user says "no" → stop pipeline.
 
@@ -133,6 +150,8 @@ If user says "no" → stop pipeline.
 ## Phase 1.5: Implementation Planning (only if COMPLEXA or --plan flag)
 
 If triggered:
+
+Emit a `PLAN_MODE_REQUEST v1` block before any file edit or execution claim. The parent/host should surface this as the visible planning checkpoint; when native Codex plan UI is available, enter it here. If the host cannot display a native plan box, show the generated implementation plan and wait for approval.
 
 Read file: `agents/quality/plan-architect.md`
 

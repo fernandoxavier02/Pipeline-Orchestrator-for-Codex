@@ -30,5 +30,8 @@ describe("render closeout", () => {
     expect(text).toContain("Missing evidence: final-review");
     expect(text).toContain("Skipped SOFT gates: CLOSEOUT_CONFIRM");
     expect(text).toContain("Rollback hint: revalidate");
+    expect(text).toContain("NEXT_STEP:");
+    expect(text).toContain("current_workflow: pipeline");
+    expect(text).toContain("next_workflow: verify-completion");
   });
 });

@@ -25,6 +25,16 @@ stop_rule_max_failures: 2
 
 # Spec Lifecycle Skill (Audit-Only) — 5 prescriptive steps
 
+## VISIBLE_PLAN Contract
+
+Before any execution, file edit, dispatch, report generation, validation claim, or terminal response, call `update_plan` so the user sees the workflow plan in Codex. This is mandatory for this workflow and uses `references/visible-plan-contract.md` as the SSOT.
+
+The visible plan must name the selected workflow/mode, declare the planned batches, and track PDD, DDD, ATDD, and TDD or the report-only evidence-first equivalent. Every batch must be followed by checkpoint validation, adversarial review, and a fix loop capped at 3 attempts before continuing. Keep exactly one item `in_progress` and update the plan after every gate, batch, review, correction, and final validation. If the visible plan cannot be opened or updated, stop and surface the blocker instead of proceeding invisibly.
+
+## NEXT_STEP Contract
+
+When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
 5 prescriptive steps for re-auditing a spec that is already implemented (or whose implementation has been observed in the working tree). Each step file declares its execution contract (sequence, ownership, gates) via frontmatter consumed by the orchestrator. Project-neutral wording — designed to work in any codebase that follows the spec layout under `pipeline-runs/<run_id>/01-spec/`.
 
 ## Quando usar

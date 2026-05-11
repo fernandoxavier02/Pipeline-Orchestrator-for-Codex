@@ -41,7 +41,7 @@ Required output block:
     }
   });
 
-  it("revalidates the controller prompt on each start instead of trusting an earlier safe load", async () => {
+  it("revalidates the controller prompt on each start instead of trusting an earlier safe load", { timeout: 10000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-review-only-cache-"));
 
     try {

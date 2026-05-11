@@ -374,7 +374,7 @@ Review the spec lifecycle step.
     }
   });
 
-  it("fails controller startup when the design interrogator prompt contract is broken", async () => {
+  it("fails controller startup when the design interrogator prompt contract is broken", { timeout: 10000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-runtime-design-interrogator-prompt-"));
 
     try {

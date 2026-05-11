@@ -9,6 +9,8 @@ const pipelinePhaseSchema = z.enum(["phase-0", "phase-1", "phase-1.5", "phase-2"
 const gateHardnessSchema = z.enum(["MANDATORY", "HARD", "CIRCUIT_BREAKER", "SOFT"]);
 const gateDecisionValueSchema = z.enum(["pass", "block", "skip", "partial"]);
 const confidenceBandSchema = z.enum(["low", "medium", "high"]);
+const classificationTypeSchema = z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation", "Spec"]);
+const pipelineComplexitySchema = z.enum(["SIMPLES", "MEDIA", "COMPLEXA"]);
 const executionIdentitySchema = z.object({
     trace_id: z.string(),
     workflow_id: z.string(),
@@ -28,11 +30,36 @@ const executionIdentitySchema = z.object({
 });
 export const orchestratorDecisionSchema = z.object({
     mode: z.string(),
-    type: z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation", "Spec"]),
-    complexity: z.enum(["SIMPLES", "MEDIA", "COMPLEXA"]),
+    type: classificationTypeSchema,
+    complexity: pipelineComplexitySchema,
     variant: z.string(),
     summary: z.string(),
     affectedFiles: z.array(z.string()),
+});
+const workflowSelectionSchema = z.object({
+    status: z.literal("awaiting-user-confirmation"),
+    selectedWorkflow: z.object({
+        type: classificationTypeSchema,
+        complexity: pipelineComplexitySchema,
+        variant: z.string(),
+        label: z.string(),
+        reason: z.string(),
+    }),
+    message: z.string(),
+    question: z.string(),
+    options: z.array(z.object({
+        command: z.string(),
+        label: z.string(),
+        description: z.string(),
+    })),
+});
+const planModeRequestSchema = z.object({
+    kind: z.literal("PLAN_MODE_REQUEST"),
+    protocol_version: z.literal(1),
+    source: z.string().default("pipeline-controller"),
+    plan_id: z.string(),
+    research_scope: z.string(),
+    expected_deliverables: z.array(z.string()),
 });
 export const proposalSchema = z.object({
     summary: z.string(),
@@ -44,6 +71,9 @@ export const proposalSchema = z.object({
     affectedFiles: z.array(z.string()),
     batchSize: z.number().int().positive(),
     validationIntent: validationIntentSchema,
+    workflowSelection: workflowSelectionSchema.optional(),
+    planModeRequest: planModeRequestSchema.optional(),
+    planModeRequestBlock: z.string().optional(),
 });
 export const proposalConfirmationSchema = z.object({
     kind: z.literal("PROPOSAL_CONFIRMATION"),

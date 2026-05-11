@@ -88,7 +88,11 @@ ls ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/*/skills/
 /pipeline <your task description>
 ```
 
-That's it. The orchestrator handles classification, proposal, execution, and validation automatically.
+The first response is not execution yet. The orchestrator shows the workflow it selected, for example Bug Fix, Audit, Implement, UX, or Spec, and asks whether you want to keep it. Reply `yes` to keep it, `adjust` to revise it manually, `no` to stop, or reply with `audit`, `bugfix`, `feature`, `ux`, or `spec` to switch workflow before any execution.
+
+For complex work or `--plan`, the proposal also emits `PLAN_MODE_REQUEST v1`. Hosts that support native Codex Plan Mode should surface the planning checkpoint there; otherwise the generated implementation plan is shown and must be approved before edits.
+
+Every public workflow also follows the `VISIBLE_PLAN` contract in `references/visible-plan-contract.md`: the parent Codex context must call `update_plan` before execution, keep one step in progress, execute in batches, run adversarial review after every batch, and preserve PDD, DDD, ATDD, and TDD or the report-only evidence-first equivalent.
 
 ---
 
@@ -200,6 +204,7 @@ That's it. The orchestrator handles classification, proposal, execution, and val
 | User Story | `user-story-light` | `user-story-heavy` |
 | Audit | `audit-light` | `audit-heavy` |
 | UX Simulation | `ux-sim-light` | `ux-sim-heavy` |
+| Spec | `spec-light` | `spec-heavy` |
 | Adversarial | `adversarial-light` | `adversarial-heavy` |
 
 **SIMPLES** = direct execution (no pipeline phases, just do the task).

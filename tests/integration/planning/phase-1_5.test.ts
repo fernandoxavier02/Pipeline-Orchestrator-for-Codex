@@ -22,6 +22,12 @@ describe("phase 1.5 planning trigger", () => {
 
     expect(result.mode).toBe("--complexa");
     expect(result.proposal.planModeStatus).toBe("required");
+    expect(result.proposal.planModeRequest).toMatchObject({
+      kind: "PLAN_MODE_REQUEST",
+      protocol_version: 1,
+      plan_id: expect.stringContaining("audit"),
+    });
+    expect(result.proposal.planModeRequestBlock).toContain("=== PLAN_MODE_REQUEST v1 ===");
     expect(result.proposal.awaitingUserConfirmation).toBe(true);
   });
 
@@ -32,6 +38,8 @@ describe("phase 1.5 planning trigger", () => {
 
     expect(result.mode).toBe("--plan");
     expect(result.proposal.planModeStatus).toBe("required");
+    expect(result.proposal.workflowSelection.question).toContain("Quer manter esse workflow");
+    expect(result.proposal.planModeRequestBlock).toContain("expected_deliverables");
     expect(result.proposal.awaitingUserConfirmation).toBe(true);
   });
 });

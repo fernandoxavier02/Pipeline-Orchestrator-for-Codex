@@ -1,3 +1,5 @@
+import { createPlanModeRequest, renderPlanModeRequestBlock } from "./plan-mode.js";
+import { buildWorkflowSelection } from "./workflow-selection.js";
 function inferAffectedFiles(variant) {
     if (variant.startsWith("bugfix-")) {
         return ["src/controller/pipeline-controller.ts", "src/controller/parse-mode.ts"];
@@ -14,6 +16,14 @@ function inferAffectedFiles(variant) {
     return ["src/controller/pipeline-controller.ts", "src/controller/build-proposal.ts"];
 }
 export function buildProposal(input) {
+    const affectedFiles = input.affectedFiles?.length ? input.affectedFiles : inferAffectedFiles(input.classification.variant);
+    const planModeRequest = input.planModeStatus === "required"
+        ? createPlanModeRequest({
+            request: input.request,
+            variant: input.classification.variant,
+            affectedFiles,
+        })
+        : undefined;
     return {
         summary: input.request,
         variant: input.classification.variant,
@@ -21,8 +31,15 @@ export function buildProposal(input) {
         infoGateStatus: input.infoGateStatus,
         designReviewStatus: input.designReviewStatus,
         planModeStatus: input.planModeStatus,
-        affectedFiles: input.affectedFiles?.length ? input.affectedFiles : inferAffectedFiles(input.classification.variant),
+        affectedFiles,
         batchSize: input.batchSize,
         validationIntent: input.validationIntent,
+        workflowSelection: buildWorkflowSelection({
+            request: input.request,
+            classification: input.classification,
+            profileSummary: input.profileSummary,
+        }),
+        planModeRequest,
+        planModeRequestBlock: planModeRequest ? renderPlanModeRequestBlock(planModeRequest) : undefined,
     };
 }

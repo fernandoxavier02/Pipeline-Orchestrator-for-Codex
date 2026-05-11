@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createImplementationPlan, getPlanModeStatus } from "../../../src/controller/plan-mode.js";
+import { createImplementationPlan, createPlanModeRequest, getPlanModeStatus, } from "../../../src/controller/plan-mode.js";
 describe("plan mode", () => {
     it("derives a required plan gate for explicit plan requests", () => {
         expect(getPlanModeStatus("--plan", "MEDIA")).toBe("required");
@@ -25,5 +25,18 @@ describe("plan mode", () => {
             "State transitions or persistence can drift from the intended pipeline behavior.",
             "Review evidence can become stale if the touched files expand during execution.",
         ]));
+    });
+    it("includes the mandatory methodology and batch-review contract in plan mode requests", () => {
+        const request = createPlanModeRequest({
+            request: "implement spec lifecycle hardening",
+            variant: "spec-heavy",
+            affectedFiles: ["src/spec/spec-lifecycle.ts"],
+        });
+        expect(request.expected_deliverables.join("\n")).toContain("PDD");
+        expect(request.expected_deliverables.join("\n")).toContain("DDD");
+        expect(request.expected_deliverables.join("\n")).toContain("ATDD");
+        expect(request.expected_deliverables.join("\n")).toContain("TDD");
+        expect(request.expected_deliverables.join("\n")).toContain("adversarial review");
+        expect(request.expected_deliverables.join("\n")).toContain("batch");
     });
 });

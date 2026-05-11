@@ -1,5 +1,6 @@
-import type { ValidationIntent } from "./classification-overrides.js";
-import type { PlanModeStatus } from "./plan-mode.js";
+import type { PipelineClassification, ValidationIntent } from "./classification-overrides.js";
+import { createPlanModeRequest, renderPlanModeRequestBlock, type PlanModeStatus } from "./plan-mode.js";
+import { buildWorkflowSelection } from "./workflow-selection.js";
 
 function inferAffectedFiles(variant: string) {
   if (variant.startsWith("bugfix-")) {
@@ -23,14 +24,24 @@ function inferAffectedFiles(variant: string) {
 
 export function buildProposal(input: {
   request: string;
-  classification: { variant: string };
+  classification: PipelineClassification;
   infoGateStatus: "passed" | "blocked" | "partial";
   designReviewStatus: "passed" | "partial" | "skipped";
   planModeStatus: PlanModeStatus;
   batchSize: number;
   validationIntent: ValidationIntent;
   affectedFiles?: string[];
+  profileSummary?: string;
 }) {
+  const affectedFiles = input.affectedFiles?.length ? input.affectedFiles : inferAffectedFiles(input.classification.variant);
+  const planModeRequest = input.planModeStatus === "required"
+    ? createPlanModeRequest({
+        request: input.request,
+        variant: input.classification.variant,
+        affectedFiles,
+      })
+    : undefined;
+
   return {
     summary: input.request,
     variant: input.classification.variant,
@@ -38,8 +49,15 @@ export function buildProposal(input: {
     infoGateStatus: input.infoGateStatus,
     designReviewStatus: input.designReviewStatus,
     planModeStatus: input.planModeStatus,
-    affectedFiles: input.affectedFiles?.length ? input.affectedFiles : inferAffectedFiles(input.classification.variant),
+    affectedFiles,
     batchSize: input.batchSize,
     validationIntent: input.validationIntent,
+    workflowSelection: buildWorkflowSelection({
+      request: input.request,
+      classification: input.classification,
+      profileSummary: input.profileSummary,
+    }),
+    planModeRequest,
+    planModeRequestBlock: planModeRequest ? renderPlanModeRequestBlock(planModeRequest) : undefined,
   };
 }

@@ -20,12 +20,17 @@ If the host runtime cannot provide `spawn_agent`, the pipeline must stop with `b
 
 ## Codex Primitive Emulation
 
-The Codex runtime does not expose `AskUserQuestion`, `EnterPlanMode`, or `ExitPlanMode` as native tools. The controller emulates these primitives through typed helpers:
+The controller exposes the Claude-style checkpoints through Codex-native surfaces:
 
 - `AskUserQuestion` → `src/primitives/ask-user-question.ts` (blocking question serializer with user confirmation)
-- `EnterPlanMode` / `ExitPlanMode` → `src/primitives/plan-mode.ts` (write-attempt telemetry during Phase 1.5 — caller must voluntarily report writes via `recordWriteAttempt`; Codex cannot intercept tool calls like CC does)
+- workflow selection → the Phase 1 proposal must print `WORKFLOW SELECTED`, ask whether to keep it, and accept `audit`, `bugfix`, `feature`, `ux`, or `spec` as workflow-switch responses before execution
+- `EnterPlanMode` / `ExitPlanMode` → Phase 1.5 emits `PLAN_MODE_REQUEST v1` plus `src/primitives/plan-mode.ts` write-attempt telemetry. When the host supports native Codex Plan Mode, the parent should enter it at this checkpoint; otherwise the generated implementation plan is the visible fallback.
 
-When the skill orchestrates user confirmation or plan mode, it MUST route through these helpers. Never attempt to call the CC-native tool names directly.
+When the skill orchestrates user confirmation, workflow selection, or plan mode, it MUST route through these helpers/protocol blocks. Never attempt to call the CC-native tool names directly.
+
+## VISIBLE_PLAN
+
+Before dispatching or executing the workflow, open a visible Codex plan with `update_plan` using the contract in `references/visible-plan-contract.md`. The plan must cover the selected workflow, batches, adversarial review after every batch, and mandatory PDD, DDD, ATDD, and TDD or report-only evidence-first equivalents. Keep one item `in_progress` and update it after every gate, batch, review, and final validation.
 
 ## Instructions
 
@@ -51,3 +56,7 @@ When the skill orchestrates user confirmation or plan mode, it MUST route throug
    - adversarial gate
    - final validation
 6. If the work is non-trivial, route through the pipeline skill. If it is trivial, let the skill decide proportional execution.
+
+## NEXT_STEP
+
+Every terminal `/pipeline` response must include the `NEXT_STEP` block described in `references/workflow-next-step.md`. If the run is blocked, point back to the blocking workflow; if the run closes, suggest `verify-completion` or return `stop` when final verification is already complete.

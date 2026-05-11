@@ -7,6 +7,10 @@ argument-hint: "<task description> [--resume <run-id>] [--type <Type>] [--no-imp
 
 Entry command for the pre-execution brainstorm + spec lifecycle pipeline.
 
+## VISIBLE_PLAN
+
+Before dispatching or executing the workflow, open a visible Codex plan with `update_plan` using the contract in `references/visible-plan-contract.md`. The plan must cover the selected workflow, batches, adversarial review after every batch, and mandatory PDD, DDD, ATDD, and TDD or report-only evidence-first equivalents. Keep one item `in_progress` and update it after every gate, batch, review, and final validation.
+
 ## Behavior
 
 1. Parse arguments. Recognize flags: `--resume <run-id>`, `--type <Type>`, `--no-impl`, `--skip-validate-gap`.
@@ -23,6 +27,10 @@ Entry command for the pre-execution brainstorm + spec lifecycle pipeline.
 ## Output
 
 Creates or updates a directory at `pipeline-runs/<NNN>-<slug>/` with the schema documented in `docs/superpowers/specs/2026-05-06-pipeline-brainstorm-design.md` (Run-dir schema section).
+
+## NEXT_STEP
+
+After the brainstorm controller finishes, surface the `NEXT_STEP` block described in `references/workflow-next-step.md`. If the brainstorm is blocked or waiting on the user, the block points back to `brainstorm`; if it passes, it points to the next spec/pipeline handoff.
 
 ## See Also
 

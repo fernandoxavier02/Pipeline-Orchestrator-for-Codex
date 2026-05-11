@@ -2,6 +2,12 @@ node_modules/
 dist/*
 !dist/src/
 dist/src/*
+!dist/src/controller/
+dist/src/controller/*
+!dist/src/controller/build-proposal.js
+!dist/src/controller/pipeline-controller.js
+!dist/src/controller/plan-mode.js
+!dist/src/controller/workflow-selection.js
 !dist/src/spec/
 dist/src/spec/*
 !dist/src/spec/spec-lifecycle.js
@@ -18,6 +24,9 @@ dist/src/run/*
 !dist/src/trace/
 dist/src/trace/*
 !dist/src/trace/trace.js
+!dist/src/workflow/
+dist/src/workflow/*
+!dist/src/workflow/next-step.js
 coverage/
 .codex/pipeline/
 .worktrees/

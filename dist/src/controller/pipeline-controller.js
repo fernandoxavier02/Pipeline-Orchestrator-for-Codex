@@ -11,6 +11,7 @@ import { applyClassificationOverrides } from "./classification-overrides.js";
 import { confirmProposal } from "./confirm-proposal.js";
 import { runDesignInterrogation } from "./design-interrogator.js";
 import { getPlanModeStatus, createImplementationPlan } from "./plan-mode.js";
+import { defaultBatchSizeForWorkflow, resolveWorkflowSwitch } from "./workflow-selection.js";
 import { parseMode } from "./parse-mode.js";
 import { deriveContinuationOutcome } from "./continuation-outcome.js";
 import { resolveContinueRollbackState, } from "./continue-state.js";
@@ -717,6 +718,83 @@ export function createPipelineController(runtime) {
             const normalizedResponse = trimmedInput.toLowerCase();
             const { mode, normalizedRequest } = parseMode(input);
             const stateRoot = getStateRoot(runtime);
+            const workflowSwitchClassification = resolveWorkflowSwitch({
+                response: normalizedResponse,
+            });
+            if (workflowSwitchClassification) {
+                const session = await runtime?.stores?.session?.load?.()
+                    .then((loaded) => loaded)
+                    .catch(() => undefined);
+                if (session?.currentPhase === "phase-1" && session.proposal) {
+                    const currentWorkflow = session.proposal.workflowSelection?.selectedWorkflow;
+                    const nextClassification = resolveWorkflowSwitch({
+                        response: normalizedResponse,
+                        current: {
+                            type: currentWorkflow?.type,
+                            complexity: currentWorkflow?.complexity,
+                            variant: session.proposal.variant ?? session.variant,
+                        },
+                    });
+                    const nextPlanModeStatus = getPlanModeStatus(session.mode ?? mode, nextClassification.complexity);
+                    const nextProposal = buildProposal({
+                        request: session.proposal.summary ?? normalizedRequest,
+                        classification: nextClassification,
+                        infoGateStatus: session.proposal.infoGateStatus ?? "partial",
+                        designReviewStatus: session.proposal.designReviewStatus ?? "skipped",
+                        planModeStatus: nextPlanModeStatus,
+                        batchSize: defaultBatchSizeForWorkflow(nextClassification),
+                        validationIntent: (session.proposal.validationIntent ?? "standard"),
+                    });
+                    const sentinelState = await loadSentinelState(runtime);
+                    const expectedToken = getExpectedSentinelToken(session);
+                    if (sentinelState?.pipelineActive
+                        && sentinelState.expectedNext.length > 0
+                        && !sentinelState.expectedNext.includes(expectedToken)) {
+                        const entry = toGateLogEntry({
+                            gate: "SENTINEL_SEQUENCE_BLOCK",
+                            hardness: "HARD",
+                            phase: "phase-1",
+                            decision: "block",
+                            detail: `Sentinel blocked unexpected workflow switch. Expected one of: ${sentinelState.expectedNext.join(", ")}`,
+                        });
+                        await persistGateAndConfidence(runtime ?? {}, [entry], session.confidenceScore ?? 1);
+                        throw new Error(`Sentinel blocked unexpected input. Expected: ${sentinelState.expectedNext.join(", ")}`);
+                    }
+                    await runtime?.stores?.session?.save?.({
+                        ...session,
+                        currentPhase: "phase-1",
+                        phase: "phase-1",
+                        variant: nextClassification.variant,
+                        proposal: nextProposal,
+                        pendingDecision: "proposal-confirmation",
+                        touchedFiles: nextProposal.affectedFiles,
+                    });
+                    await saveSentinelState(runtime, {
+                        pipelineActive: true,
+                        currentPhase: "phase-1",
+                        currentAgent: "pipeline-controller",
+                        expectedNext: ["proposal-response"],
+                        completedPhases: ["phase-0"],
+                        gateSummary: ["WORKFLOW_SWITCH"],
+                        batchState: {
+                            batchIndex: session.batchIndex ?? 0,
+                            status: "awaiting-proposal-confirmation",
+                        },
+                        consecutiveCorrections: sentinelState?.consecutiveCorrections ?? 0,
+                        lastCheckpoint: "post_orchestrator",
+                    });
+                    return {
+                        phase: "phase-1",
+                        workflowSwitch: {
+                            status: "UPDATED",
+                            from: currentWorkflow?.type ?? session.variant ?? "unknown",
+                            to: nextClassification.type,
+                            variant: nextClassification.variant,
+                        },
+                        proposal: nextProposal,
+                    };
+                }
+            }
             if (normalizedResponse === "yes" || normalizedResponse === "no" || normalizedResponse === "adjust") {
                 const session = (await runtime?.stores?.session?.load?.());
                 const sentinelState = await loadSentinelState(runtime);
@@ -784,6 +862,8 @@ export function createPipelineController(runtime) {
                         ], session.confidenceScore ?? 1);
                         return {
                             phase: "phase-1.5",
+                            planModeRequest: session.proposal?.planModeRequest,
+                            planModeRequestBlock: session.proposal?.planModeRequestBlock,
                             implementationPlan: createImplementationPlan({
                                 status: confirmation.status,
                                 summary: session.proposal?.summary,
@@ -845,6 +925,8 @@ export function createPipelineController(runtime) {
                     }
                     return {
                         phase: session.currentPhase,
+                        planModeRequest: session.proposal?.planModeRequest,
+                        planModeRequestBlock: session.proposal?.planModeRequestBlock,
                         implementationPlan: createImplementationPlan({
                             status: confirmation.status,
                             summary: session.proposal?.summary,
@@ -1068,6 +1150,7 @@ export function createPipelineController(runtime) {
                 batchSize: classificationResult.profile.batchSize,
                 validationIntent: classificationResult.validationIntent,
                 affectedFiles: reviewOnlyChangedFiles,
+                profileSummary: classificationResult.profile.summary,
             });
             const authoritativeProposal = mode === "review-only"
                 ? {

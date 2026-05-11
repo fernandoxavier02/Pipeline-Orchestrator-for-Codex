@@ -16,6 +16,45 @@ describe("pipeline controller", () => {
         expect(result.proposal.summary).toContain("fix login redirect loop");
         expect(result.proposal.variant).toMatch(/bugfix/);
         expect(result.proposal.awaitingUserConfirmation).toBe(true);
+        expect(result.proposal.workflowSelection).toMatchObject({
+            status: "awaiting-user-confirmation",
+            selectedWorkflow: {
+                type: "Bug Fix",
+                variant: expect.stringMatching(/bugfix/),
+            },
+        });
+        expect(result.proposal.workflowSelection.question).toContain("workflow");
+        expect(result.proposal.workflowSelection.options.map((option) => option.command))
+            .toEqual(expect.arrayContaining(["yes", "adjust", "audit", "bugfix", "feature", "ux", "spec"]));
+    });
+    it("lets the user switch the selected workflow before approving execution", async () => {
+        let sessionState;
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => sessionState,
+                    save: async (nextSession) => {
+                        sessionState = nextSession;
+                    },
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+            },
+        });
+        await controller.start("fix login redirect loop");
+        const result = await controller.start("audit");
+        expect(result.phase).toBe("phase-1");
+        expect(result.workflowSwitch).toMatchObject({
+            status: "UPDATED",
+            from: "Bug Fix",
+            to: "Audit",
+        });
+        expect(result.proposal.workflowSelection.selectedWorkflow).toMatchObject({
+            type: "Audit",
+            variant: expect.stringMatching(/audit/),
+        });
+        expect((sessionState?.proposal).workflowSelection.selectedWorkflow.type).toBe("Audit");
     });
     it("normalizes confirmation responses at the controller boundary", async () => {
         const controller = createPipelineController({
@@ -27,6 +66,13 @@ describe("pipeline controller", () => {
                             summary: "harden audit trail",
                             affectedFiles: ["src/controller/pipeline-controller.ts"],
                             planModeStatus: "required",
+                            planModeRequest: {
+                                kind: "PLAN_MODE_REQUEST",
+                                protocol_version: 1,
+                                plan_id: "plan-audit-heavy",
+                                research_scope: "Plan harden audit trail before execution.",
+                                expected_deliverables: ["Batches", "Tests"],
+                            },
                         },
                     }),
                 },
@@ -38,6 +84,10 @@ describe("pipeline controller", () => {
         const result = await controller.start("Yes");
         expect(result.phase).toBe("phase-1.5");
         expect(result.implementationPlan.status).toBe("APPROVED");
+        expect(result.planModeRequest).toMatchObject({
+            kind: "PLAN_MODE_REQUEST",
+            plan_id: "plan-audit-heavy",
+        });
     });
     it("does not resolve the reference bundle when resuming", async () => {
         let referenceIndexCalls = 0;

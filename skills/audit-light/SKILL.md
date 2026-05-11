@@ -14,6 +14,16 @@ report_only: true
 
 # Audit Light Workflow (9 prescriptive steps — REPORT ONLY)
 
+## VISIBLE_PLAN Contract
+
+Before any execution, file edit, dispatch, report generation, validation claim, or terminal response, call `update_plan` so the user sees the workflow plan in Codex. This is mandatory for this workflow and uses `references/visible-plan-contract.md` as the SSOT.
+
+The visible plan must name the selected workflow/mode, declare the planned batches, and track PDD, DDD, ATDD, and TDD or the report-only evidence-first equivalent. Every batch must be followed by checkpoint validation, adversarial review, and a fix loop capped at 3 attempts before continuing. Keep exactly one item `in_progress` and update the plan after every gate, batch, review, correction, and final validation. If the visible plan cannot be opened or updated, stop and surface the blocker instead of proceeding invisibly.
+
+## NEXT_STEP Contract
+
+When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
 This skill executes a deterministic 9-step procedure for SIMPLES/MEDIA audits. Per spec §7.2.2 the audit pipeline is unique in that **Light = Heavy in structure** — pulando fases compromete cobertura. Light differs from Heavy in **depth**, not in **shape**:
 
 - **Heavy**: full coverage of all axes, deep evidence, baseline cross-checks.
