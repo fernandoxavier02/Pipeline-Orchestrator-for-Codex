@@ -1,16 +1,19 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Codex_CLI-Plugin-14532D?style=for-the-badge&logo=openai&logoColor=white" alt="Codex Plugin" />
+  <img src="https://img.shields.io/badge/Kimi_CLI-Skill-0066FF?style=for-the-badge" alt="Kimi Skill" />
   <img src="https://img.shields.io/badge/version-0.4.1-blue?style=for-the-badge" alt="Version" />
-  <img src="https://img.shields.io/badge/agents-44-orange?style=for-the-badge" alt="Agents" />
+  <img src="img.shields.io/badge/agents-44-orange?style=for-the-badge" alt="Agents" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License" />
 </p>
 
 # Pipeline Orchestrator for Codex
 
-> **Full-depth, prompt-driven multi-agent pipeline for OpenAI Codex CLI.**
-> Ported toward parity with the local canonical Claude Code Pipeline Orchestrator v5.2.0, with Codex-native runtime constraints made explicit.
+> **Full-depth, prompt-driven multi-agent pipeline for OpenAI Codex CLI and Kimi Code CLI.**
+> Ported toward parity with the local canonical Claude Code Pipeline Orchestrator v5.2.0, with runtime-native constraints made explicit for each platform.
 
 A single `/pipeline` command classifies any task, confirms a proposal with you, then orchestrates **44 agent prompts** across **4 structured phases** when a real `spawn_agent` adapter is available. Without that adapter, strict pipeline execution blocks as `blocked-no-agent-runtime` rather than simulating multi-agent parity. The runtime now includes v5.2 protocol events, brainstorm run directories, Spec lifecycle gates, TRACE.md validation, TDD gates, adversarial review loops, confidence scoring, and Go/No-Go validation.
+
+**New: Kimi Code CLI port** — the same 4-phase pipeline is now available as a Kimi skill (`.kimi/skills/pipeline/`), with 13 agent prompts adapted for Kimi's `coder`/`explore` subagent types, deterministic exec-window scripts, and a parent handler loop that processes `GATE_REQUEST`, `DISPATCH_REQUEST`, and `PLAN_MODE_REQUEST` blocks.
 
 ---
 
@@ -29,7 +32,9 @@ A single `/pipeline` command classifies any task, confirms a proposal with you, 
 
 ## Quick Start
 
-### Prerequisites
+### Codex CLI
+
+#### Prerequisites
 
 ```toml
 # ~/.codex/config.toml
@@ -37,7 +42,7 @@ multi_agent = true
 model_reasoning_effort = "high"
 ```
 
-### Install
+#### Install
 
 **Option 1: From Codex Plugin Registry** (if published)
 
@@ -73,7 +78,7 @@ mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex
 ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.4.1
 ```
 
-### Verify Installation
+#### Verify Installation
 
 ```bash
 # Check the plugin is detected
@@ -82,7 +87,7 @@ ls ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/*/skills/
 # Should output: SKILL.md path with version number
 ```
 
-### Usage
+#### Usage
 
 ```
 /pipeline <your task description>
@@ -93,6 +98,52 @@ The first assistant action is visible planning: the orchestrator calls `update_p
 For complex work or `--plan`, the proposal also emits `PLAN_MODE_REQUEST v1`. Hosts that support native Codex Plan Mode should surface the planning checkpoint there; otherwise the generated implementation plan is shown and must be approved before edits.
 
 Every public workflow also follows the `VISIBLE_PLAN` contract in `references/visible-plan-contract.md`: the parent Codex context must call `update_plan` as the first assistant action, keep one step in progress, execute in batches, run adversarial review after every batch, and preserve PDD, DDD, ATDD, and TDD or the report-only evidence-first equivalent.
+
+---
+
+### Kimi Code CLI
+
+#### Install
+
+```bash
+# Clone the repo
+git clone https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git
+
+# Option A: User-level (available in all projects)
+cp -r Pipeline-Orchestrator-for-Codex/.kimi/skills/* ~/.kimi/skills/
+
+# Option B: Project-level (only current project)
+cp -r Pipeline-Orchestrator-for-Codex/.kimi/skills/* ./.agents/skills/
+```
+
+#### Usage
+
+Type the skill name in the Kimi chat:
+
+```
+pipeline <your task description>
+```
+
+Or use one of the shortcut skills:
+
+```
+bugfix <bug description>
+feature <feature description>
+audit <scope>
+spec <feature description>
+review
+```
+
+#### How It Works
+
+Kimi does not support nested `Agent` dispatches or `AskUserQuestion` from subagents. The pipeline skill uses a **parent handler loop**:
+
+1. **SKILL.md** spawns the `pipeline-controller` as a `coder` subagent
+2. The controller emits structured blocks (`GATE_REQUEST`, `DISPATCH_REQUEST`, `PLAN_MODE_REQUEST`)
+3. The parent (main LLM) parses each block, invokes the appropriate Kimi tool, and feeds results back
+4. Repeat until the controller emits `PIPELINE COMPLETE`
+
+See `.kimi/skills/pipeline/references/parent-handler-protocol.md` for the full protocol specification.
 
 ---
 
@@ -270,7 +321,19 @@ Layer 3: SKILL.md bottom (self-check + anti-patterns)
 pipeline-orchestrator-for-codex/
 ├── .codex-plugin/
 │   └── plugin.json              # Plugin manifest (v0.4.1)
-├── agents/                      # 44 agent prompt files plus inventory README
+├── .kimi/                       # Kimi Code CLI skill tree
+│   └── skills/                  #   Skills for Kimi (pipeline, bugfix, feature, audit, review, spec)
+│       ├── pipeline/
+│       │   ├── SKILL.md         #     Parent handler loop (390+ lines)
+│       │   ├── agents/          #     13 Kimi-adapted agent prompts
+│       │   ├── references/      #     Protocol specs + gate taxonomy
+│       │   └── scripts/         #     Deterministic exec-window scripts (Node.js)
+│       ├── bugfix/
+│       ├── feature/
+│       ├── audit/
+│       ├── review/
+│       └── spec/
+├── agents/                      # 44 agent prompt files plus inventory README (Codex/Claude)
 │   ├── core/                    #   8 core agents
 │   ├── executor/                #   5 executor agents
 │   │   └── type-specific/       #  16 domain-specific agents
@@ -290,7 +353,7 @@ pipeline-orchestrator-for-codex/
 │   └── pipeline/
 │       └── SKILL.md             # Imperative execution script (315 lines)
 ├── src/                         # TypeScript runtime (51 files)
-├── tests/                       # Unit + integration tests (44 files)
+├── tests/                       # Unit + integration tests (44 files) + Kimi tests (6 files)
 └── docs/                        # Architecture & planning docs
 ```
 
@@ -311,17 +374,16 @@ If absent, the orchestrator auto-detects from `package.json`, `Makefile`, or com
 
 ## Stats
 
-| Metric | Value |
-|:-------|:------|
-| Agent prompts | 44 |
-| Agent prompt lines | ~24,000 |
-| Pipeline variants | 12 |
-| Reference documents | 25 |
-| TypeScript source files | 51 |
-| Test files | 44 |
-| Hooks | 3 |
-| Pipeline phases | 4 |
-| Execution modes | 6 |
+| Metric | Codex | Kimi |
+|:-------|:------|:-----|
+| Agent prompts | 44 | 13 |
+| Pipeline variants | 12 | 12 |
+| Reference documents | 25 | 8 |
+| TypeScript source files | 51 | — |
+| Test files | 44 | 6 |
+| Hooks | 3 | — (compensating controls) |
+| Pipeline phases | 4 | 4 |
+| Execution modes | 6 | 6 |
 
 ---
 
@@ -336,6 +398,9 @@ If absent, the orchestrator auto-detects from `package.json`, `Makefile`, or com
 | Wall-of-text, no phases | GPT executing inline instead of spawning | Ensure hooks are registered — check `hooks/hooks.json` exists and `plugin.json` points to it |
 | Wrong skill loaded | Duplicate command/skill entries | Select the SKILL.md entry (not commands/) in skill picker |
 | `CLAUDE_PLUGIN_ROOT` undefined | Plugin not installed via standard path | Reinstall plugin into `~/.codex/plugins/cache/` |
+| **Kimi:** `pipeline` not triggered | Skill not in Kimi skills dir | Copy `.kimi/skills/` to `~/.kimi/skills/` or `.agents/skills/` |
+| **Kimi:** controller loops forever | Parent handler not processing blocks | Ensure SKILL.md parent loop is loaded — check `references/parent-handler-protocol.md` |
+| **Kimi:** edits blocked outside `.pipeline/` | No exec-window active | Run `node .kimi/skills/pipeline/scripts/open-exec-window.cjs` before edits |
 
 ### Requirements
 
@@ -349,10 +414,13 @@ The plugin does NOT require a build step for normal use. The runtime components 
 
 | Component | Files | Dependencies |
 |:---|:---|:---|
-| Skill (instructions) | `skills/pipeline/SKILL.md` | None |
-| Agents (prompts) | `agents/**/*.md` (44 prompt files plus README) | None |
-| Hooks (enforcement) | `hooks/*.cjs` (3 files) | Node.js builtins only (fs, path) |
-| Manifest | `.codex-plugin/plugin.json` | None |
+| **Codex** Skill (instructions) | `skills/pipeline/SKILL.md` | None |
+| **Codex** Agents (prompts) | `agents/**/*.md` (44 prompt files plus README) | None |
+| **Codex** Hooks (enforcement) | `hooks/*.cjs` (3 files) | Node.js builtins only (fs, path) |
+| **Codex** Manifest | `.codex-plugin/plugin.json` | None |
+| **Kimi** Skill (instructions) | `.kimi/skills/pipeline/SKILL.md` | None |
+| **Kimi** Agents (prompts) | `.kimi/skills/pipeline/agents/*.md` (13 files) | None |
+| **Kimi** Scripts (exec-window) | `.kimi/skills/pipeline/scripts/*.cjs` (3 files) | Node.js builtins only (fs, path) |
 | References | `references/**/*.md` | None |
 
 The `src/`, `dist/`, and `tests/` directories are for development only and are NOT required for the plugin to function.
