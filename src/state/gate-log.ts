@@ -2,12 +2,32 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { gateDecisionSchema } from "../domain/pipeline-schemas.js";
 import { createExecutionIdentity } from "../observability/execution-identity.js";
+import { resolveValidatedRoot } from "./path-validation.js";
+
+// Simple process-level mutex for concurrent append operations.
+// This prevents JSONL line interleaving when multiple agents append simultaneously.
+let appendMutex: Promise<void> = Promise.resolve();
+
+async function withAppendLock<T>(fn: () => Promise<T>): Promise<T> {
+  const release = await appendMutex.then(() => {
+    let resolve: () => void;
+    const promise = new Promise<void>((res) => { resolve = res; });
+    appendMutex = appendMutex.then(() => promise);
+    return resolve!;
+  });
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
 
 export function createGateLog(root: string) {
-  const file = join(root, "gate-decisions.jsonl");
+  const validatedRoot = resolveValidatedRoot(root);
+  const file = join(validatedRoot, "gate-decisions.jsonl");
 
   return {
-    root,
+    root: validatedRoot,
     async append(decision: unknown) {
       const parsed = gateDecisionSchema.parse(decision);
       const enriched = {
@@ -21,7 +41,9 @@ export function createGateLog(root: string) {
       };
 
       await mkdir(root, { recursive: true });
-      await appendFile(file, `${JSON.stringify(enriched)}\n`, "utf8");
+      await withAppendLock(async () => {
+        await appendFile(file, `${JSON.stringify(enriched)}\n`, "utf8");
+      });
     },
     async list() {
       try {

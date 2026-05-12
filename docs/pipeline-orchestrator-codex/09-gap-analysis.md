@@ -56,6 +56,8 @@ Risk level: medium-high
 
 Claude can model this through separate agents and context boundaries. Codex can do the same only when subagent delegation is available and allowed; otherwise independence must be emulated.
 
+**CRITICAL CAVEAT:** The default runtime (`strictAgents = false`) does NOT preserve review independence. In this mode, all "agents" are local heuristic functions running in a single Node process with zero context isolation. The canonical's core safety invariant — adversarial reviewers with zero implementation context — is violated by design in the default configuration. True parity requires `strictAgents = true` and a working `spawn_agent` adapter. The emulation mode is a test/contract harness and must not be presented as production-equivalent.
+
 Risk level: high
 
 ## Gap Type 3: Historically Hard Equivalents
@@ -120,6 +122,16 @@ Current mitigation:
 - runtime-first execution now pushes role behavior into prompt-backed dispatchers instead of relying only on controller-inlined logic
 - continue-state interpretation has been extracted so blocked continuation and resume routing share a dedicated boundary
 
+### Hook / Runtime Boundary
+
+The CJS hooks (`hooks/*.cjs`) and the TypeScript runtime (`src/**/*.ts`) are **loosely coupled via shared filesystem state**, not tightly integrated via API calls.
+
+- **Hooks** are designed for the Codex CLI hook system (triggered by `SessionStart`, `UserPromptSubmit`, `Stop`, `PreToolUse` events in the host). They read and write `sentinel-state.json`, `session-lock.json`, and `protocol-events.jsonl`.
+- **TS Runtime** is a separate programmatic API. It never `execFileSync`s the hooks directly.
+- Both coordinate by reading/writing the same files under `.codex/pipeline/`.
+
+Implication: If the TS runtime is used as the sole execution engine (without Codex CLI hooks), the session-lock, dispatch-guard, and sentinel hooks will not fire. The runtime must document this boundary and, where possible, replicate hook-level checks internally.
+
 ### Product claims exceed hard implementation in places
 
 Some guarantees are described strongly in README or skill copy but depend on convention rather than strict enforcement.
@@ -167,6 +179,16 @@ If gates are left as prompt suggestions rather than controller-enforced transiti
 
 The fix-loop cap and stop rules should be implemented as deterministic controller logic. Otherwise the Codex port may over-loop or self-justify weak results.
 
+### Confidence model limitations
+
+The confidence score is a **deterministic gate-penalty ledger**, not an AI-evaluated quality metric. It sums hardcoded `confidence_impact` values from `gate-registry.ts` (e.g., `-0.05`, `-0.1`, `-0.15`) and clamps the result to `[0, 1]`.
+
+- There is **no external signal** — no test coverage data, no build failure analysis, no LLM-evaluated risk assessment.
+- The "non-invention rule" (do not fabricate evidence) is enforced via prompts only; the runtime has no mechanism to detect invented evidence.
+- The score accurately reflects "how many controller gates passed vs skipped," not "how good the code is."
+
+Implication: Do not present the confidence score as an evidence-based quality metric. It is a structural safety indicator only.
+
 ## Migration Risk Ranking
 
 ### Highest risk
@@ -195,6 +217,10 @@ The fix-loop cap and stop rules should be implemented as deterministic controlle
 4. Persist state early, before complex implementation begins.
 5. Treat review independence as a first-class test target.
 6. Write scenario tests for `diagnostic`, `continue`, `review-only`, and `hotfix`.
+
+## Technical Debt
+
+All known debt that was explicitly accepted during adversarial review (rather than fixed) is recorded in `docs/technical-debt.md`. This includes architectural debt (Fat Controller, canonical drift, emulation harness), harness debt (confidence ledger, hook/runtime boundary), and documentation debt. Debt is classified by severity, estimated remediation cost, and resolution trigger.
 
 ## Bottom Line
 

@@ -142,7 +142,7 @@ export function createFinalAdversarialOrchestrator(dependencies: {
       ];
 
       const dispatch = await runRole({
-        mode: "multi-agent",
+        mode: "parallel-emulation",
         role: "final-adversarial-orchestrator",
         prompt: "Coordinate the independent final adversarial review team.",
         input: {

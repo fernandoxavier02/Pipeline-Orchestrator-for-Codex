@@ -15,24 +15,28 @@ const GATE_REGISTRY_PATH = join(
   "gate-registry.ts",
 );
 
-describe("skills/pipeline/SKILL.md controller parity", () => {
+describe("pipeline orchestrator controller parity", () => {
   const skill = readFileSync(SKILL_PATH, "utf8");
+  const controller = readFileSync(
+    join(__dirname, "..", "..", "agents", "core", "pipeline-controller.md"),
+    "utf8",
+  );
   const registry = readFileSync(GATE_REGISTRY_PATH, "utf8");
 
-  it("documents every gate name from gate-registry.ts", () => {
+  it("documents every gate name from gate-registry.ts in the controller prompt", () => {
     // Extract gate keys from the registry (pattern: `  GATE_NAME: {`)
     const gateMatches = Array.from(registry.matchAll(/^\s{2}([A-Z_]+):\s*\{/gm));
     const gateNames = gateMatches.map((m) => m[1]);
     expect(gateNames.length).toBeGreaterThanOrEqual(15);
 
-    // For each gate, skill must reference it at least once.
-    const missing = gateNames.filter((g) => !skill.includes(g));
+    // For each gate, controller prompt must reference it at least once.
+    const missing = gateNames.filter((g) => !controller.includes(g));
     expect(missing).toEqual([]);
   });
 
-  it("documents phase rollback paths (2→1.5 and 3→2)", () => {
-    expect(skill).toMatch(/Phase 2.*Phase 1\.5/s);
-    expect(skill).toMatch(/Phase 3.*Phase 2/s);
+  it("documents phase rollback paths (2→1.5 and 3→2) in the controller prompt", () => {
+    expect(controller).toMatch(/Phase 2.*Phase 1\.5/s);
+    expect(controller).toMatch(/Phase 3.*Phase 2/s);
   });
 
   it("declares the anti-prompt-injection invariants inline", () => {

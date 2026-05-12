@@ -1,13 +1,16 @@
-import { runMultiAgentRole } from "./multi-agent-runner.js";
+import { runParallelEmulation } from "./parallel-emulation-runner.js";
 import { runSingleAgentRole } from "./single-agent-runner.js";
 import { ensureWriteAuthorized } from "../security/edit-guard.js";
+import { scanObjectForPromptInjection } from "../security/prompt-injection-guard.js";
 import { createExecutionIdentity } from "../observability/execution-identity.js";
+import { probeCodexMultiAgent } from "./codex-host-probe.js";
 export { EditGuardBlockedError } from "../security/edit-guard.js";
 export class AgentRuntimeUnavailableError extends Error {
     code = "blocked-no-agent-runtime";
     dispatchMode = "blocked-no-agent-runtime";
-    constructor(role) {
-        super(`blocked-no-agent-runtime: real agent runtime is required for role "${role}", but no spawn_agent adapter is available.`);
+    constructor(role, hostStatus) {
+        const hostHint = hostStatus ? ` (${hostStatus})` : "";
+        super(`blocked-no-agent-runtime: real agent runtime is required for role "${role}", but no spawn_agent adapter is available.${hostHint}`);
         this.name = "AgentRuntimeUnavailableError";
     }
 }
@@ -28,7 +31,7 @@ function buildAgentDispatchRequest(request) {
 }
 function withExecutionIdentity(result, executionIdentity) {
     return {
-        mode: "mode" in result && result.mode === "multi-agent" ? "multi-agent" : "single-agent",
+        mode: "mode" in result && result.mode === "parallel-emulation" ? "parallel-emulation" : "single-agent",
         role: "role" in result && typeof result.role === "string" ? result.role : "unknown-role",
         executionIdentity,
         output: {
@@ -36,6 +39,13 @@ function withExecutionIdentity(result, executionIdentity) {
             executionIdentity,
         },
     };
+}
+function validateAgentRuntime(agentRuntime) {
+    if (!agentRuntime ||
+        typeof agentRuntime !== "object" ||
+        typeof agentRuntime.spawnAgent !== "function") {
+        throw new Error("blocked-no-agent-runtime: agentRuntime must be an object with a spawnAgent function.");
+    }
 }
 export async function runRole(request) {
     const normalizedRequest = {
@@ -61,10 +71,35 @@ export async function runRole(request) {
         sessionRoot: normalizedRequest.sessionRoot,
         sessionId: normalizedRequest.sessionId,
     });
+    // Scan request.input, request.prompt, and team members for prompt injection payloads before dispatch
+    if (normalizedRequest.input) {
+        scanObjectForPromptInjection(normalizedRequest.input, `dispatch:${normalizedRequest.role}:input`);
+    }
+    if (normalizedRequest.prompt) {
+        scanObjectForPromptInjection({ prompt: normalizedRequest.prompt }, `dispatch:${normalizedRequest.role}:prompt`);
+    }
+    if (normalizedRequest.team) {
+        for (let i = 0; i < normalizedRequest.team.length; i += 1) {
+            const member = normalizedRequest.team[i];
+            if (member.input) {
+                scanObjectForPromptInjection(member.input, `dispatch:${normalizedRequest.role}:team[${i}]:input`);
+            }
+            if (member.prompt) {
+                scanObjectForPromptInjection({ prompt: member.prompt }, `dispatch:${normalizedRequest.role}:team[${i}]:prompt`);
+            }
+        }
+    }
     if (normalizedRequest.requireRealAgent) {
         if (!normalizedRequest.agentRuntime) {
-            throw new AgentRuntimeUnavailableError(normalizedRequest.role);
+            const hostMultiAgent = await probeCodexMultiAgent();
+            const hostStatus = hostMultiAgent === true
+                ? "Codex host has multi_agent=true, but no agentRuntime was injected"
+                : hostMultiAgent === false
+                    ? "Codex host has multi_agent=false in ~/.codex/config.toml"
+                    : "Could not read ~/.codex/config.toml to verify multi_agent status";
+            throw new AgentRuntimeUnavailableError(normalizedRequest.role, hostStatus);
         }
+        validateAgentRuntime(normalizedRequest.agentRuntime);
         const result = await normalizedRequest.agentRuntime.spawnAgent(buildAgentDispatchRequest(requestWithIdentity));
         return withExecutionIdentity({
             ...result,
@@ -74,8 +109,8 @@ export async function runRole(request) {
             },
         }, executionIdentity);
     }
-    if (request.mode === "multi-agent") {
-        const result = await runMultiAgentRole(requestWithIdentity);
+    if (request.mode === "parallel-emulation") {
+        const result = await runParallelEmulation(requestWithIdentity);
         return withExecutionIdentity(result, executionIdentity);
     }
     const result = await runSingleAgentRole(requestWithIdentity);

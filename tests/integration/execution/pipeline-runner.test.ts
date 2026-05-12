@@ -233,7 +233,7 @@ Coordinate the review team.
       });
 
       await expect(runtime.dispatcher.runRole({
-        mode: "multi-agent",
+        mode: "parallel-emulation",
         role: "review-orchestrator",
         prompt: "inline review orchestrator prompt should not be trusted",
         input: {
@@ -294,7 +294,7 @@ Check requirement compliance directly from the changed files.
       });
 
       await expect(runtime.dispatcher.runRole({
-        mode: "multi-agent",
+        mode: "parallel-emulation",
         role: "review-orchestrator",
         prompt: "inline review orchestrator prompt should not be trusted",
         input: {

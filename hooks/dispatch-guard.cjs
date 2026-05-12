@@ -389,15 +389,18 @@ process.stdin.on('end', () => {
   try {
     handle(parsed);
   } catch (err) {
-    // Fail-open on internal error — intentional asymmetry with session-lock-hook (fail-closed).
-    // session-lock-hook owns startup gating; dispatch-guard only filters agent namespaces.
-    // A hook crash must never silently block non-pipeline Agent calls (e.g. user-initiated tools).
-    // The edit-guard TypeScript middleware provides the complementary write-authorization fence.
+    // Fail-closed: any internal error in dispatch guard denies the operation.
+    // The comment previously claimed fail-open was intentional, but the adversarial
+    // security review determined that a crash in the last line of defense against
+    // unauthorized agent spawning MUST deny. Non-pipeline tool calls are not affected
+    // because this hook only fires for Agent/Skill PreToolUse events.
+    const reason = `hook crash: ${err && err.message ? err.message : String(err)}`;
     recordHookEvent({
       hook: 'dispatch-guard',
       event: 'PreToolUse',
-      decision: 'allow-on-error',
-      reason: `hook crash: ${err && err.message ? err.message : String(err)}`,
+      decision: 'deny',
+      reason,
     });
+    deny(`DISPATCH_GUARD crashed internally: ${reason}. Denying as a security precaution.`);
   }
 });

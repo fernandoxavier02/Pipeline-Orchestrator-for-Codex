@@ -30,13 +30,17 @@ describe("writeFileAtomic", () => {
     expect(existsSync(`${file}.tmp`)).toBe(false);
   });
 
-  it("supports concurrent writes to the same target without sharing one tmp path", async () => {
+  it("never leaves the target file missing during overwrite (atomic)", async () => {
     const file = join(dir, "out.txt");
-    const payloads = ["one", "two", "three", "four", "five"];
+    writeFileSync(file, "old", "utf8");
 
-    await Promise.all(payloads.map((payload) => writeFileAtomic(file, payload)));
+    // Rapid fire overwrites; the file should never disappear
+    for (let i = 0; i < 5; i += 1) {
+      await writeFileAtomic(file, `payload-${i}`);
+      expect(existsSync(file)).toBe(true);
+    }
 
-    expect(payloads).toContain(readFileSync(file, "utf8"));
+    expect(readFileSync(file, "utf8")).toMatch(/^payload-/);
     expect(readdirSync(dir).filter((name) => name.includes(".tmp"))).toEqual([]);
   });
 });

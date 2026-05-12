@@ -3,7 +3,7 @@ describe("review independence", () => {
     it("dispatches batch review from fresh context using only batch metadata and file lists", async () => {
         const { createReviewOrchestrator } = await import("../../../src/review/review-orchestrator.js");
         const runRole = vi.fn().mockResolvedValue({
-            mode: "multi-agent",
+            mode: "parallel-emulation",
             role: "review-orchestrator",
             output: {
                 findings: [],
@@ -21,7 +21,7 @@ describe("review independence", () => {
         expect(runRole).toHaveBeenCalledTimes(1);
         const request = runRole.mock.calls[0]?.[0];
         expect(request).toEqual(expect.objectContaining({
-            mode: "multi-agent",
+            mode: "parallel-emulation",
             role: expect.stringContaining("review"),
             filesInScope: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
             authorityLevel: "controller",
@@ -49,7 +49,7 @@ describe("review independence", () => {
     it("returns parsed reviewer outputs so downstream execution can consume direct review decisions", async () => {
         const { createReviewOrchestrator } = await import("../../../src/review/review-orchestrator.js");
         const runRole = vi.fn().mockResolvedValue({
-            mode: "multi-agent",
+            mode: "parallel-emulation",
             role: "review-orchestrator",
             output: {
                 status: "blocked",
@@ -204,7 +204,7 @@ describe("review independence", () => {
         const runRole = vi
             .fn()
             .mockResolvedValueOnce({
-            mode: "multi-agent",
+            mode: "parallel-emulation",
             role: "final-adversarial-orchestrator",
             output: {
                 agents: [
@@ -233,7 +233,7 @@ describe("review independence", () => {
         });
         expect(runRole).toHaveBeenCalledTimes(1);
         expect(runRole.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
-            mode: "multi-agent",
+            mode: "parallel-emulation",
             role: "final-adversarial-orchestrator",
             authorityLevel: "controller",
             filesInScope: ["src/payments/checkout.ts"],

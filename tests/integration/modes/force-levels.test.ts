@@ -23,6 +23,15 @@ describe("force level modes", () => {
     ["/pipeline --plan audit auth flow", "--plan", "audit auth flow"],
     ["/pipeline --grill audit auth flow", "--grill", "audit auth flow"],
     ["/pipeline --hotfix audit auth flow", "--hotfix", "audit auth flow"],
+    ["/pipeline-orchestrator-for-codex:pipeline --simples audit auth flow", "--simples", "audit auth flow"],
+    ["/pipeline-orchestrator-for-codex:pipeline --media audit auth flow", "--media", "audit auth flow"],
+    ["/pipeline-orchestrator-for-codex:pipeline --complexa audit auth flow", "--complexa", "audit auth flow"],
+    ["/pipeline-orchestrator-for-codex:pipeline --plan audit auth flow", "--plan", "audit auth flow"],
+    ["/pipeline-orchestrator-for-codex:pipeline --grill audit auth flow", "--grill", "audit auth flow"],
+    ["/pipeline-orchestrator-for-codex:pipeline --hotfix audit auth flow", "--hotfix", "audit auth flow"],
+    ["/pipeline-orchestrator-for-codex:pipeline diagnostic audit auth flow", "diagnostic", "audit auth flow"],
+    ["/pipeline-orchestrator-for-codex:pipeline review-only audit auth flow", "review-only", "audit auth flow"],
+    ["/pipeline-orchestrator-for-codex:pipeline continue", "continue", ""],
   ])("parses %s", (input, mode, normalizedRequest) => {
     expect(parseMode(input)).toEqual({
       mode,

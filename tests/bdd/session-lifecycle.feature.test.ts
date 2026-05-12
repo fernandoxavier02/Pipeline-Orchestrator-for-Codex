@@ -79,7 +79,7 @@ describe("Feature: session-lock guards SessionStart", () => {
 
   it("Scenario: source=clear releases the lock", () => {
     runHook(workspace, { source: "startup", session_id: "A" });
-    const out = runHook(workspace, { source: "clear" });
+    const out = runHook(workspace, { source: "clear", session_id: "A" });
     expect(out.decision).not.toBe("block");
     expect(existsSync(lockPath(workspace))).toBe(false);
   });

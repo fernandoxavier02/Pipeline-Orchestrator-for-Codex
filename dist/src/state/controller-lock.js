@@ -1,14 +1,17 @@
-import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
+import { mkdir, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { controllerRevalidationLockSchema } from "../domain/pipeline-schemas.js";
+import { writeFileAtomic } from "./atomic-write.js";
+import { resolveValidatedRoot } from "./path-validation.js";
 export function createControllerLockStore(root) {
-    const file = join(root, "controller-lock.json");
+    const validatedRoot = resolveValidatedRoot(root);
+    const file = join(validatedRoot, "controller-lock.json");
     return {
-        root,
+        root: validatedRoot,
         async save(lock) {
             const parsed = controllerRevalidationLockSchema.parse(lock);
             await mkdir(root, { recursive: true });
-            await writeFile(file, JSON.stringify(parsed), "utf8");
+            await writeFileAtomic(file, JSON.stringify(parsed));
         },
         async load() {
             try {

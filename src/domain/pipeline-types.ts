@@ -32,6 +32,8 @@ export type PipelineVariant =
   | "spec-heavy"
   | "spec-audit-only";
 
+export type PipelineComplexity = "SIMPLES" | "MEDIA" | "COMPLEXA";
+
 export interface RuntimeOptions {
   cwd: string;
   codexHome: string;

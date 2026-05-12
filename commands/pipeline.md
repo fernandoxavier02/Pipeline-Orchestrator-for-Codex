@@ -4,7 +4,7 @@ allowed-tools: Task, Read, Write, Bash, Glob, Grep, TodoWrite, Skill
 argument-hint: "[diagnostic|continue|review-only|--simples|--media|--complexa|--hotfix|--grill|--plan] <tarefa>"
 ---
 
-# /pipeline
+# /pipeline-orchestrator-for-codex:pipeline
 
 Use a skill `pipeline-orchestrator-for-codex:pipeline`
 
@@ -12,11 +12,17 @@ Nao dependa de skills globais legadas.
 
 This is the canonical `quality gate` and `final validation` entrypoint for the plugin.
 
-## Strict Real-Agent Contract
+## Agent Execution Contract
 
-`spawn_agent is mandatory` for `/pipeline`. The command is an explicit request for Codex subagent execution, so the controller must spawn the pipeline agents rather than executing their work inline.
+`/pipeline` supports two runtime modes:
 
-If the host runtime cannot provide `spawn_agent`, the pipeline must stop with `blocked-no-agent-runtime`. Do not silently fall back to TypeScript local emulation for `/pipeline`; local TypeScript dispatch is only a contract/test harness unless a real agent adapter is supplied.
+### `strictAgents = true` (Explicit Opt-In)
+`spawn_agent` is mandatory. The controller spawns real pipeline agents with context isolation. If `spawn_agent` is unavailable, stop with `blocked-no-agent-runtime`.
+
+### `strictAgents = false` (Default — Test/Contract Harness)
+The runtime uses **parallel local emulation** via TypeScript heuristic functions. All "agents" run as async functions in the same Node process with **zero context isolation**. This is a test harness and contract validator, not production multi-agent execution.
+
+**Default behavior:** `strictAgents` defaults to `false`. The command `/pipeline` will use local emulation unless the user explicitly configures `strictAgents = true` and provides a working `spawn_agent` adapter.
 
 ## Codex Primitive Emulation
 
@@ -34,7 +40,7 @@ As the first assistant action, open a visible Codex plan with `update_plan` usin
 
 ## WORKFLOW_METHOD_GATE
 
-After the visible plan is open, and still before dispatching Phase 0, spawning any agent, opening execution, editing files, or producing a report, show the first visible method gate from `references/workflow-method-gate.md` and wait for the user's answer. This is the first user-decision contract for `/pipeline`: state the auto-selected workflow/mode, explain the reason in one sentence, and allow the user to keep it or switch to `audit`, `bugfix`, `feature`, `ux`, `spec`, `brainstorm`, `review`, or `verify-completion`.
+After the visible plan is open, and still before dispatching Phase 0, spawning any agent, opening execution, editing files, or producing a report, show the first visible method gate from `references/workflow-method-gate.md` and wait for the user's answer. This is the first user-decision contract for `/pipeline-orchestrator-for-codex:pipeline`: state the auto-selected workflow/mode, explain the reason in one sentence, and allow the user to keep it or switch to `audit`, `bugfix`, `feature`, `ux`, `spec`, `brainstorm`, `review`, or `verify-completion`.
 
 If the user switches the workflow, rebuild the gate and ask again. If the later task-orchestrator classification disagrees with the approved workflow, surface the changed recommendation and ask again before execution.
 
@@ -65,4 +71,4 @@ If the user switches the workflow, rebuild the gate and ask again. If the later 
 
 ## NEXT_STEP
 
-Every terminal `/pipeline` response must include the `NEXT_STEP` block described in `references/workflow-next-step.md`. If the run is blocked, point back to the blocking workflow; if the run closes, suggest `verify-completion` or return `stop` when final verification is already complete.
+Every terminal `/pipeline-orchestrator-for-codex:pipeline` response must include the `NEXT_STEP` block described in `references/workflow-next-step.md`. If the run is blocked, point back to the blocking workflow; if the run closes, suggest `verify-completion` or return `stop` when final verification is already complete.

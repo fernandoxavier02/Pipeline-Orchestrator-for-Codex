@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type ExecWindow, parseExecWindow } from "./exec-window.js";
 
@@ -32,15 +32,35 @@ export function readExecWindow(path: string): ExecWindow | null {
 }
 
 export function writeExecWindowAtomic(path: string, window: ExecWindow): void {
+  // Reject symlinks — prevents symlink-escape attacks
+  if (existsSync(path)) {
+    const stats = lstatSync(path);
+    if (stats.isSymbolicLink()) {
+      throw new Error(`SECURITY: exec-window path is a symlink: ${path}`);
+    }
+  }
+
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, JSON.stringify(window), "utf8");
-  try {
-    unlinkSync(path);
-  } catch {
-    // ignore: file may not exist
+  // Windows-safe: renameSync overwrites existing files since Node v6.
+  // Do NOT unlink first — that creates a non-atomic window.
+  // Retry once on transient EPERM/EEXIST (AV scanners, competing handles).
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      renameSync(tmp, path);
+      return;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? error.code : undefined;
+      if (attempt === 0 && (code === "EEXIST" || code === "EPERM")) {
+        // eslint-disable-next-line no-loop-func
+        const start = Date.now();
+        while (Date.now() - start < 50) { /* busy-wait 50ms */ }
+        continue;
+      }
+      throw error;
+    }
   }
-  renameSync(tmp, path);
 }
 
 export function deleteExecWindow(path: string): boolean {

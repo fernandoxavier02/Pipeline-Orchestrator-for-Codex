@@ -322,6 +322,26 @@ describe("dispatch-guard frontmatter enforcement", () => {
     }
   });
 
+  it("fail-closed on internal hook crash", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      // Craft a payload that causes an internal TypeError in evaluateAgent:
+      // subagent_type is a number, so .startsWith() throws.
+      const result = runHook(cwd, {
+        tool_name: "Agent",
+        tool_input: {
+          subagent_type: 12345,
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("crashed");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("does not read tool-supplied arbitrary skill paths", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
     try {

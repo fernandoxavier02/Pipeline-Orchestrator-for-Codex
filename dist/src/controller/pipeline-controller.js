@@ -25,31 +25,13 @@ import { createConfidenceScoreStore } from "../state/confidence-score.js";
 import { createGateLog } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
 import { createSentinelStateStore } from "../sentinel/sentinel-state.js";
+import { createStateAdapter } from "./state-adapter.js";
 import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../execution/executor-controller.js";
-import { reductionPolicyForMode } from "../modes/mode-policy.js";
+import { resolveExecutionComplexity } from "../modes/complexity-resolution.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
 import { deriveSpecIdFromRequest, isSpecLifecycleVariant, validateSpecAcceptanceTraceability, validateSpecContentReviewGate, validateSpecFormatGate, validateSpecLifecycleArtifacts, validateSpecPostImplementationGate, } from "../spec/spec-lifecycle.js";
 import ts from "typescript";
-function resolveExecutionComplexity(session, mode) {
-    const policy = reductionPolicyForMode(mode);
-    if (policy) {
-        return policy.forcedClassification.complexity;
-    }
-    if (mode === "--complexa" || mode === "--plan") {
-        return "COMPLEXA";
-    }
-    if (mode === "--simples") {
-        return "SIMPLES";
-    }
-    if (mode === "--media") {
-        return "MEDIA";
-    }
-    if (session.variant?.endsWith("heavy")) {
-        return "COMPLEXA";
-    }
-    return "MEDIA";
-}
 function shouldAdvanceLegacyPlanningSession(session) {
     return session.currentPhase === "phase-1"
         && !session.proposal
@@ -168,7 +150,10 @@ async function executeApprovedContinuation(input) {
         executionResult = await executionController.executeApprovedWork({
             phase: input.session.currentPhase,
             mode: input.session.mode ?? input.mode,
-            complexity: resolveExecutionComplexity(input.session, input.session.mode ?? input.mode),
+            complexity: resolveExecutionComplexity({
+                mode: input.session.mode ?? input.mode,
+                variant: input.session.variant ?? input.session.proposal?.variant ?? "implement-light",
+            }),
             variant: input.session.variant ?? input.session.proposal?.variant ?? "implement-light",
             proposal,
             tasks: input.session.proposal?.affectedFiles ?? input.session.touchedFiles ?? [],
@@ -215,6 +200,7 @@ async function executeApprovedContinuation(input) {
             stores: {
                 gateLog: input.runtime?.stores?.gateLog,
                 confidence: input.runtime?.stores?.confidence,
+                stateAdapter: input.runtime?.stores?.stateAdapter,
             },
         }, [
             toGateLogEntry({
@@ -280,6 +266,7 @@ async function executeApprovedContinuation(input) {
             stores: {
                 gateLog: input.runtime?.stores?.gateLog,
                 confidence: input.runtime?.stores?.confidence,
+                stateAdapter: input.runtime?.stores?.stateAdapter,
             },
         }, [
             toGateLogEntry({
@@ -296,6 +283,7 @@ async function executeApprovedContinuation(input) {
             stores: {
                 gateLog: input.runtime?.stores?.gateLog,
                 confidence: input.runtime?.stores?.confidence,
+                stateAdapter: input.runtime?.stores?.stateAdapter,
             },
         }, [
             toGateLogEntry({
@@ -414,6 +402,7 @@ async function blockForSpecPhaseGate(input) {
         stores: {
             gateLog: input.runtime?.stores?.gateLog,
             confidence: input.runtime?.stores?.confidence,
+            stateAdapter: input.runtime?.stores?.stateAdapter,
         },
     }, [
         toGateLogEntry({
@@ -622,13 +611,21 @@ function approveExecutionScenarios(input) {
     };
 }
 function createRunStores(runDir) {
-    return {
+    const stores = {
         session: createSessionStore(runDir),
         checkpoints: createCheckpointStore(runDir),
         gateLog: createGateLog(runDir),
         confidence: createConfidenceScoreStore(runDir),
         sentinel: createSentinelStateStore(runDir),
     };
+    const stateAdapter = createStateAdapter({
+        session: stores.session,
+        checkpoints: stores.checkpoints,
+        gateLog: stores.gateLog,
+        confidence: stores.confidence,
+        sentinel: stores.sentinel,
+    });
+    return { ...stores, stateAdapter };
 }
 function toGateLogEntry(input) {
     const registry = createGateRegistry();
@@ -704,19 +701,37 @@ async function persistGateAndConfidence(runtime, entries, baseScore) {
         baseScore,
         gates: entries,
     });
-    if (runtime?.stores?.gateLog) {
+    // Use StateAdapter when available (preferred abstraction), fall back to raw stores
+    if (runtime?.stores?.stateAdapter) {
         for (const entry of entries) {
-            await runtime.stores.gateLog.append(entry);
+            await runtime.stores.stateAdapter.appendGateDecision(entry);
         }
+        await runtime.stores.stateAdapter.saveConfidence(snapshot);
     }
-    if (runtime?.stores?.confidence) {
-        await runtime.stores.confidence.save(snapshot);
+    else {
+        if (runtime?.stores?.gateLog) {
+            for (const entry of entries) {
+                await runtime.stores.gateLog.append(entry);
+            }
+        }
+        if (runtime?.stores?.confidence) {
+            await runtime.stores.confidence.save(snapshot);
+        }
     }
     return snapshot;
 }
 export function createPipelineController(runtime) {
     return {
         async start(input) {
+            // Thin wrapper: quando agentes reais são obrigatórios e não há fallback,
+            // retornamos blocked-no-agent-runtime para que o caller despache o agente real.
+            if (runtime?.strictAgents && !runtime?.executionController) {
+                return {
+                    status: "blocked-no-agent-runtime",
+                    reason: "spawn_agent is not available in this session. The pipeline requires real Codex agent support. Check that multi_agent = true in ~/.codex/config.toml.",
+                    input,
+                };
+            }
             const trimmedInput = input.trim();
             const normalizedResponse = trimmedInput.toLowerCase();
             const { mode, normalizedRequest } = parseMode(input);
@@ -1108,6 +1123,7 @@ export function createPipelineController(runtime) {
                                 checkpoints: runStores.checkpoints,
                                 gateLog: runStores.gateLog,
                                 confidence: runStores.confidence,
+                                stateAdapter: runStores.stateAdapter,
                             },
                             executionController: runtime?.executionController,
                         },

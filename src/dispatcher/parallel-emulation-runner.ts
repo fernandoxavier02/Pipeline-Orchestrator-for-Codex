@@ -1,4 +1,5 @@
 import { runSingleAgentRole } from "./single-agent-runner.js";
+import type { DispatchMode } from "./dispatcher-types.js";
 import type { DispatchRequest, DispatchResult, DispatchTeamMember } from "./dispatcher-types.js";
 import { createExecutionIdentity } from "../observability/execution-identity.js";
 
@@ -59,7 +60,7 @@ function resolveStatus(dispatches: DispatchResult[], findings: Finding[]) {
   return blockedByChild || blockedByFinding ? "blocked" : "approved";
 }
 
-export async function runMultiAgentRole(request: DispatchRequest): Promise<DispatchResult> {
+export async function runParallelEmulation(request: DispatchRequest): Promise<DispatchResult> {
   const team = normalizeTeam(request);
   const dispatches = await Promise.all(
     team.map(async (member, index) => {
@@ -70,7 +71,7 @@ export async function runMultiAgentRole(request: DispatchRequest): Promise<Dispa
         sessionId: request.sessionId,
         stateRoot: request.sessionRoot,
         eventKey: `child-${index}`,
-        source: "multi-agent-child",
+        source: "parallel-emulation-child",
       });
       const dispatch = await runSingleAgentRole({
         mode: "single-agent",
@@ -99,7 +100,7 @@ export async function runMultiAgentRole(request: DispatchRequest): Promise<Dispa
   const findings = collectFindings(dispatches);
 
   return {
-    mode: "multi-agent",
+    mode: "parallel-emulation" as DispatchMode,
     role: request.role,
     output: {
       status: resolveStatus(dispatches, findings),

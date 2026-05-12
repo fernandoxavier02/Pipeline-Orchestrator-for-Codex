@@ -1,18 +1,6 @@
 ---
 name: spec-audit-only
-description: |
-  Prescriptive 5-step workflow for re-auditing an already-implemented spec. No implementation
-  steps — sequence contains only audit and closure steps. Implementation skip is structural
-  (shorter sequence + sequence_lock), not an execution_skip flag. Reuses the same Format Gate
-  (25 checks) and full Content Review (12 axes) as Heavy, then runs an adversarial audit loop
-  (architecture-critic + security-scanner + post-impl-validator) focused exclusively on
-  congruence corrections — no new feature work. Sequence is locked (1→5, no skip, no reorder).
-  3 mandatory AskUserQuestion gates at steps 1 (format-gate-approval), 2
-  (content-review-approval), 3 (adversarial-loop-checkpoint). 4 reused agents:
-  spec-format-gate (1), spec-content-reviewer (2), adversarial-architecture-critic +
-  adversarial-security-scanner + spec-post-impl-validator (3, parallel), spec-closer (5);
-  step 4 inline. stop_rule_max_failures: 2 (audit-only is shorter than Heavy and tolerates
-  less consecutive churn). Manual-only invocation via /pipeline-orchestrator-for-codex:spec-audit-only.
+description: Prescriptive 5-step workflow for re-auditing an already-implemented spec without implementation steps. Runs format gate, content review, adversarial audit loop, confidence dashboard, and closure with locked sequence, mandatory gates, and congruence-only corrections.
 disable-model-invocation: true
 allowed-tools: [Task, Read, Grep, Glob, AskUserQuestion, Edit, Write, Bash]
 argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"

@@ -81,6 +81,13 @@ export const WORKFLOW_NEXT_STEPS = Object.freeze({
         defaultMode: "suggest",
         requiresApproval: false,
     },
+    help: {
+        workflow: "help",
+        next: null,
+        reason: "Help is informational; invoke the recommended command explicitly when ready.",
+        defaultMode: "stop",
+        requiresApproval: false,
+    },
     pipeline: {
         workflow: "pipeline",
         next: "verify-completion",

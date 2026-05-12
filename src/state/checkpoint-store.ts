@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checkpointListSchema, checkpointSchema } from "../domain/pipeline-schemas.js";
+import { resolveValidatedRoot } from "./path-validation.js";
 
 const PHASE_ORDER: Record<string, number> = {
   "phase-0": 0,
@@ -69,11 +70,12 @@ function normalizeCheckpointRow(input: Record<string, unknown>, fallbackTimestam
 }
 
 export function createCheckpointStore(root: string) {
-  const dir = join(root, "checkpoints");
-  const legacyFile = join(root, "checkpoints.json");
+  const validatedRoot = resolveValidatedRoot(root);
+  const dir = join(validatedRoot, "checkpoints");
+  const legacyFile = join(validatedRoot, "checkpoints.json");
 
   return {
-    root,
+    root: validatedRoot,
     async save(checkpoint: unknown) {
       const parsed = checkpointSchema.parse(checkpoint);
 

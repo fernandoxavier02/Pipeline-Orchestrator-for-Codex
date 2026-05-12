@@ -15,6 +15,7 @@ export type WorkflowId =
   | "feature"
   | "feature-heavy"
   | "feature-light"
+  | "help"
   | "pipeline"
   | "review"
   | "spec"
@@ -142,6 +143,13 @@ export const WORKFLOW_NEXT_STEPS: Readonly<Record<WorkflowId, WorkflowNextStepRu
     next: "review",
     reason: "Light feature implementation finished; review the implementation before final verification.",
     defaultMode: "suggest",
+    requiresApproval: false,
+  },
+  help: {
+    workflow: "help",
+    next: null,
+    reason: "Help is informational; invoke the recommended command explicitly when ready.",
+    defaultMode: "stop",
     requiresApproval: false,
   },
   pipeline: {

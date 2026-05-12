@@ -1,6 +1,6 @@
 import type { ExecutionIdentity } from "../observability/execution-identity.js";
 
-export type DispatchMode = "single-agent" | "multi-agent";
+export type DispatchMode = "single-agent" | "parallel-emulation";
 export type AuthorityLevel = "controller" | "reviewer" | "executor";
 export type AgentDispatchMode = "real-agent" | "blocked-no-agent-runtime";
 export type AgentDispatchPhase = "phase-0" | "phase-1" | "phase-1.5" | "phase-2" | "phase-3" | "continue";

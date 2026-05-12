@@ -39,7 +39,53 @@ function writeRuntimeSentinelState(cwd: string, expectedNext: string[]) {
   }), "utf8");
 }
 
+function runSentinelHookRaw(cwd: string, rawInput: string) {
+  return spawnSync(process.execPath, [HOOK], {
+    cwd,
+    input: rawInput,
+    encoding: "utf8",
+  });
+}
+
 describe("sentinel hook", () => {
+  it("denies on malformed stdin JSON (fail-closed)", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeRuntimeSentinelState(cwd, ["information-gate"]);
+
+    const result = runSentinelHookRaw(cwd, "not-json{{{");
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("Unparseable");
+  });
+
+  it("denies on corrupted sentinel-state.json (fail-closed)", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, "sentinel-state.json"), "{bad-json", "utf8");
+
+    const result = runSentinelHook(cwd, "pipeline-orchestrator-for-codex:core:information-gate");
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("corrupted");
+  });
+
+  it("allows bootstrap task-orchestrator even with corrupted state", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, "sentinel-state.json"), "{bad-json", "utf8");
+
+    const result = runSentinelHook(cwd, "pipeline-orchestrator-for-codex:core:task-orchestrator");
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("");
+  });
+
   it("allows a pipeline agent that matches runtime camelCase expectedNext", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
     writeRuntimeSentinelState(cwd, ["information-gate"]);

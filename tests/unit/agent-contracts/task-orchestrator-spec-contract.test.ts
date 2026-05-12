@@ -10,11 +10,11 @@ describe("task-orchestrator Spec contract", () => {
     expect(prompt).toContain("spec-heavy");
   });
 
-  it("exposes Spec in the /pipeline skill handoff contract", () => {
-    const skill = readFileSync("skills/pipeline/SKILL.md", "utf8");
+  it("exposes Spec in the pipeline-controller agent prompt", () => {
+    const controller = readFileSync("agents/core/pipeline-controller.md", "utf8");
 
-    expect(skill).toContain("Bug Fix | Feature | User Story | Audit | UX Simulation | Spec");
-    expect(skill).toContain("spec-light");
-    expect(skill).toContain("spec-heavy");
+    expect(controller).toContain("Bug Fix | Feature | User Story | Audit | UX Simulation | Spec");
+    expect(controller).toContain("spec-light");
+    expect(controller).toContain("spec-heavy");
   });
 });

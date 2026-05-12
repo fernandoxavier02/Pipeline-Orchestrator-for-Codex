@@ -108,7 +108,16 @@ function handleInput(raw) {
     if (!raw || !raw.trim()) return process.exit(0); // empty stdin → allow
     input = JSON.parse(raw.trim());
   } catch {
-    return process.exit(0); // unparseable → allow (fail-open)
+    // Fail-closed: unparseable stdin → deny
+    const output = {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'SENTINEL: Unparseable stdin JSON. Denying as a security precaution.',
+      }
+    };
+    console.log(JSON.stringify(output));
+    return process.exit(0);
   }
 
   // 2. Extract agent identity from tool_input
@@ -179,7 +188,35 @@ function handleInput(raw) {
   try {
     state = JSON.parse(fs.readFileSync(stateFilePath, 'utf8'));
   } catch {
-    // State file corrupted → fail-open (recovery scenario)
+    // Fail-closed: corrupted state file → deny (except bootstrap agents)
+    const BOOTSTRAP_AGENTS_ON_CORRUPTION = ['task-orchestrator', 'sentinel'];
+    if (BOOTSTRAP_AGENTS_ON_CORRUPTION.includes(agentName)) {
+      recordHookEvent({
+        hook: 'sentinel',
+        event: 'PreToolUse',
+        decision: 'allow-bootstrap-corrupted',
+        attempted: agentName,
+        reason: 'corrupted state file — bootstrap permitted',
+      });
+      return process.exit(0);
+    }
+    const output = {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason:
+          `SENTINEL: sentinel-state.json at ${stateFilePath} is corrupted or unreadable. ` +
+          `Agent "${agentName}" denied. Spawn sentinel agent with mode SEQUENCE_VALIDATION to recover.`,
+      }
+    };
+    recordHookEvent({
+      hook: 'sentinel',
+      event: 'PreToolUse',
+      decision: 'deny',
+      attempted: agentName,
+      reason: 'corrupted state file',
+    });
+    console.log(JSON.stringify(output));
     return process.exit(0);
   }
 
@@ -204,7 +241,7 @@ function handleInput(raw) {
   if (lastUpdated > 0 && elapsed > STALE_THRESHOLD_MS) {
     const elapsedSec = Math.round(elapsed / 1000);
     staleWarning =
-      `SENTINEL WARNING: State file is ${elapsedSec}s old (threshold: 60s). ` +
+      `SENTINEL WARNING: State file is ${elapsedSec}s old (threshold: 300s). ` +
       `The controller may have forgotten to update sentinel-state.json before this spawn. ` +
       `expectedNext="${normalizedState.expectedNext.join(', ') || '?'}" may be stale. ` +
       `Verify that you updated the state file via Write tool BEFORE this Agent call.`;

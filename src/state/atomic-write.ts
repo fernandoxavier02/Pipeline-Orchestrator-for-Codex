@@ -16,21 +16,18 @@ export async function writeFileAtomic(path: string, content: string): Promise<vo
   const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmp, content, "utf8");
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await unlink(path);
-    } catch {
-      // ignore: target may not exist yet
-    }
-
-    try {
+  // Windows-safe: renameSync overwrites existing files since Node v6.
+  // Do NOT unlink first — that creates a non-atomic window where the file
+  // is missing between unlink and rename.
+  try {
+    await rename(tmp, path);
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    // On Windows EPERM/EEXIST, retry once after a short delay
+    if (code === "EEXIST" || code === "EPERM") {
+      await new Promise((r) => setTimeout(r, 50));
       await rename(tmp, path);
-      return;
-    } catch (error) {
-      const code = error instanceof Error && "code" in error ? error.code : undefined;
-      if (attempt < 2 && (code === "EEXIST" || code === "EPERM")) {
-        continue;
-      }
+    } else {
       throw error;
     }
   }

@@ -6,6 +6,7 @@ import { runRole } from "../dispatcher/run-role.js";
 import { createCheckpointValidator } from "./checkpoint-validator.js";
 import { createPreTester } from "./pre-tester.js";
 import { createQualityGateRouter } from "./quality-gate-router.js";
+import { resolveExecutionComplexity } from "../modes/complexity-resolution.js";
 import { reductionPolicyForMode } from "../modes/mode-policy.js";
 const authoritativeFinalReviewResultSymbol = Symbol("authoritative-final-review-result");
 function normalizeFiles(files) {
@@ -257,25 +258,6 @@ function toPlannedBatch(batch) {
         tasks: [...("tasks" in batch ? batch.tasks : batch.files)],
     };
 }
-function resolveComplexity(input) {
-    if (input.complexity) {
-        return input.complexity;
-    }
-    const policy = reductionPolicyForMode(input.mode);
-    if (policy) {
-        return policy.forcedClassification.complexity;
-    }
-    if (input.mode === "--complexa" || input.mode === "--plan") {
-        return "COMPLEXA";
-    }
-    if (input.mode === "--simples") {
-        return "SIMPLES";
-    }
-    if (input.mode === "--media") {
-        return "MEDIA";
-    }
-    return input.variant?.endsWith("heavy") ? "COMPLEXA" : "MEDIA";
-}
 function normalizeScenarioPath(path) {
     return path.replace(/\\/g, "/");
 }
@@ -500,7 +482,7 @@ export function createExecutorController(dependencies = {}) {
             const checkpointValidator = dependencies.checkpointValidator ?? createCheckpointValidator();
             checkpointValidator.reset?.();
             const tasks = input.batch?.files ?? input.tasks ?? input.proposal?.affectedFiles ?? [];
-            const complexity = resolveComplexity({
+            const complexity = resolveExecutionComplexity({
                 mode: input.mode,
                 complexity: input.complexity,
                 variant: input.variant,

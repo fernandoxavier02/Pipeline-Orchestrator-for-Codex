@@ -1,3 +1,14 @@
+/**
+ * Confidence Model — Deterministic gate-penalty ledger.
+ *
+ * This is NOT an AI-evaluated quality score. It is a deterministic arithmetic
+ * model that tracks how many controller gates passed vs skipped. Each gate
+ * decision carries a fixed confidence_impact (from gate-registry.ts); the model
+ * simply sums these impacts and clamps the result to [0, 1].
+ *
+ * The score reflects "how many safety gates were cleared," not "how good the
+ * code is." Do not present it as an evidence-based quality metric.
+ */
 function getBand(score) {
     if (score >= 0.8) {
         return "high";

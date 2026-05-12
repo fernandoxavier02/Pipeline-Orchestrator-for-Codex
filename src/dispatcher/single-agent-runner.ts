@@ -426,12 +426,64 @@ export async function runSingleAgentRole(
     };
   }
 
+  // ── Known non-reviewer emulator roles ─────────────────────────────────────
+  if (request.role === "executor-implementer") {
+    const files = getRequestFiles(request);
+    return {
+      mode: "single-agent",
+      role: request.role,
+      output: {
+        status: "implemented",
+        // Intentionally NO changedFiles/modifiedFiles — the default runtime
+        // must NOT fabricate file-change evidence. Without real agent execution,
+        // the controller will block with ADVERSARIAL_SCOPE_MISSING.
+        filesInScope: request.filesInScope ?? files,
+        verificationEvidence: {
+          requiredCheckpoints: 1,
+          verifiedCheckpoints: 1,
+          evidence: files.map((f) => `implemented ${f}`),
+        },
+      },
+    };
+  }
+
+  if (request.role === "review-orchestrator") {
+    return {
+      mode: "single-agent",
+      role: request.role,
+      output: {
+        status: "completed",
+        reviewPlan: { batches: [] },
+        filesInScope: request.filesInScope ?? [],
+      },
+    };
+  }
+
+  if (request.role === "executor-spec-reviewer") {
+    return {
+      mode: "single-agent",
+      role: request.role,
+      output: {
+        status: "approved",
+        findings: [],
+        filesInScope: request.filesInScope ?? [],
+      },
+    };
+  }
+
+  // ── Default: reviewer roles and unknown roles ─────────────────────────────
   const freshContextRequired = request.freshContext ?? request.role.includes("review");
   const files = getRequestFiles(request);
   const findings = createDefaultReviewFindings(request);
+
+  // Adversarial review fix: unknown non-reviewer roles default to BLOCKED.
+  // Reviewer roles with no critical/important findings default to approved.
+  const isReviewer = request.role.includes("review");
   const status = findings.some((finding) => finding.severity === "critical" || finding.severity === "important")
     ? "blocked"
-    : "approved";
+    : isReviewer
+      ? "approved"
+      : "blocked";
 
   return {
     mode: "single-agent",
@@ -447,6 +499,9 @@ export async function runSingleAgentRole(
       authorityLevel: request.authorityLevel ?? "reviewer",
       findings,
       status,
+      reason: isReviewer
+        ? undefined
+        : `Role "${request.role}" is not a registered emulator role. Defaulting to blocked.`,
     },
   };
 }

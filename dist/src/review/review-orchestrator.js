@@ -33,7 +33,7 @@ export function createReviewOrchestrator(dependencies = {}) {
                 afterFix: false,
             };
             const dispatch = await runRole({
-                mode: "multi-agent",
+                mode: "parallel-emulation",
                 role: "review-orchestrator",
                 prompt: "Coordinate an independent batch review team from fresh context.",
                 input: {
@@ -123,7 +123,7 @@ export function createReviewOrchestrator(dependencies = {}) {
                 reviewOnly: true,
             });
             return {
-                strategy: "fresh-context-multi-agent",
+                strategy: "fresh-context-parallel-emulation",
                 batch: input.batch.name,
                 files,
                 changedDomains: input.changedDomains ?? [],

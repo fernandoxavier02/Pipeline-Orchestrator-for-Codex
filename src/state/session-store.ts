@@ -3,12 +3,14 @@ import { join } from "node:path";
 import { sessionStateSchema } from "../domain/pipeline-schemas.js";
 import { createExecutionIdentity } from "../observability/execution-identity.js";
 import { writeFileAtomic } from "./atomic-write.js";
+import { resolveValidatedRoot } from "./path-validation.js";
 
 export function createSessionStore(root: string) {
-  const file = join(root, "session.json");
+  const validatedRoot = resolveValidatedRoot(root);
+  const file = join(validatedRoot, "session.json");
 
   return {
-    root,
+    root: validatedRoot,
     async save(session: unknown) {
       const parsed = sessionStateSchema.parse(session);
       const enriched = {

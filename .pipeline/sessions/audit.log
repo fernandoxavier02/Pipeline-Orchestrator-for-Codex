@@ -1,0 +1,8 @@
+{"event":"exec-window-opened","session_id":"test-session-1778610957363","timestamp":1778610957427,"purpose":"test batch execution","ttl_minutes":5}
+{"event":"exec-window-closed","session_id":"test-session-1778610957363","timestamp":1778610957984,"purpose":"test batch execution"}
+{"event":"exec-window-opened","session_id":"test-session-1778611401923","timestamp":1778611402062,"purpose":"test batch execution","ttl_minutes":5}
+{"event":"exec-window-closed","session_id":"test-session-1778611401923","timestamp":1778611402688,"purpose":"test batch execution"}
+{"event":"exec-window-opened","session_id":"test-session-1778611419554","timestamp":1778611419792,"purpose":"test batch execution","ttl_minutes":5}
+{"event":"exec-window-closed","session_id":"test-session-1778611419554","timestamp":1778611421891,"purpose":"test batch execution"}
+{"event":"exec-window-opened","session_id":"test-session-1778612116440","timestamp":1778612116688,"purpose":"test batch execution","ttl_minutes":5}
+{"event":"exec-window-closed","session_id":"test-session-1778612116440","timestamp":1778612118644,"purpose":"test batch execution"}

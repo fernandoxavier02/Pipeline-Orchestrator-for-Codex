@@ -59,15 +59,13 @@ describe("workflow next-step skill contract", () => {
     }
   });
 
-  it("makes /pipeline ask the method gate before phase-0 agent dispatch", () => {
+  it("makes /pipeline ask the method gate before dispatching the pipeline-controller agent", () => {
     const pipelineSkill = readFileSync(join(skillsRoot, "pipeline", "SKILL.md"), "utf8");
     const methodGateIndex = pipelineSkill.indexOf("WORKFLOW_METHOD_GATE Contract");
-    const phaseZeroIndex = pipelineSkill.indexOf("## Phase 0: Triage");
-    const dispatchIndex = pipelineSkill.indexOf("## How to Dispatch an Agent");
+    const dispatchIndex = pipelineSkill.indexOf("## How to Dispatch the Pipeline Controller");
 
     expect(methodGateIndex).toBeGreaterThanOrEqual(0);
     expect(methodGateIndex).toBeLessThan(dispatchIndex);
-    expect(methodGateIndex).toBeLessThan(phaseZeroIndex);
   });
 
   it("documents the NEXT_STEP contract once in references", () => {

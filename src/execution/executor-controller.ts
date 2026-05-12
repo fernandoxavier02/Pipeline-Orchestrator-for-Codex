@@ -7,6 +7,7 @@ import type { PipelineComplexity, ValidationIntent } from "../controller/classif
 import { createCheckpointValidator, type CheckpointValidationResult } from "./checkpoint-validator.js";
 import { createPreTester } from "./pre-tester.js";
 import { createQualityGateRouter, type PlannedBatch, type PlannedExecution } from "./quality-gate-router.js";
+import { resolveExecutionComplexity } from "../modes/complexity-resolution.js";
 import { reductionPolicyForMode } from "../modes/mode-policy.js";
 
 type ExecutionBatch = {
@@ -336,34 +337,6 @@ function toPlannedBatch(batch: PlannedBatch | ExecutionBatch): PlannedBatch {
     name: batch.name,
     tasks: [...("tasks" in batch ? batch.tasks : batch.files)],
   };
-}
-
-function resolveComplexity(input: {
-  mode?: string;
-  complexity?: PipelineComplexity;
-  variant?: string;
-}): PipelineComplexity {
-  if (input.complexity) {
-    return input.complexity;
-  }
-
-  const policy = reductionPolicyForMode(input.mode);
-  if (policy) {
-    return policy.forcedClassification.complexity;
-  }
-  if (input.mode === "--complexa" || input.mode === "--plan") {
-    return "COMPLEXA";
-  }
-
-  if (input.mode === "--simples") {
-    return "SIMPLES";
-  }
-
-  if (input.mode === "--media") {
-    return "MEDIA";
-  }
-
-  return input.variant?.endsWith("heavy") ? "COMPLEXA" : "MEDIA";
 }
 
 function normalizeScenarioPath(path: string) {
@@ -753,7 +726,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
       const checkpointValidator = dependencies.checkpointValidator ?? createCheckpointValidator();
       checkpointValidator.reset?.();
       const tasks = input.batch?.files ?? input.tasks ?? input.proposal?.affectedFiles ?? [];
-      const complexity = resolveComplexity({
+      const complexity = resolveExecutionComplexity({
         mode: input.mode,
         complexity: input.complexity,
         variant: input.variant,

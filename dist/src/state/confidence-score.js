@@ -3,11 +3,13 @@ import { join } from "node:path";
 import YAML from "yaml";
 import { confidenceScoreSchema } from "../domain/pipeline-schemas.js";
 import { writeFileAtomic } from "./atomic-write.js";
+import { resolveValidatedRoot } from "./path-validation.js";
 export function createConfidenceScoreStore(root) {
-    const yamlFile = join(root, "confidence-score.yaml");
-    const legacyJsonFile = join(root, "confidence-score.json");
+    const validatedRoot = resolveValidatedRoot(root);
+    const yamlFile = join(validatedRoot, "confidence-score.yaml");
+    const legacyJsonFile = join(validatedRoot, "confidence-score.json");
     return {
-        root,
+        root: validatedRoot,
         async save(snapshot) {
             const parsed = confidenceScoreSchema.parse(snapshot);
             await writeFileAtomic(yamlFile, YAML.stringify(parsed));

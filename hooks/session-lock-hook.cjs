@@ -2,17 +2,21 @@
 'use strict';
 
 /**
- * session-lock-hook.cjs — SessionStart guard for pipeline-orchestrator-for-codex.
+ * session-lock-hook.cjs — Session lock guard + heartbeat for pipeline-orchestrator-for-codex.
  *
  * Enforces a single active pipeline session per workspace.
  *   .codex/pipeline/session-lock.json
  *
- * Source semantics (SessionStart payload `source` field):
- *   - "startup" : a fresh CLI invocation. Active lock => block.
- *   - "resume"  : continuation of an existing session. Active lock => permit; expired => refresh.
- *   - "clear"   : user explicitly cleared the session. Always remove the lock.
+ * Supports TWO event modes:
+ *   1. SessionStart (source field present):
+ *      - "startup" : a fresh CLI invocation. Active lock => block.
+ *      - "resume"  : continuation of an existing session. Active lock => permit; expired => refresh.
+ *      - "clear"   : user explicitly cleared the session. Always remove the lock.
+ *   2. UserPromptSubmit (event field === "UserPromptSubmit"):
+ *      - Heartbeat: updates last_seen_at and refreshes expires_at.
+ *      - GC: removes expired locks.
  *
- * Output contract (Codex SessionStart hook):
+ * Output contract (Codex hook):
  *   { decision: "block" | null, reason?: string, continue?: true, systemMessage?: string }
  *
  * Atomic writes (Windows-safe): write `.tmp`, unlink target if present, rename.
@@ -24,6 +28,7 @@ const crypto = require('crypto');
 const { recordHookEvent } = require('./hook-events.cjs');
 
 const DEFAULT_TTL_SECONDS = 60 * 60;
+const MAX_TTL_SECONDS = 24 * 60 * 60; // 24 hours cap
 const LOCK_DIR = path.join(process.cwd(), '.codex', 'pipeline');
 const LOCK_PATH = path.join(LOCK_DIR, 'session-lock.json');
 
@@ -50,11 +55,26 @@ function readLock() {
   }
 }
 
+function rejectSymlink(targetPath) {
+  try {
+    const stat = fs.lstatSync(targetPath);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`SECURITY: ${targetPath} is a symbolic link. Refusing to write.`);
+    }
+  } catch (err) {
+    if (err && err.message && err.message.startsWith('SECURITY:')) throw err;
+    // File doesn't exist — that's fine
+  }
+}
+
 function writeLockAtomic(lock) {
   fs.mkdirSync(LOCK_DIR, { recursive: true });
+  rejectSymlink(LOCK_PATH);
+  rejectSymlink(`${LOCK_PATH}.tmp`);
   const tmp = `${LOCK_PATH}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(lock), 'utf8');
-  try { fs.unlinkSync(LOCK_PATH); } catch (_) { /* ignore: missing target */ }
+  // Node.js renameSync on Windows overwrites existing files since Node v6.
+  // Skip unlinkSync to avoid non-atomic window.
   fs.renameSync(tmp, LOCK_PATH);
 }
 
@@ -88,14 +108,78 @@ function emit(output) {
   console.log(JSON.stringify(output));
 }
 
-function handle(input) {
+function handleHeartbeat(input) {
+  const now = nowEpochSeconds();
+  const existing = readLock();
+
+  if (!existing) {
+    // No lock to heartbeat — silent no-op
+    return;
+  }
+
+  if (isExpired(existing, now)) {
+    deleteLock();
+    recordHookEvent({
+      hook: 'session-lock',
+      event: 'UserPromptSubmit',
+      decision: 'heartbeat-removed-expired',
+      reason: 'lock expired during heartbeat',
+    });
+    return;
+  }
+
+  const ttlOverride = Number((input && input.ttl_seconds) || process.env.PIPELINE_SESSION_LOCK_TTL_SECONDS);
+  const ttlSeconds = Math.min(
+    Number.isFinite(ttlOverride) && ttlOverride > 0 ? ttlOverride : DEFAULT_TTL_SECONDS,
+    MAX_TTL_SECONDS
+  );
+
+  const refreshed = {
+    ...existing,
+    last_seen_at: now,
+    expires_at: now + ttlSeconds,
+    status: 'active',
+  };
+  writeLockAtomic(refreshed);
+  recordHookEvent({
+    hook: 'session-lock',
+    event: 'UserPromptSubmit',
+    decision: 'heartbeat-updated',
+    attempted: existing.session_id,
+    reason: 'last_seen_at updated, expires_at refreshed',
+  });
+}
+
+function handleSessionStart(input) {
   const source = (input && input.source) || 'startup';
   const incomingSessionId = (input && input.session_id) || newSessionId();
   const ttlOverride = Number((input && input.ttl_seconds) || process.env.PIPELINE_SESSION_LOCK_TTL_SECONDS);
-  const ttlSeconds = Number.isFinite(ttlOverride) && ttlOverride > 0 ? ttlOverride : DEFAULT_TTL_SECONDS;
+  const ttlSeconds = Math.min(
+    Number.isFinite(ttlOverride) && ttlOverride > 0 ? ttlOverride : DEFAULT_TTL_SECONDS,
+    MAX_TTL_SECONDS
+  );
   const now = nowEpochSeconds();
 
   if (source === 'clear') {
+    // Authenticated clear: require matching session_id of active lock
+    const existing = readLock();
+    const providedSessionId = input && input.session_id;
+    if (existing && existing.session_id !== providedSessionId) {
+      recordHookEvent({
+        hook: 'session-lock',
+        event: 'SessionStart',
+        decision: 'deny',
+        attempted: providedSessionId,
+        expected: existing.session_id,
+        reason: 'clear rejected: provided session_id does not match active lock',
+      });
+      emit({
+        decision: 'block',
+        reason: `session-lock clear rejected: provided session_id does not match active lock (${existing.session_id}).`,
+        continue: true,
+      });
+      return;
+    }
     const removed = deleteLock();
     recordHookEvent({
       hook: 'session-lock',
@@ -163,6 +247,15 @@ function handle(input) {
     reason: 'lock acquired',
   });
   emit({ continue: true });
+}
+
+function handle(input) {
+  const event = (input && input.event) || 'SessionStart';
+  if (event === 'UserPromptSubmit') {
+    handleHeartbeat(input);
+    return;
+  }
+  handleSessionStart(input);
 }
 
 let buffer = '';

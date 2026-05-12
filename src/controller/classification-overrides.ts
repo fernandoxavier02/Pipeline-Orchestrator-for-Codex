@@ -1,7 +1,8 @@
 import type { PipelineMode } from "../domain/pipeline-types.js";
 import type { ReferenceProfileIndex, ReferencePipelineProfile } from "../references/reference-profiles.js";
 
-export type PipelineComplexity = "SIMPLES" | "MEDIA" | "COMPLEXA";
+import type { PipelineComplexity } from "../domain/pipeline-types.js";
+export type { PipelineComplexity };
 export type ValidationIntent = "standard" | "reduced";
 export type RouteFamily = "standard" | "adversarial";
 
