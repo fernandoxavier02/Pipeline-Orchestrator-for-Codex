@@ -16,7 +16,7 @@ expected_outputs:
   - dashboard_ascii: string
 expected_next: 5
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Spec Lifecycle (Audit-Only) — Step 04: Confidence Dashboard

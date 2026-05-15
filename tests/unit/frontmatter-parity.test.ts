@@ -18,17 +18,18 @@ describe("commands/pipeline.md frontmatter", () => {
     .split(",")
     .map((t) => t.trim());
 
-  it("declares the Codex-native subset of tools used by the CC controller", () => {
-    // Tools the CC controller uses that have native Codex equivalents
-    const required = ["Task", "Read", "Write", "Bash", "Glob", "Grep", "TodoWrite", "Skill"];
+  it("declares the Codex-native operational dispatch tool", () => {
+    const required = ["spawn_agent"];
     for (const tool of required) {
       expect(tools).toContain(tool);
     }
+    expect(tools).not.toContain("Task");
+    expect(tools).not.toContain("AskUserQuestion");
   });
 
-  it("documents emulated primitives in the body (AskUserQuestion, PlanMode)", () => {
-    // Codex has no native EnterPlanMode/ExitPlanMode/AskUserQuestion — they live in src/primitives/
-    expect(content).toMatch(/primitives\/ask-user-question/);
-    expect(content).toMatch(/primitives\/plan-mode/);
+  it("documents Codex parent protocol primitives in the body", () => {
+    expect(content).toContain("GATE_REQUEST v1");
+    expect(content).toContain("PLAN_MODE_REQUEST v1");
+    expect(content).not.toMatch(/EnterPlanMode|ExitPlanMode/);
   });
 });

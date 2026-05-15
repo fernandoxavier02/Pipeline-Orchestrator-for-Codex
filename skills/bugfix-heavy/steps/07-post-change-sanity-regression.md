@@ -18,7 +18,7 @@ expected_outputs:
   - all_tests_status: "PASSING | FAILING"
 expected_next: 8
 gate_required: false
-allowed_tools: [Bash, Read, Grep, Task]
+allowed_tools: [shell_command, shell_read, spawn_agent]
 ---
 
 # Step 07 — Post-Change Sanity + Regression

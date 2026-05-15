@@ -47,7 +47,7 @@ describe("force level modes", () => {
     expect(result.mode).toBe("--media");
     expect(result.type).toBe("Feature");
     expect(result.complexity).toBe("MEDIA");
-    expect(result.variant).toBe("implement-light");
+    expect(result.variant).toBe("feature-light");
   });
 
   it("lets --simples override the heuristic complexity", async () => {
@@ -68,7 +68,7 @@ describe("force level modes", () => {
     expect(result.mode).toBe("--complexa");
     expect(result.type).toBe("Feature");
     expect(result.complexity).toBe("COMPLEXA");
-    expect(result.variant).toBe("implement-heavy");
+    expect(result.variant).toBe("feature-heavy");
   });
 
   it("turns on design interrogation for --grill", async () => {

@@ -16,7 +16,7 @@ expected_outputs:
 expected_next: 4
 gate_required: true
 gate_name: "adversarial-loop-checkpoint"
-allowed_tools: [Read, Grep, Glob, Edit, Write, Bash, AskUserQuestion]
+allowed_tools: [shell_read, apply_patch, shell_command, GATE_REQUEST]
 ---
 
 # Spec Lifecycle (Light) — Step 03: Implementation (TDD + Vertical Slices + adversarial loop)
@@ -35,7 +35,7 @@ Use apos o ATDD seed (step 02) ter sido aprovado. As entradas obrigatorias sao: 
 - Siga o `tasks.md` da spec linha a linha. Nao reordene tasks sem checkpoint.
 - TDD obrigatorio: para cada task implementadora, escrever teste RED → codigo GREEN → REFACTOR.
 - Build obrigatorio ao final de cada CHECKPOINT (declarado em tasks.md a cada 3-5 tasks).
-- Nao inventar funcionalidades fora da spec. Se surgir necessidade, pause via AskUserQuestion.
+- Nao inventar funcionalidades fora da spec. Se surgir necessidade, pause via GATE_REQUEST.
 - STOP RULE: se build/teste falhar 2 vezes consecutivas no mesmo checkpoint, PARAR e analisar causa raiz antes de tentar de novo.
 
 ---
@@ -99,7 +99,7 @@ Apos cada CHECKPOINT verde, dispatchar revisao adversarial paralela (agentes `ad
 ### Loop com escalation a cada 3 tentativas + hard cap
 
 Estado por slice:
-- `loop_attempt` (counter per-slice, comeca em 0; reseta a cada slice; usado pra trigger AskUserQuestion escalation a cada 3).
+- `loop_attempt` (counter per-slice, comeca em 0; reseta a cada slice; usado pra trigger GATE_REQUEST escalation a cada 3).
 - `findings_signature` (hash dos findings da rodada anterior — ver definicao abaixo).
 
 Estado pipeline-level (acumula across slices):
@@ -129,7 +129,7 @@ Duas rodadas consecutivas com a MESMA assinatura forcam checkpoint imediato sem 
 Algoritmo:
 1. Rodar adversarial review.
 2. Se 0 findings: prosseguir para proximo slice.
-3. Se findings > 0: incrementar `loop_attempt` E `total_adversarial_rounds`; aplicar fixes; rodar build+testes. Se `loop_attempt > 0 AND loop_attempt % 3 == 0`, pausar via AskUserQuestion com 4 opcoes:
+3. Se findings > 0: incrementar `loop_attempt` E `total_adversarial_rounds`; aplicar fixes; rodar build+testes. Se `loop_attempt > 0 AND loop_attempt % 3 == 0`, pausar via GATE_REQUEST com 4 opcoes:
    - **Continuar loop (Recomendado se progresso visivel)** — fazer mais 3 tentativas.
    - **Escalar para spec-heavy** — Light esta no limite; promover para skill `spec-heavy` (mais auditoria).
    - **Aceitar warnings** — registrar findings nao-bloqueantes e seguir.
@@ -181,9 +181,9 @@ approved | checkpoint (escalation needed) | abort
 
 ---
 
-## Gate (AskUserQuestion mandatorio)
+## Gate (GATE_REQUEST mandatorio)
 
-A cada 3 tentativas adversariais, ou ao final do step, abrir AskUserQuestion com header `Adversarial` e as 4 opcoes acima. Recomendacao default: `Continuar loop` se progresso, `Aceitar warnings` se findings sao todos LOW e bloqueio nao e estrutural.
+A cada 3 tentativas adversariais, ou ao final do step, abrir GATE_REQUEST com header `Adversarial` e as 4 opcoes acima. Recomendacao default: `Continuar loop` se progresso, `Aceitar warnings` se findings sao todos LOW e bloqueio nao e estrutural.
 
 ---
 

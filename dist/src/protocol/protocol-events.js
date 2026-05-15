@@ -9,25 +9,20 @@ const baseProtocolBlockSchema = z.object({
     protocol_version: z.literal(1),
     source: z.string().default("unknown"),
 });
-const gateOptionSchema = z.union([
-    z.string().min(1).transform((label) => ({
-        label,
-        description: "",
-        recommended: false,
-    })),
-    z.object({
-        label: z.string().min(1),
-        description: z.string().default(""),
-        recommended: z.boolean().default(false),
-    }),
-]);
+const gateOptionSchema = z.object({
+    label: z.string().min(1),
+    description: z.string().min(1, "GATE_REQUEST options require a non-empty trade-off description"),
+    recommended: z.boolean().default(false),
+});
 export const gateRequestBlockSchema = baseProtocolBlockSchema.extend({
     kind: z.literal("GATE_REQUEST"),
     gate_id: z.string().min(1),
     question: z.string().min(1),
     header: z.string().max(12).optional(),
     multi_select: z.boolean().default(false),
-    options: z.array(gateOptionSchema).min(1),
+    options: z.array(gateOptionSchema)
+        .min(2, "GATE_REQUEST questions require at least two meaningful options")
+        .refine((options) => options.filter((option) => option.recommended).length <= 1, "GATE_REQUEST questions may mark at most one option as recommended"),
     context: z.string().optional(),
 });
 export const dispatchRequestBlockSchema = baseProtocolBlockSchema.extend({

@@ -18,7 +18,7 @@ expected_outputs:
   - rollback_feasibility: object
 expected_next: 6
 gate_required: false
-allowed_tools: [Task, Read, Grep, Glob, Bash]
+allowed_tools: [spawn_agent, shell_read, shell_command]
 ---
 
 # Step 05 — Data + Persistence + Migrations (Light)

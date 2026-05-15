@@ -1,6 +1,6 @@
 ---
 description: "Single-command multi-agent pipeline. Auto-classifies, confirms with the user, executes in batches, enforces adversarial review per batch, and finishes with quality gate plus final validation."
-allowed-tools: Task, Read, Write, Bash, Glob, Grep, TodoWrite, Skill
+allowed-tools: spawn_agent
 argument-hint: "[diagnostic|continue|review-only|--simples|--media|--complexa|--hotfix|--grill|--plan] <tarefa>"
 ---
 
@@ -14,25 +14,25 @@ This is the canonical `quality gate` and `final validation` entrypoint for the p
 
 ## Agent Execution Contract
 
-`/pipeline` supports two runtime modes:
+`/pipeline-orchestrator-for-codex:pipeline` supports two runtime modes:
 
 ### `strictAgents = true` (Explicit Opt-In)
 `spawn_agent` is mandatory. The controller spawns real pipeline agents with context isolation. If `spawn_agent` is unavailable, stop with `blocked-no-agent-runtime`.
 
-### `strictAgents = false` (Default — Test/Contract Harness)
+### `strictAgents = false` (Diagnostic/Test Harness Only)
 The runtime uses **parallel local emulation** via TypeScript heuristic functions. All "agents" run as async functions in the same Node process with **zero context isolation**. This is a test harness and contract validator, not production multi-agent execution.
 
-**Default behavior:** `strictAgents` defaults to `false`. The command `/pipeline` will use local emulation unless the user explicitly configures `strictAgents = true` and provides a working `spawn_agent` adapter.
+**Operational behavior:** production-grade use of `/pipeline-orchestrator-for-codex:pipeline` requires `strictAgents = true` and a working `spawn_agent` adapter. Harness mode is diagnostic/test-only and must not be reported as real multi-agent execution.
 
 ## Codex Primitive Emulation
 
 The controller exposes the Claude-style checkpoints through Codex-native surfaces:
 
-- `AskUserQuestion` → `src/primitives/ask-user-question.ts` (blocking question serializer with user confirmation)
+- `GATE_REQUEST v1` → parent-context user question, persisted response, and controller re-dispatch with `GATE_RESPONSES`
 - workflow selection → the Phase 1 proposal must print `WORKFLOW SELECTED`, ask whether to keep it, and accept `audit`, `bugfix`, `feature`, `ux`, or `spec` as workflow-switch responses before execution
-- `EnterPlanMode` / `ExitPlanMode` → Phase 1.5 emits `PLAN_MODE_REQUEST v1` plus `src/primitives/plan-mode.ts` write-attempt telemetry. When the host supports native Codex Plan Mode, the parent should enter it at this checkpoint; otherwise the generated implementation plan is the visible fallback.
+- `PLAN_MODE_REQUEST v1` → Phase 1.5 emits read-only planning work. When the host supports native Codex Plan Mode, the parent may use it; otherwise the generated implementation plan is the visible fallback.
 
-When the skill orchestrates user confirmation, workflow selection, or plan mode, it MUST route through these helpers/protocol blocks. Never attempt to call the CC-native tool names directly.
+When the skill orchestrates user confirmation, workflow selection, or plan mode, it MUST route through these protocol blocks. Never attempt to call Claude-native tool names directly.
 
 ## VISIBLE_PLAN
 

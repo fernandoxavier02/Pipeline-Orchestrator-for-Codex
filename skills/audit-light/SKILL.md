@@ -2,7 +2,7 @@
 name: audit-light
 description: Prescriptive 9-step audit workflow for SIMPLES/MEDIA audits (1 area, 1 depth level, single-axis or narrow scope). Imported from Pulsar audit workflow per spec §22. Use when audit complexity is light. REPORT-ONLY by Iron Law — no code modification under any circumstance. Same 9-step structure as audit-heavy (§7.2.2 — Light = Heavy em estrutura) but capped scope and collapsed ownership audit-domain-analyzer is SKIPPED in Light per references/pipelines/audit-light.md; domain analysis runs inline inside audit-compliance-checker's light_mode fallback. Steps 1 subagent gate (intake — REQUIRES SCOPE APPROVAL), 2-4 subagent (architecture + domain/SSOT + contracts via audit-compliance-checker light_mode), 5-8 subagent (data + frontend + backend + governance via audit-compliance-checker), 9 subagent gate (Pa de Cal via audit-risk-matrix-generator — REQUIRES GO/NO-GO). Manual-only invocation via /pipeline-orchestrator-for-codex:audit-light or via /pipeline-orchestrator-for-codex:audit --light.
 disable-model-invocation: true
-allowed-tools: [Task, Read, Grep, Glob, AskUserQuestion]
+allowed-tools: spawn_agent
 argument-hint: [audit scope — narrow area, single depth level]
 sequence: [1, 2, 3, 4, 5, 6, 7, 8, 9]
 sequence_lock: true
@@ -29,6 +29,11 @@ If the user switches workflow, rebuild the gate and ask again. If the gate canno
 ## NEXT_STEP Contract
 
 When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
+
+## Codex Parent Protocol Contract
+
+Codex does not execute Claude `Task` or direct `GATE_REQUEST` calls as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
 
 This skill executes a deterministic 9-step procedure for SIMPLES/MEDIA audits. Per spec §7.2.2 the audit pipeline is unique in that **Light = Heavy in structure** — pulando fases compromete cobertura. Light differs from Heavy in **depth**, not in **shape**:
 
@@ -70,7 +75,7 @@ Steps 2–4 invoke `audit-compliance-checker` with `light_mode: true` annotation
 
 ## Execution rules (8 enforcement rules — non-negotiable)
 
-Same rules as audit-heavy (sequence lock, execution-mode lock, agent-type whitelist, output schema, AskUserQuestion gates, STOP RULE, audit log, sentinel checkpoints). Only the sentinel checkpoint set is reduced (`pre_1`, `pre_9`) — Light does not require the mid-pipeline `pre_5` checkpoint because the scope cap keeps state simpler.
+Same rules as audit-heavy (sequence lock, execution-mode lock, agent-type whitelist, output schema, GATE_REQUEST gates, STOP RULE, audit log, sentinel checkpoints). Only the sentinel checkpoint set is reduced (`pre_1`, `pre_9`) — Light does not require the mid-pipeline `pre_5` checkpoint because the scope cap keeps state simpler.
 
 ## Iron-Law extension — Read-only enforcement
 
@@ -85,15 +90,15 @@ The Pá de Cal gate at step 9 recommends escalation to `audit-heavy` when ANY of
 - Cascade risk discovered touching 3+ areas (audit was scoped to 1 — scope was wrong).
 - Regulatory keyword detected during scope (GDPR, HIPAA, SOC2) — Light is BLOCKED for these.
 
-When escalation is recommended, AskUserQuestion at step 9 surfaces it as the recommended option.
+When escalation is recommended, GATE_REQUEST at step 9 surfaces it as the recommended option.
 
 ## How execution flows
 
 1. The skill is invoked via `/pipeline-orchestrator-for-codex:audit-light "<scope description>"` (or via `/pipeline-orchestrator-for-codex:audit --light` after pipeline-controller dispatch).
 2. The orchestrator reads `sequence:` from this file and walks the steps.
-3. For each step, the orchestrator opens `steps/0X-*.md`, reads the frontmatter, and spawns a Task with the declared `agent_type:` plus `light_mode: true` (when steps 2–4) and passes `expected_inputs` from previous steps.
+3. For each step, the orchestrator opens `steps/0X-*.md`, reads the frontmatter, and calls spawn_agent with the declared `agent_type:` plus `light_mode: true` (when steps 2–4) and passes `expected_inputs` from previous steps.
 4. Outputs are accumulated; `expected_next` chains to the following step.
-5. Gates (steps 1, 9) raise AskUserQuestion before transitioning out.
+5. Gates (steps 1, 9) raise GATE_REQUEST before transitioning out.
 6. On any failure, the STOP RULE may halt the pipeline.
 
 ## Reference docs

@@ -2,7 +2,7 @@
 
 ## Produto
 
-`pipeline-orchestrator-for-codex` e um plugin para Codex que transforma pedidos livres de desenvolvimento em um fluxo governado. O usuario chama `/pipeline`, o sistema classifica a tarefa, confirma uma proposta e conduz a execucao por fases com gates, testes, revisao adversarial e validacao final.
+`pipeline-orchestrator-for-codex` e um plugin para Codex que transforma pedidos livres de desenvolvimento em um fluxo governado. O usuario chama `/pipeline-orchestrator-for-codex:pipeline`, o sistema classifica a tarefa, confirma uma proposta e conduz a execucao por fases com gates, testes, revisao adversarial e validacao final.
 
 ## Usuario-Alvo
 
@@ -14,7 +14,7 @@ O valor do plugin e confiabilidade operacional: cada etapa deve deixar claro o q
 
 ## Experiencia Esperada
 
-O comando `/pipeline` deve ser previsivel:
+O comando `/pipeline-orchestrator-for-codex:pipeline` deve ser previsivel:
 
 - classificar tipo, complexidade e severidade;
 - detectar lacunas de informacao antes de codar;

@@ -17,7 +17,7 @@ expected_outputs:
 expected_next: 11
 gate_required: true
 gate_name: "tdd-tests-approval"
-allowed_tools: [Read, Grep, Glob, Write, Bash, AskUserQuestion]
+allowed_tools: [shell_read, apply_patch, shell_command, GATE_REQUEST]
 ---
 
 # LIGHT 10 — Testes Pre-Implementacao (Feature)

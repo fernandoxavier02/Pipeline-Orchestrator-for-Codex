@@ -24,7 +24,7 @@ routes:
     parallelGroups: []
     skipInLight:
       - bugfix-root-cause-analyzer
-  - profile: implement-heavy
+  - profile: feature-heavy
     type: Feature
     intensity: heavy
     mode: code-changing
@@ -34,7 +34,7 @@ routes:
       - feature-integration-validator
     parallelGroups: []
     skipInLight: []
-  - profile: implement-light
+  - profile: feature-light
     type: Feature
     intensity: light
     mode: code-changing
@@ -112,6 +112,16 @@ routes:
       - spec-closer
     parallelGroups: []
     skipInLight: []
+  - profile: spec-audit-only
+    type: Spec
+    intensity: light
+    mode: report-only
+    agents:
+      - spec-format-gate
+      - spec-content-reviewer
+    parallelGroups: []
+    skipInLight: []
+    subRouteCondition: explicit spec audit-only invocation
   - profile: audit-heavy
     type: Audit
     intensity: heavy

@@ -16,4 +16,33 @@ describe('plugin command surface', () => {
     expect(commandDoc).toContain('quality gate');
     expect(commandDoc).toContain('final validation');
   });
+
+  it('does not advertise bare /pipeline as a public command surface', async () => {
+    const publicFiles = [
+      'commands/pipeline.md',
+      'commands/brainstorm.md',
+      'skills/pipeline/SKILL.md',
+      'hooks/hooks.json',
+      'hooks/force-pipeline-agents.cjs',
+      'hooks/completion-checklist.cjs',
+      'hooks/sentinel-hook.cjs',
+      'src/cli/pipeline-cli.ts',
+    ];
+
+    for (const relativePath of publicFiles) {
+      const content = await readFile(path.join(repoRoot, relativePath), 'utf8');
+
+      expect(content, `${relativePath} must not present bare /pipeline as public API`)
+        .not.toMatch(/\/pipeline(?!-orchestrator)(?:\s|\[|`|$)/);
+    }
+  });
+
+  it('documents the real Codex spawn_agent schema without unsupported name metadata', async () => {
+    const skillDoc = await readFile(path.join(repoRoot, 'skills', 'pipeline', 'SKILL.md'), 'utf8');
+
+    expect(skillDoc).toContain('spawn_agent');
+    expect(skillDoc).toContain('agent_type: "worker"');
+    expect(skillDoc).toContain('message');
+    expect(skillDoc).not.toContain('name: "pipeline-orchestrator-for-codex:core:pipeline-controller"');
+  });
 });

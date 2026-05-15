@@ -127,7 +127,7 @@ checklists:
 
 ### Type-Specific Agent Team
 
-**Team:** Feature Heavy (referenced from implement-heavy)
+**Team:** Feature Heavy (referenced from feature-heavy)
 **Mode:** code-changing
 **Agents (execution order):**
 1. feature-vertical-slice-planner â€” story decomposition into vertical slices, acceptance criteria per slice

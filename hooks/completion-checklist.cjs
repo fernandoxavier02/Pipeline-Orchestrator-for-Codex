@@ -7,7 +7,7 @@
  * were met according to pipeline orchestrator rules:
  *   - ORCHESTRATOR_DECISION emitted
  *   - Build/tests passed
- *   - Pipeline phases completed (if /pipeline was invoked)
+ *   - Pipeline phases completed (if /pipeline-orchestrator-for-codex:pipeline was invoked)
  *
  * Generic — works with any project. Project-specific commands should
  * be configured in .codex/pipeline.local.md
@@ -112,7 +112,7 @@ process.stdin.on('end', () => {
     // v3.0: Pipeline phase enforcement (always inject — approach B)
     contextParts.push('');
     contextParts.push('### Pipeline Orchestrator — Fases Obrigatorias');
-    contextParts.push('Se /pipeline foi invocado nesta sessao, TODAS as fases devem ter sido executadas:');
+    contextParts.push('Se /pipeline-orchestrator-for-codex:pipeline foi invocado nesta sessao, TODAS as fases devem ter sido executadas:');
     contextParts.push('- [ ] Phase 0: task-orchestrator spawnado (CLASSIFICATION emitida)?');
     contextParts.push('- [ ] Phase 0: information-gate spawnado (INFORMATION_GATE emitida)?');
     contextParts.push('- [ ] Phase 1: PIPELINE PROPOSAL apresentado e usuario confirmou?');
@@ -124,7 +124,7 @@ process.stdin.on('end', () => {
     contextParts.push('- [ ] Gate decisions logadas em gate-decisions.jsonl?');
     contextParts.push('- [ ] Phase transition summaries emitidos entre cada fase?');
     contextParts.push('');
-    contextParts.push('Se /pipeline NAO foi invocado, ignore esta secao.');
+    contextParts.push('Se /pipeline-orchestrator-for-codex:pipeline NAO foi invocado, ignore esta secao.');
     contextParts.push('Se alguma fase foi pulada, PARE e complete antes de finalizar.');
 
     contextParts.push('');

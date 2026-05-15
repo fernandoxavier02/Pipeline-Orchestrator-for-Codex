@@ -11,7 +11,7 @@
 > **Full-depth, prompt-driven multi-agent pipeline for OpenAI Codex CLI and Kimi Code CLI.**
 > Ported toward parity with the local canonical Claude Code Pipeline Orchestrator v5.2.0, with runtime-native constraints made explicit for each platform.
 
-A single `/pipeline` command classifies any task, confirms a proposal with you, then orchestrates **44 agent prompts** across **4 structured phases** when a real `spawn_agent` adapter is available. Without that adapter, strict pipeline execution blocks as `blocked-no-agent-runtime` rather than simulating multi-agent parity. The runtime now includes v5.2 protocol events, brainstorm run directories, Spec lifecycle gates, TRACE.md validation, TDD gates, adversarial review loops, confidence scoring, and Go/No-Go validation.
+A single `/pipeline-orchestrator-for-codex:pipeline` command classifies any task, confirms a proposal with you, then orchestrates **44 agent prompts** across **4 structured phases** when a real `spawn_agent` adapter is available. Without that adapter, operational pipeline execution blocks as `blocked-no-agent-runtime` rather than simulating multi-agent parity. The runtime now includes v5.2 protocol events, brainstorm run directories, Spec lifecycle gates, TRACE.md validation, TDD gates, adversarial review loops, confidence scoring, and Go/No-Go validation.
 
 **New: Kimi Code CLI port** — the same 4-phase pipeline is now available as a Kimi skill (`.kimi/skills/pipeline/`), with 13 agent prompts adapted for Kimi's `coder`/`explore` subagent types, deterministic exec-window scripts, and a parent handler loop that processes `GATE_REQUEST`, `DISPATCH_REQUEST`, and `PLAN_MODE_REQUEST` blocks.
 
@@ -90,10 +90,10 @@ ls ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/*/skills/
 #### Usage
 
 ```
-/pipeline <your task description>
+/pipeline-orchestrator-for-codex:pipeline <your task description>
 ```
 
-The first assistant action is visible planning: the orchestrator calls `update_plan` so Codex opens the plan panel before it dispatches agents, edits files, or writes a report. The first user decision is then `WORKFLOW_METHOD_GATE` from `references/workflow-method-gate.md`: it names the workflow it selected, for example Bug Fix, Audit, Implement, UX, Spec, Brainstorm, Review, or Verify Completion, and asks whether you want to keep it. Reply `yes` to keep it, `adjust` to revise it manually, `no` to stop, or reply with `audit`, `bugfix`, `feature`, `ux`, `spec`, `brainstorm`, `review`, or `verify-completion` to switch workflow before any execution. For `/pipeline`, both the visible plan and this gate happen before Phase 0 agent dispatch.
+The first assistant action is visible planning: the orchestrator calls `update_plan` so Codex opens the plan panel before it dispatches agents, edits files, or writes a report. The first user decision is then `WORKFLOW_METHOD_GATE` from `references/workflow-method-gate.md`: it names the workflow it selected, for example Bug Fix, Audit, Implement, UX, Spec, Brainstorm, Review, or Verify Completion, and asks whether you want to keep it. Reply `yes` to keep it, `adjust` to revise it manually, `no` to stop, or reply with `audit`, `bugfix`, `feature`, `ux`, `spec`, `brainstorm`, `review`, or `verify-completion` to switch workflow before any execution. For `/pipeline-orchestrator-for-codex:pipeline`, both the visible plan and this gate happen before Phase 0 agent dispatch.
 
 For complex work or `--plan`, the proposal also emits `PLAN_MODE_REQUEST v1`. Hosts that support native Codex Plan Mode should surface the planning checkpoint there; otherwise the generated implementation plan is shown and must be approved before edits.
 
@@ -150,7 +150,7 @@ See `.kimi/skills/pipeline/references/parent-handler-protocol.md` for the full p
 ## Architecture
 
 ```
-                          /pipeline "fix auth bug"
+                          /pipeline-orchestrator-for-codex:pipeline "fix auth bug"
                                     |
                     ╔═══════════════╧═══════════════╗
                     ║     PHASE 0 — TRIAGE          ║
@@ -266,12 +266,12 @@ See `.kimi/skills/pipeline/references/parent-handler-protocol.md` for the full p
 
 | Mode | Command | Behavior |
 |:-----|:--------|:---------|
-| Full | `/pipeline <task>` | All 4 phases |
-| Diagnostic | `/pipeline diagnostic <task>` | Phase 0 + 1 only (classify + propose) |
-| Continue | `/pipeline continue` | Resume from Phase 2 |
-| Review-only | `/pipeline review-only` | Phase 3 only on current changes |
-| Hotfix | `/pipeline --hotfix <task>` | Reduced validation for emergencies |
-| Design Grill | `/pipeline --grill <task>` | Forces design interrogation |
+| Full | `/pipeline-orchestrator-for-codex:pipeline <task>` | All 4 phases |
+| Diagnostic | `/pipeline-orchestrator-for-codex:pipeline diagnostic <task>` | Phase 0 + 1 only (classify + propose) |
+| Continue | `/pipeline-orchestrator-for-codex:pipeline continue` | Resume from Phase 2 |
+| Review-only | `/pipeline-orchestrator-for-codex:pipeline review-only` | Phase 3 only on current changes |
+| Hotfix | `/pipeline-orchestrator-for-codex:pipeline --hotfix <task>` | Reduced validation for emergencies |
+| Design Grill | `/pipeline-orchestrator-for-codex:pipeline --grill <task>` | Forces design interrogation |
 
 ---
 
@@ -279,7 +279,7 @@ See `.kimi/skills/pipeline/references/parent-handler-protocol.md` for the full p
 
 | Mechanism | Description |
 |:----------|:------------|
-| **Strict Real-Agent Runtime** | `/pipeline` requires real `spawn_agent` execution; without an agent adapter it blocks with `blocked-no-agent-runtime` |
+| **Strict Real-Agent Runtime** | `/pipeline-orchestrator-for-codex:pipeline` requires real `spawn_agent` execution; without an agent adapter it blocks with `blocked-no-agent-runtime` |
 | **Spec Lifecycle Gates** | Spec variants block on missing artifacts, format/content failures, AC traceability gaps, and post-implementation validation failures |
 | **Execution Identity** | Runtime stores, gate logs, hook logs, and dispatch results include a workflow trace id, event id, and plugin/runtime/version metadata |
 | **Information Gate** | Blocks pipeline if critical info is missing — asks ONE focused question at a time |
@@ -391,13 +391,13 @@ If absent, the orchestrator auto-detects from `package.json`, `Makefile`, or com
 
 | Symptom | Cause | Fix |
 |:---|:---|:---|
-| `/pipeline` not recognized | Plugin not in Codex cache | Follow "Install from GitHub" steps above |
+| `/pipeline-orchestrator-for-codex:pipeline` not recognized | Plugin not in Codex cache | Follow "Install from GitHub" steps above |
 | `spawn_agent` not available | `multi_agent = false` | Set `multi_agent = true` in `~/.codex/config.toml` |
 | Hook errors on startup | Unexpected — hooks use only Node.js builtins | Check Node.js >= 20 is installed |
 | "agents directory not found" | Plugin not installed correctly | Verify `~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/*/agents/` exists |
 | Wall-of-text, no phases | GPT executing inline instead of spawning | Ensure hooks are registered — check `hooks/hooks.json` exists and `plugin.json` points to it |
 | Wrong skill loaded | Duplicate command/skill entries | Select the SKILL.md entry (not commands/) in skill picker |
-| `CLAUDE_PLUGIN_ROOT` undefined | Plugin not installed via standard path | Reinstall plugin into `~/.codex/plugins/cache/` |
+| `CODEX_PLUGIN_ROOT` undefined | Plugin not installed via standard Codex path | Reinstall plugin into `~/.codex/plugins/cache/` |
 | **Kimi:** `pipeline` not triggered | Skill not in Kimi skills dir | Copy `.kimi/skills/` to `~/.kimi/skills/` or `.agents/skills/` |
 | **Kimi:** controller loops forever | Parent handler not processing blocks | Ensure SKILL.md parent loop is loaded — check `references/parent-handler-protocol.md` |
 | **Kimi:** edits blocked outside `.pipeline/` | No exec-window active | Run `node .kimi/skills/pipeline/scripts/open-exec-window.cjs` before edits |

@@ -60,7 +60,7 @@ After the 8 steps complete with `go_no_go: GO`, the deliverables are:
 - **Regression test** in the suite — `regression_test_path` (with header comment + canonical commit).
 - **Adjacent unit tests** for at-risk invariants/edges added in step 4 — `additional_unit_tests_added`.
 - **Persistence assessment** — `persistence_stable`, `side_effects_detected`, `duplication_risk`.
-- **Audit trail** — `.pipeline/gate-decisions.jsonl` with the AskUserQuestion answers from steps 7 and 8.
+- **Audit trail** — `.pipeline/gate-decisions.jsonl` with the GATE_REQUEST answers from steps 7 and 8.
 - **Test report** confirming the suite passes — for inclusion in the PR description.
 
 ## Reference

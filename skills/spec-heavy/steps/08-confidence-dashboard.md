@@ -19,7 +19,7 @@ expected_outputs:
   - open_findings: list
 expected_next: 9
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Spec Lifecycle (Heavy) — Step 08: Confidence Dashboard

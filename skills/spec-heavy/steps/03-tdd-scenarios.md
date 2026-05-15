@@ -16,7 +16,7 @@ expected_outputs:
 expected_next: 4
 gate_required: true
 gate_name: "tdd-scenarios-approval"
-allowed_tools: [Read, Grep, Glob, AskUserQuestion]
+allowed_tools: [shell_read, GATE_REQUEST]
 ---
 
 <!--
@@ -98,7 +98,7 @@ Para cada cenario, indicar o arquivo de teste onde ele sera implementado no step
 
 ### Etapa 4 — Aplicar gate de cobertura
 
-Se qualquer AC ficar com 0 cenarios, emitir o achado `SPEC_AC_TRACEABILITY_GAP` e bloquear o gate. Caso contrario, prosseguir para AskUserQuestion.
+Se qualquer AC ficar com 0 cenarios, emitir o achado `SPEC_AC_TRACEABILITY_GAP` e bloquear o gate. Caso contrario, prosseguir para GATE_REQUEST.
 
 ---
 
@@ -129,9 +129,9 @@ approved | revise | abort
 
 ---
 
-## Gate (AskUserQuestion mandatorio)
+## Gate (GATE_REQUEST mandatorio)
 
-Apos emitir os cenarios, abrir AskUserQuestion com header `ATDD Seed` e opcoes:
+Apos emitir os cenarios, abrir GATE_REQUEST com header `ATDD Seed` e opcoes:
 - **Aprovar (Recomendado se 0 GAPs)** — prosseguir para step 04 com este conjunto de cenarios como contrato.
 - **Revisar cenarios** — reformular antes de seguir (usuario indica o que ajustar).
 - **Voltar e corrigir spec** — algum AC nao e testavel; spec precisa ser editada e content review possivelmente re-rodado.

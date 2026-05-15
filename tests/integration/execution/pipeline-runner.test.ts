@@ -6,6 +6,24 @@ import { AgentRuntimeUnavailableError } from "../../../src/dispatcher/run-role.j
 import { createPipelineRuntime } from "../../../src/index.js";
 
 describe("pipeline execution", () => {
+  it("blocks operational public command dispatch by default when no real agent adapter is available", async () => {
+    const runtime = createPipelineRuntime({
+      cwd: process.cwd(),
+      codexHome: process.cwd(),
+    });
+
+    await expect(runtime.dispatcher.runRole({
+      mode: "single-agent",
+      role: "information-gate",
+      phase: "phase-0",
+      prompt: "Ask one question at a time.",
+      input: { request: "/pipeline-orchestrator-for-codex:pipeline audit current agents" },
+      expectedOutput: ["INFORMATION_GATE", "STATUS"],
+      ownership: ["agents/core/information-gate.md"],
+      freshContext: true,
+    })).rejects.toThrow(AgentRuntimeUnavailableError);
+  });
+
   it("blocks strict runtime dispatch when no real agent adapter is available", async () => {
     const runtime = createPipelineRuntime({
       cwd: process.cwd(),
@@ -23,6 +41,40 @@ describe("pipeline execution", () => {
       ownership: ["agents/core/information-gate.md"],
       freshContext: true,
     })).rejects.toThrow(AgentRuntimeUnavailableError);
+  });
+
+  it("loads bundled prompt contracts when runtime cwd is an external project workspace", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "pipeline-external-workspace-"));
+    try {
+      const runtime = createPipelineRuntime({
+        cwd: workspace,
+        codexHome: workspace,
+      });
+
+      const result = await runtime.dispatcher.runRole({
+        mode: "parallel-emulation",
+        role: "review-orchestrator",
+        prompt: "Coordinate a read-only external workspace smoke review.",
+        input: { request: "review external workspace prompt root resolution" },
+        team: [
+          {
+            role: "quality-reviewer",
+            prompt: "Return an approved read-only smoke review.",
+            input: { request: "external workspace prompt root resolution" },
+            reviewOnly: true,
+          },
+        ],
+        reviewOnly: true,
+      });
+
+      expect(result.mode).toBe("parallel-emulation");
+      expect(result.output).toMatchObject({
+        status: "approved",
+        reviewOnly: true,
+      });
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
   });
 
   it("builds batches, runs review, and returns a closeout summary", async () => {

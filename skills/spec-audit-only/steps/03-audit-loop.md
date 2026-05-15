@@ -16,7 +16,7 @@ expected_outputs:
 expected_next: 4
 gate_required: true
 gate_name: "adversarial-loop-checkpoint"
-allowed_tools: [Read, Grep, Glob, Edit, Write, Bash, AskUserQuestion]
+allowed_tools: [shell_read, apply_patch, shell_command, GATE_REQUEST]
 ---
 
 # Spec Lifecycle (Audit-Only) — Step 03: Audit Loop (adversarial parallel + fix-loop)
@@ -36,7 +36,7 @@ Use apos o Content Review (step 02) ter retornado `GO` ou `GO-WARN`. Este step e
 - NAO escrever feature nova. Findings que exigem codigo novo viram **escalation** (sair do audit-only e abrir spec-light/spec-heavy em ciclo separado).
 - Correcoes permitidas: atualizar `spec.json`, `requirements.md`, `design.md`, `tasks.md`, `closure-report.md` (rascunho), arquivos de documentacao do projeto, marcar `[x]` em tasks que ja estao TRACED no codigo. Tudo o que nao for codigo de feature.
 - Cada finding deve carregar tag de severidade: `BLOCKER | HIGH | MEDIUM | LOW` e tag de evidencia: `[VERIFICADO] | [HIPOTESE] | [DESIGN]`.
-- Fix-loop: maximo NAO bounded por contrato, mas com escalation a cada 3 attempts (AskUserQuestion).
+- Fix-loop: maximo NAO bounded por contrato, mas com escalation a cada 3 attempts (GATE_REQUEST).
 - Stop-rule: 2 consecutive failures (build/test/check) -> ABORT step com STOP_RULE.
 - Same-findings detection: se a mesma lista de findings reaparece em 2 rodadas consecutivas, ABORT loop e dispara o gate `adversarial-loop-checkpoint` imediatamente.
 
@@ -52,7 +52,7 @@ Use apos o Content Review (step 02) ter retornado `GO` ou `GO-WARN`. Este step e
 
 ## Etapa 1 — Dispatch paralelo dos 3 auditores
 
-Em UMA UNICA MENSAGEM, dispatchar via Agent tool tres subagents simultaneos:
+Em UMA UNICA MENSAGEM, dispatchar via Codex `spawn_agent` tres subagents simultaneos. Cada mensagem deve iniciar com `PIPELINE_AGENT_FQN: <Subagent FQDN>`:
 
 | Subagent FQDN | Foco |
 |---|---|
@@ -129,9 +129,9 @@ Esta checagem e enforcement em codigo do que ja estava em prosa: audit-only e es
 3. Se finding desapareceu -> marcar `resolved: true` e seguir.
 4. Se finding persiste -> incrementar `attempt_count`.
 
-### Escalation a cada 3 attempts (AskUserQuestion mandatorio)
+### Escalation a cada 3 attempts (GATE_REQUEST mandatorio)
 
-Apos 3 tentativas falhas no MESMO finding, ABRIR AskUserQuestion com header `Loop` e opcoes:
+Apos 3 tentativas falhas no MESMO finding, ABRIR GATE_REQUEST com header `Loop` e opcoes:
 - **Continuar tentando (Recomendado se finding e MEDIUM/LOW)** — voltar ao loop com nova estrategia.
 - **Escalar para ciclo separado** — marcar finding como `escalation` e seguir.
 - **Aceitar como warning** — registrar no closure-report e seguir sem corrigir (so para LOW/MEDIUM).
@@ -208,9 +208,9 @@ Esta regra vem do design doc §"Variantes resumidas": audit-only com zero fixes 
 
 ---
 
-## Gate (AskUserQuestion mandatorio na decisao final)
+## Gate (GATE_REQUEST mandatorio na decisao final)
 
-Apos o loop convergir, abrir AskUserQuestion com header `Loop` e opcoes:
+Apos o loop convergir, abrir GATE_REQUEST com header `Loop` e opcoes:
 - **Aprovar e seguir (Recomendado se zero BLOCKER restantes)** — prosseguir para step 04 (confidence dashboard).
 - **Continuar mais uma rodada** — re-dispatchar os 3 auditores (uso quando o usuario quer extra confidence).
 - **Aceitar warnings restantes** — fechar loop com warnings registrados no closure.

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "node:child_process";
-import { existsSync, rmSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readdirSync, rmSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 const scriptsDir = ".kimi/skills/pipeline/scripts";
 const sessionsDir = ".pipeline/sessions";
@@ -41,10 +41,9 @@ describe("Exec-window scripts — runtime contract", () => {
   beforeAll(() => {
     // Clean up any stale test sessions
     if (existsSync(sessionsDir)) {
-      const files = execSync(`ls ${sessionsDir}/*.exec-window 2>/dev/null || true`, { encoding: "utf8" });
-      for (const file of files.trim().split("\n").filter(Boolean)) {
-        if (file.includes("test-session-")) {
-          rmSync(file.trim());
+      for (const file of readdirSync(sessionsDir)) {
+        if (file.includes("test-session-") && file.endsWith(".exec-window")) {
+          rmSync(join(sessionsDir, file));
         }
       }
     }

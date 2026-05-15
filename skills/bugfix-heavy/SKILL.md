@@ -2,7 +2,7 @@
 name: bugfix-heavy
 description: Prescriptive 11-step bug fix workflow for COMPLEXA bugs and production incidents (cross-cutting concerns, persistence, concurrency, multi-user impact, business rules). Imported from Pulsar bugfix workflow per spec §21. Use when complexity classification is heavy or when bugfix-light auto-escalates at its complexity gate. Steps 1-3 subagent (recon + root-cause + domain truth model), 4 inline gate (controlled change proposal — REQUIRES APPROVAL), 5-6 inline (TDD pre-impl + minimal diff), 7 subagent (sanity + regression), 8 parallel subagents gate (adversarial security+architecture+quality), 9 subagent (post-fix UX E2E), 10 inline gate (Pa de Cal GO/NO-GO), 11 subagent (final after-all sanity sweep). Closes 4 audit gaps Heavy 3 (domain truth model net-new), Heavy 8 (3-way adversarial), Heavy 9 (UX as post-fix E2E), Heavy 11 (after-all distinct from Pa de Cal). Manual-only invocation via /pipeline-orchestrator-for-codex:bugfix-heavy or via /pipeline-orchestrator-for-codex:bugfix --heavy.
 disable-model-invocation: true
-allowed-tools: [Task, Read, Grep, Glob, AskUserQuestion]
+allowed-tools: spawn_agent
 argument-hint: [bug description with repro details]
 sequence: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 sequence_lock: true
@@ -28,6 +28,11 @@ If the user switches workflow, rebuild the gate and ask again. If the gate canno
 ## NEXT_STEP Contract
 
 When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
+
+## Codex Parent Protocol Contract
+
+Codex does not execute Claude `Task` or direct `GATE_REQUEST` calls as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
 
 This skill executes a deterministic 11-step procedure for COMPLEXA bugs / production incidents. The procedure is **non-negotiable**: order is locked, execution mode per step is locked, and gates cannot be skipped. The 4 audit gaps from spec §21.2 are closed by net-new step 3 (Domain Truth Model), step 8 (3-way adversarial), refocused step 9 (post-fix UX E2E), and net-new step 11 (final after-all sweep distinct from Pa de Cal).
 
@@ -65,11 +70,11 @@ These rules are baked into the frontmatter contract. The dispatch-guard hook + s
 
 1. **Sequence lock** — steps execute strictly in order 1→2→3→4→5→6→7→8→9→10→11. No skip, no reorder. Validated via `sequence:` + `sequence_lock: true` plus `expected_next:` per step.
 2. **Execution-mode lock** — each step declares `execution_mode: inline | subagent`. Cannot be swapped at runtime.
-3. **Agent-type whitelist** — when `execution_mode: subagent`, the step declares the EXACT `agent_type:` allowed. dispatch-guard rejects any other agent. Step 8 declares `agent_type: parallel` and the body documents the 3-spawn pattern (single message, three Task tool calls in parallel).
+3. **Agent-type whitelist** — when `execution_mode: subagent`, the step declares the EXACT `agent_type:` allowed. dispatch-guard rejects any other agent. Step 8 declares `agent_type: parallel` and the body documents the 3-spawn `spawn_agent` pattern (single parent turn, three child dispatches in parallel).
 4. **Output schema** — each step declares `expected_outputs:`; the next step verifies inputs match before proceeding. Fail-closed.
-5. **AskUserQuestion gates obrigatórios** — steps 4, 8, 10 declare `gate_required: true`. The skill MUST invoke AskUserQuestion at those points. Prose substitution is forbidden.
+5. **Parent-context question gates obrigatórios** — steps 4, 8, 10 declare `gate_required: true`. The skill MUST ask and persist the user's answer at those points. Prose substitution is forbidden.
 6. **STOP RULE** — 2 consecutive failures (build, test, validation) halt the pipeline. `stop_rule_max_failures: 2` enforced by sanity-checker + checkpoint-validator.
-7. **Audit log append-only** — every gate decision, AskUserQuestion answer, step transition, and STOP event is appended to `.pipeline/gate-decisions.jsonl`.
+7. **Audit log append-only** — every gate decision, parent-context answer, step transition, and STOP event is appended to `.pipeline/gate-decisions.jsonl`.
 8. **Sentinel checkpoints** — sentinel-hook validates state coherence before steps 4, 8, 10 (`sentinel_checkpoints: [pre_4, pre_8, pre_10]`). Outside these checkpoints, sentinel blocks execution.
 
 ## How execution flows
@@ -78,10 +83,10 @@ These rules are baked into the frontmatter contract. The dispatch-guard hook + s
 2. The orchestrator reads `sequence:` and walks the steps.
 3. For each step, the orchestrator opens `steps/0X-*.md`, reads the frontmatter, and:
    - if `execution_mode: inline`, the agent processes the step body in main context using `allowed_tools` from the step
-   - if `execution_mode: subagent`, the agent spawns a Task with `agent_type:` and passes `expected_inputs` from previous steps
-   - for step 8 (parallel), three Task calls are spawned in a SINGLE message (security-scanner + architecture-critic + quality-reviewer)
+   - if `execution_mode: subagent`, the agent calls spawn_agent with `agent_type:` and passes `expected_inputs` from previous steps
+   - for step 8 (parallel), three spawn_agent calls are spawned in a SINGLE message (security-scanner + architecture-critic + quality-reviewer)
 4. Outputs accumulate; `expected_next` chains the next step.
-5. Gates (steps 4, 8, 10) raise AskUserQuestion before transitioning.
+5. Gates (steps 4, 8, 10) raise GATE_REQUEST before transitioning.
 6. On any failure, the STOP RULE may halt the pipeline.
 
 ## Reference docs

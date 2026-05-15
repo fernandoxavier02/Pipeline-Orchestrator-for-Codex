@@ -14,7 +14,7 @@ expected_outputs:
 expected_next: 2
 gate_required: true
 gate_name: "format-gate-approval"
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Spec Lifecycle (Light) — Step 01: Format Gate
@@ -33,7 +33,7 @@ Use logo apos a spec estar escrita em `.kiro/specs/<feature>/` e antes de qualqu
 - Nao implemente codigo nesta etapa.
 - Nao modifique a spec nesta etapa.
 - Nao revise conteudo (semantica de requisitos, qualidade de design) — isso e papel do `spec-heavy` step 02.
-- Se encontrar problemas bloqueantes (NO-GO), PARE e reporte ao usuario via AskUserQuestion antes de prosseguir.
+- Se encontrar problemas bloqueantes (NO-GO), PARE e reporte ao usuario via GATE_REQUEST antes de prosseguir.
 
 ---
 
@@ -135,9 +135,9 @@ Step 02 (TDD Scenarios) se GO ou GO-WARN; STOP se NO-GO.
 
 ---
 
-## Gate (AskUserQuestion mandatorio)
+## Gate (GATE_REQUEST mandatorio)
 
-Apos emitir o report, abrir AskUserQuestion com header `Format` e opcoes:
+Apos emitir o report, abrir GATE_REQUEST com header `Format` e opcoes:
 - **Aprovar e seguir (Recomendado se GO)** — prosseguir para step 02.
 - **Aprovar com warnings (GO-WARN)** — seguir mas registrar warnings no audit log.
 - **Corrigir spec** — pausar pipeline ate spec ser corrigida.

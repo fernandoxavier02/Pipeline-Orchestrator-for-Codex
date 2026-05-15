@@ -1,6 +1,6 @@
 ---
 kind: pipeline-profile
-variant: implement-heavy
+variant: feature-heavy
 type: Feature
 complexity: COMPLEXA
 intensity: heavy

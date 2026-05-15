@@ -47,7 +47,7 @@ Initial state:
 
 ### Update Pattern (before EVERY agent spawn)
 
-Before each Agent tool call, the controller MUST update sentinel-state.json via the Write tool:
+Before each `spawn_agent` dispatch, the controller MUST update sentinel-state.json via the filesystem writer:
 
 1. Set `current_phase` to the phase being entered
 2. Set `current_agent` to the agent being spawned
@@ -55,7 +55,7 @@ Before each Agent tool call, the controller MUST update sentinel-state.json via 
 4. Increment `sequence_counter`
 5. Set `last_updated` to current ISO timestamp
 
-The Write tool call MUST complete before the Agent tool call is made. This ensures the hook reads the correct state.
+The state write MUST complete before the `spawn_agent` dispatch is made. This ensures the hook reads the correct state.
 
 ### Determining `expected_next`
 
@@ -77,12 +77,12 @@ After the final-validator returns and sentinel post_final_validator checkpoint p
 
 ## 2. Sentinel Checkpoints
 
-The controller MUST spawn `Agent(pipeline-orchestrator:core:sentinel)` at these checkpoints:
+The controller MUST dispatch the sentinel through real Codex `spawn_agent` at these checkpoints:
 
 ### Checkpoint #1: post_orchestrator (MANDATORY for all complexities)
 
 **When:** Immediately after task-orchestrator returns ORCHESTRATOR_DECISION
-**Before:** Update state file with full orchestrator_decision, then spawn sentinel
+**Before:** Update state file with full orchestrator_decision, then dispatch sentinel
 **Mode:** ORCHESTRATOR_VALIDATION
 **Prompt template:**
 
@@ -147,7 +147,7 @@ After EVERY sentinel spawn, the controller reads the SENTINEL_VERDICT and acts:
 ### BLOCKED
 
 1. Do NOT proceed with any agent spawn
-2. Present the block reason to the user via AskUserQuestion:
+2. Present the block reason to the user through the parent-context gate flow:
    ```
    SENTINEL BLOCKED the pipeline.
    Reason: {block.reason}
@@ -165,7 +165,7 @@ After EVERY sentinel spawn, the controller reads the SENTINEL_VERDICT and acts:
 
 ## 4. Handling Hook Deny (SEQUENCE_VALIDATION flow)
 
-When the sentinel hook denies an Agent tool call:
+When the sentinel hook denies a `spawn_agent` dispatch:
 
 1. Claude receives the deny reason automatically (fed by Claude Code)
 2. The deny reason instructs Claude to spawn sentinel with mode SEQUENCE_VALIDATION
@@ -178,7 +178,7 @@ When the sentinel hook denies an Agent tool call:
 
 ## 5. Bootstrap — First Spawn
 
-On the FIRST `/pipeline [task]` invocation:
+On the first `/pipeline-orchestrator-for-codex:pipeline [task]` invocation:
 
 1. Controller creates sentinel-state.json with `expected_next: "task-orchestrator"`
 2. Controller spawns task-orchestrator
@@ -196,7 +196,7 @@ If state file does NOT exist when hook fires:
 
 ---
 
-## 6. `/pipeline continue` — Resume Flow
+## 6. `/pipeline-orchestrator-for-codex:pipeline continue` — Resume Flow
 
 1. Controller checks if sentinel-state.json exists in PIPELINE_DOC_PATH:
    - **Exists + pipeline_id matches:** Restore state.

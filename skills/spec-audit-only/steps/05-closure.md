@@ -21,7 +21,7 @@ expected_outputs:
   - commit_created: boolean
 expected_next: null
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Bash, Edit, Write]
+allowed_tools: [shell_read, shell_command, apply_patch]
 ---
 
 # Spec Lifecycle (Audit-Only) — Step 05: Closure
@@ -33,7 +33,7 @@ allowed_tools: [Read, Grep, Glob, Bash, Edit, Write]
 
 ## Quando usar
 
-Use apos o Confidence Dashboard (step 04) ter sido emitido. Este passo nao tem gate AskUserQuestion proprio — confia nas aprovacoes anteriores. Mas valida 5 pre-requisitos antes de gravar qualquer arquivo; se algum falhar, aborta sem alterar o disco.
+Use apos o Confidence Dashboard (step 04) ter sido emitido. Este passo nao tem gate GATE_REQUEST proprio — confia nas aprovacoes anteriores. Mas valida 5 pre-requisitos antes de gravar qualquer arquivo; se algum falhar, aborta sem alterar o disco.
 
 ## Regras audit-only
 

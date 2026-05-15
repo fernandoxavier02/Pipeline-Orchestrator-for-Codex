@@ -21,7 +21,7 @@ checklists:
 - Type: Audit (sub-routed via adversarial keyword detection + user confirmation)
 - Complexity: COMPLEXA (6+ files, 3+ domains)
 
-**Sub-route trigger:** executor-controller detects adversarial keywords ("adversarial review", "security audit", "threat model") in the task description AND user confirms via AskUserQuestion.
+**Sub-route trigger:** executor-controller detects adversarial keywords ("adversarial review", "security audit", "threat model") in the task description and the user confirms through a parent-context gate.
 
 **CRITICAL: Review-only mode produces REPORTS ONLY. Fix mode spawns executor-implementer-task for critical/high findings.**
 
@@ -61,7 +61,7 @@ checklists:
 
 ### Step 2: Parallel Independent Reviews
 - Input: Target files from coordinator
-- Action: adversarial-security-scanner AND adversarial-architecture-critic run in parallel (single message, two Agent tool calls)
+- Action: adversarial-security-scanner AND adversarial-architecture-critic run in parallel through real Codex `spawn_agent` dispatches.
 - Output: SECURITY_FINDINGS + ARCHITECTURE_FINDINGS (independent, zero shared context)
 
 ### Step 3: Consolidation

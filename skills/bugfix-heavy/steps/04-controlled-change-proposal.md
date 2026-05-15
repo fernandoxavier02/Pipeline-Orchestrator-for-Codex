@@ -18,14 +18,14 @@ expected_outputs:
   - askuserquestion_response: string
 expected_next: 5
 gate_required: true
-allowed_tools: [AskUserQuestion, Read, Grep]
+allowed_tools: [GATE_REQUEST, shell_read]
 ---
 
 # Step 04 — Controlled Change Proposal — REQUIRES APPROVAL
 
 ## Objective
 
-Define the **smallest change** that resolves the bug, with closed scope, explicit impacts, and explicit guarantees (source of truth respected, invariants preserved, persistence/idempotency/atomicity addressed). This is the **first user-facing gate** of the heavy workflow (`gate_required: true`). REQUIRES APPROVAL via AskUserQuestion before any test or code is written.
+Define the **smallest change** that resolves the bug, with closed scope, explicit impacts, and explicit guarantees (source of truth respected, invariants preserved, persistence/idempotency/atomicity addressed). This is the **first user-facing gate** of the heavy workflow (`gate_required: true`). REQUIRES APPROVAL via GATE_REQUEST before any test or code is written.
 
 ## Why inline (not subagent)
 
@@ -72,9 +72,9 @@ Describe how to revert the change cleanly — which commits to revert, which fea
 
 List risks the proposal does NOT eliminate (and that step 8 adversarial review should examine).
 
-### 4.6 AskUserQuestion gate (mandatory — no prose substitute)
+### 4.6 GATE_REQUEST gate (mandatory — no prose substitute)
 
-REQUIRES APPROVAL. Per global rule "Decisoes do Usuario — AskUserQuestion sempre", invoke AskUserQuestion with the agent's recommendation as option 1. Use this exact shape:
+REQUIRES APPROVAL. Per global rule "Decisoes do Usuario — GATE_REQUEST sempre", invoke GATE_REQUEST with the agent's recommendation as option 1. Use this exact shape:
 
 ```
 header: "Proposta"
@@ -89,7 +89,7 @@ options:
     description: "Hipotese principal pode estar errada ou escopo da mudanca eh maior do que cabe num bugfix; voltar a etapa 2 ou abrir um plano de feature."
 ```
 
-The AskUserQuestion tool automatically appends an "Other" option for free text — do NOT add it manually.
+The GATE_REQUEST tool automatically appends an "Other" option for free text — do NOT add it manually.
 
 If `ambiguities_and_risks` from step 3 is non-empty, surface them in the question body so the user can resolve them as part of the answer.
 
@@ -102,14 +102,14 @@ If `ambiguities_and_risks` from step 3 is non-empty, surface them in the questio
 ### 4.8 Routing
 
 - `approved` → proceed to step 5 (test pre-impl).
-- `revise` → loop back: collect user's revision notes, regenerate the proposal, re-invoke AskUserQuestion. Two consecutive `revise`-without-progress trip the STOP RULE.
+- `revise` → loop back: collect user's revision notes, regenerate the proposal, re-invoke GATE_REQUEST. Two consecutive `revise`-without-progress trip the STOP RULE.
 - `abort` → exit skill; hand control back. The orchestrator decides whether to re-enter at step 2 (root cause may be wrong) or to escalate to a feature plan.
 
 ## Done criteria
 
 - Minimal change proposal stated; affected files listed; guarantees declared per applicable concept.
 - Rollback plan and residual risks listed.
-- AskUserQuestion invoked (not substituted with prose). REQUIRES APPROVAL was honored.
+- GATE_REQUEST invoked (not substituted with prose). REQUIRES APPROVAL was honored.
 - Decision recorded and appended to audit log.
 
 ## Outputs (handoff to step 5 OR exit)

@@ -104,7 +104,7 @@ describe("Feature: dispatch-guard enforces the pipeline namespace", () => {
       tool_input: { skill: "task-orchestrator" },
     });
     expect(out.hookSpecificOutput?.permissionDecision).toBe("deny");
-    expect(out.hookSpecificOutput?.permissionDecisionReason).toContain("Agent tool");
+    expect(out.hookSpecificOutput?.permissionDecisionReason).toContain("spawn_agent");
   });
 
   it("Scenario: Skill call to a non-pipeline skill is allowed", () => {

@@ -26,7 +26,7 @@ expected_outputs:
   - askuserquestion_response: string
 expected_next: null
 gate_required: true
-allowed_tools: [Task, Read, Grep, Glob, AskUserQuestion]
+allowed_tools: [spawn_agent, shell_read, GATE_REQUEST]
 ---
 
 # Step 09 — Pá de Cal + Risk Matrix + Priority Backlog — REQUIRES GO/NO-GO
@@ -42,7 +42,7 @@ Close the audit with an **executive synthesis** and a **prioritized plan**, **wi
 - Recommended contract/SSOT strategy.
 - Recommended validation suite (minimum gates per `references/gates.md` Hardness Taxonomy).
 
-This is the **second user-facing gate** of the heavy workflow (`gate_required: true`). REQUIRES GO/CONDITIONAL/NO-GO via AskUserQuestion. The decision applies to **the audit report itself** (is it complete, evidence-backed, actionable?), not to any code change — audits do not produce code.
+This is the **second user-facing gate** of the heavy workflow (`gate_required: true`). REQUIRES GO/CONDITIONAL/NO-GO via GATE_REQUEST. The decision applies to **the audit report itself** (is it complete, evidence-backed, actionable?), not to any code change — audits do not produce code.
 
 ## Why subagent (audit-risk-matrix-generator)
 
@@ -132,9 +132,9 @@ AuditMasterSeal:
     confidence_rationale: <text — what limited the confidence>
 ```
 
-### 9.3 AskUserQuestion gate (mandatory — no prose substitute)
+### 9.3 GATE_REQUEST gate (mandatory — no prose substitute)
 
-Per global rule, invoke AskUserQuestion. This gate has 3 outcomes (GO / CONDITIONAL / NO-GO) on the **audit report quality**:
+Per global rule, invoke GATE_REQUEST. This gate has 3 outcomes (GO / CONDITIONAL / NO-GO) on the **audit report quality**:
 
 ```
 header: "GO/NO-GO"
@@ -173,7 +173,7 @@ Do not silently promote `[HYPOTHESIS]` to `[VERIFIED]` without evidence.
 - Executive narrative written.
 - `AuditMasterSeal` populated with risk matrix (≥1 entry per axis evidenced), priority backlog, safe-change strategy, contract/SSOT strategy, recommended validation suite, overall_assessment.
 - All findings carry `[VERIFIED]` / `[HYPOTHESIS]` / `[DESIGN]` tags + file:line.
-- AskUserQuestion invoked (not substituted with prose).
+- GATE_REQUEST invoked (not substituted with prose).
 - Final decision recorded in rigid format with reasons + gaps (if CONDITIONAL/NO-GO) + handoff (if GO).
 
 ## Outputs (terminal step — handoff back to caller)

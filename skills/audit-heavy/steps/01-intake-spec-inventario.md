@@ -20,7 +20,7 @@ expected_outputs:
   - gate_decision: "approved | revise | abort"
 expected_next: 2
 gate_required: true
-allowed_tools: [Task, Read, Grep, Glob, Bash, AskUserQuestion]
+allowed_tools: [spawn_agent, shell_read, shell_command, GATE_REQUEST]
 ---
 
 # Step 01 — Intake + Spec + Inventory — REQUIRES SCOPE APPROVAL
@@ -29,7 +29,7 @@ allowed_tools: [Task, Read, Grep, Glob, Bash, AskUserQuestion]
 
 Open the audit by producing (a) a written **audit spec** that defines objective, scope, and what "healthy project" means in this context, and (b) a structured `AuditIntake` JSON containing stack detection, repo map, entry points, data-flow guess, scripts/environments, and initial hotspots. **Every claim must cite repository evidence (file:line)**; if it cannot be proven, declare "not evidenced" — never invent.
 
-This is the **first user-facing gate** of the heavy workflow (`gate_required: true`). REQUIRES SCOPE APPROVAL via AskUserQuestion before any deeper analysis runs.
+This is the **first user-facing gate** of the heavy workflow (`gate_required: true`). REQUIRES SCOPE APPROVAL via GATE_REQUEST before any deeper analysis runs.
 
 ## Why subagent (audit-intake)
 
@@ -100,9 +100,9 @@ Establish the tagging vocabulary used across all subsequent steps:
 
 Every finding from steps 2–8 will carry one of these tags.
 
-### 1.4 AskUserQuestion gate (mandatory — no prose substitute)
+### 1.4 GATE_REQUEST gate (mandatory — no prose substitute)
 
-REQUIRES SCOPE APPROVAL. Per global rule "Decisoes do Usuario — AskUserQuestion sempre", invoke AskUserQuestion with the agent's recommendation as option 1. Use this exact shape:
+REQUIRES SCOPE APPROVAL. Per global rule "Decisoes do Usuario — GATE_REQUEST sempre", invoke GATE_REQUEST with the agent's recommendation as option 1. Use this exact shape:
 
 ```
 header: "Escopo"
@@ -117,7 +117,7 @@ options:
     description: "Auditoria precisa de pre-trabalho (e.g. coletar baseline historico, alinhar com stakeholder); voltar quando contexto estiver pronto."
 ```
 
-The AskUserQuestion tool automatically appends an "Other" option for free text — do NOT add it manually.
+The GATE_REQUEST tool automatically appends an "Other" option for free text — do NOT add it manually.
 
 ### 1.5 Record the decision
 
@@ -128,7 +128,7 @@ The AskUserQuestion tool automatically appends an "Other" option for free text �
 ### 1.6 Routing
 
 - `approved` → proceed to step 2 (architecture).
-- `revise` → loop back: collect user's revision notes, regenerate the spec/AuditIntake, re-invoke AskUserQuestion. Two consecutive `revise`-without-progress trip the STOP RULE.
+- `revise` → loop back: collect user's revision notes, regenerate the spec/AuditIntake, re-invoke GATE_REQUEST. Two consecutive `revise`-without-progress trip the STOP RULE.
 - `abort` → exit skill; hand control back. The orchestrator (or the user) decides when to re-enter.
 
 ## Done criteria
@@ -137,7 +137,7 @@ The AskUserQuestion tool automatically appends an "Other" option for free text �
 - `AuditIntake` JSON populated with all six top-level fields.
 - Evidence classification framework declared.
 - Every claim cites file:line OR is tagged `[HYPOTHESIS]` / "not evidenced".
-- AskUserQuestion invoked (not substituted with prose). Decision recorded and audit-logged.
+- GATE_REQUEST invoked (not substituted with prose). Decision recorded and audit-logged.
 
 ## Outputs (handoff to step 2)
 

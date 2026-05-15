@@ -1,8 +1,102 @@
-import type { PipelineMode } from "../domain/pipeline-types.js";
+import type { PipelineComplexity, PipelineMode } from "../domain/pipeline-types.js";
 
-export function parseMode(input: string): { mode: PipelineMode; normalizedRequest: string } {
+export interface ExplicitWorkflowClassification {
+  type: "Feature" | "Bug Fix" | "User Story" | "Audit" | "UX Simulation" | "Spec";
+  complexity: PipelineComplexity;
+  variant: string;
+}
+
+const directWorkflowCommands: Record<string, ExplicitWorkflowClassification> = {
+  "audit-light": { type: "Audit", complexity: "MEDIA", variant: "audit-light" },
+  "audit-heavy": { type: "Audit", complexity: "COMPLEXA", variant: "audit-heavy" },
+  "bugfix-light": { type: "Bug Fix", complexity: "MEDIA", variant: "bugfix-light" },
+  "bugfix-heavy": { type: "Bug Fix", complexity: "COMPLEXA", variant: "bugfix-heavy" },
+  "feature-light": { type: "Feature", complexity: "MEDIA", variant: "feature-light" },
+  "feature-heavy": { type: "Feature", complexity: "COMPLEXA", variant: "feature-heavy" },
+  "spec-light": { type: "Spec", complexity: "MEDIA", variant: "spec-light" },
+  "spec-heavy": { type: "Spec", complexity: "COMPLEXA", variant: "spec-heavy" },
+  "spec-audit-only": { type: "Spec", complexity: "MEDIA", variant: "spec-audit-only" },
+};
+
+const workflowCommandDefaults: Record<string, { light: string; heavy: string; defaultVariant: string }> = {
+  audit: { light: "audit-light", heavy: "audit-heavy", defaultVariant: "audit-heavy" },
+  bugfix: { light: "bugfix-light", heavy: "bugfix-heavy", defaultVariant: "bugfix-heavy" },
+  feature: { light: "feature-light", heavy: "feature-heavy", defaultVariant: "feature-light" },
+  spec: { light: "spec-light", heavy: "spec-heavy", defaultVariant: "spec-light" },
+};
+
+function consumeLeadingFlag(request: string) {
+  const trimmed = request.trimStart();
+  const match = trimmed.match(/^--([a-z-]+)(?:\s+|$)/u);
+  if (!match) {
+    return { flag: undefined, request: trimmed };
+  }
+
+  return {
+    flag: match[1],
+    request: trimmed.slice(match[0].length).trimStart(),
+  };
+}
+
+function parseDirectWorkflowCommand(input: string) {
+  const match = input.match(/^\/pipeline-orchestrator-for-codex:([a-z-]+)(?:\s+([\s\S]*))?$/u);
+  if (!match) {
+    return undefined;
+  }
+
+  const command = match[1];
+  const rawRequest = match[2] ?? "";
+
+  if (command === "review") {
+    return {
+      mode: "review-only" as const,
+      normalizedRequest: rawRequest.trimStart(),
+    };
+  }
+
+  const direct = directWorkflowCommands[command];
+  if (direct) {
+    return {
+      mode: "full" as const,
+      normalizedRequest: rawRequest.trimStart(),
+      explicitClassification: direct,
+    };
+  }
+
+  const workflowDefault = workflowCommandDefaults[command];
+  if (!workflowDefault) {
+    return undefined;
+  }
+
+  const { flag, request } = consumeLeadingFlag(rawRequest);
+  const variant = flag === "light"
+    ? workflowDefault.light
+    : flag === "heavy"
+      ? workflowDefault.heavy
+      : flag === "audit-only" && command === "spec"
+        ? "spec-audit-only"
+        : workflowDefault.defaultVariant;
+  const explicitClassification = directWorkflowCommands[variant];
+
+  return {
+    mode: "full" as const,
+    normalizedRequest: request,
+    explicitClassification,
+  };
+}
+
+export function parseMode(input: string): {
+  mode: PipelineMode;
+  normalizedRequest: string;
+  explicitClassification?: ExplicitWorkflowClassification;
+} {
   const trimmedInput = input.trim();
   const publicCommand = "/pipeline-orchestrator-for-codex:pipeline";
+  const directWorkflow = parseDirectWorkflowCommand(trimmedInput);
+  if (directWorkflow) {
+    return directWorkflow;
+  }
+
   const prefixes: Array<{ prefix: string; mode: PipelineMode }> = [
     { prefix: `${publicCommand} diagnostic `, mode: "diagnostic" },
     { prefix: `${publicCommand} continue`, mode: "continue" },

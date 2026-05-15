@@ -97,7 +97,7 @@ After 11 steps complete with `go_no_go: GO|CONDITIONAL` + `sweep_status: GREEN|Y
 - **Transactional consistency tests** — for each multi-step persistence path.
 - **FIX, REGRESSION, EDGE tests** — `test_files_created`.
 - **Post-fix E2E test artifacts** — checkpoints + E2E test where feasible.
-- **Audit trail** — `.pipeline/gate-decisions.jsonl` with AskUserQuestion answers from steps 4, 8, 10.
+- **Audit trail** — `.pipeline/gate-decisions.jsonl` with GATE_REQUEST answers from steps 4, 8, 10.
 - **Cold checkout proof** — sweep_status from step 11.
 - **PR description** — incorporates correction evidence, residual risks, observability hooks, rollback plan.
 

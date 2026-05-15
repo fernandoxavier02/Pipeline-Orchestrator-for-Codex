@@ -12,7 +12,7 @@ Absorver capacidades v4.8 (Hook Enforcement) e v4.9 (Spec Lifecycle) do orchestr
 - **Optional feature**: Onde o usuário selecionar `spec-light`, `spec-heavy` ou `spec-audit-only`, o sistema **deve** executar o fluxo correspondente mantendo os mesmos contratos de segurança.
 
 ## Critérios de aceite (ATDD)
-1. Dado runtime sem adapter de agente real, quando `/pipeline` exigir agentes reais, então deve falhar com `blocked-no-agent-runtime`.
+1. Dado runtime sem adapter de agente real, quando `/pipeline-orchestrator-for-codex:pipeline` exigir agentes reais, então deve falhar com `blocked-no-agent-runtime`.
 2. Dado frontmatter inválido, quando hook de dispatch rodar, então deve negar com evento JSONL e exit code de bloqueio.
 3. Dado fluxo `Spec`, quando artefato obrigatório faltar, então gate `SPEC_ARTIFACT_MISSING` deve bloquear.
 4. Dado batch concluído sem findings abertos, quando revisão adversarial rodar, então loop deve encerrar sem rerun adicional.

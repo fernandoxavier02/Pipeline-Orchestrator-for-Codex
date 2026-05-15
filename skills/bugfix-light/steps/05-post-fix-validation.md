@@ -15,7 +15,7 @@ expected_outputs:
   - promotion_commit_sha: string
 expected_next: 6
 gate_required: false
-allowed_tools: [Bash, Read, Grep]
+allowed_tools: [shell_command, shell_read]
 ---
 
 # Step 05 — Post-Fix Validation + RED→Regression Promotion — GAP CLOSED

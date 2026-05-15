@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { recordPostFinalValidatorCheckpoint } from "../../../src/validation/final-validator.js";
+import { runFinalValidator } from "../../../src/validation/final-validator.js";
 
 type SavedState = {
   pipelineActive: boolean;
@@ -105,5 +106,26 @@ describe("recordPostFinalValidatorCheckpoint", () => {
     });
     expect(broken.saves).toHaveLength(1);
     expect(broken.saves[0].completedPhases).toContain("phase-3");
+  });
+});
+
+describe("operational final validation", () => {
+  it("rejects harness/emulation evidence for operational runs", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.95,
+      gateLog: [],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "parallel-emulation final review" },
+      ],
+      validationIntent: "standard",
+      mode: "full",
+      dispatchMode: "parallel-emulation",
+    });
+
+    expect(result.decision).toBe("NO-GO");
+    expect(result.missingEvidence).toContain("real-agent-dispatch");
   });
 });

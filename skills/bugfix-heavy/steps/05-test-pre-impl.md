@@ -18,7 +18,7 @@ expected_outputs:
   - regression_green_status_confirmed: boolean
 expected_next: 6
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Write, Bash]
+allowed_tools: [shell_read, apply_patch, shell_command]
 ---
 
 # Step 05 — Test Pre-Implementation (TDD before fix)

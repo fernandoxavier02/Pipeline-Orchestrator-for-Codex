@@ -1,7 +1,7 @@
 ---
 name: spec-design
 description: Generate comprehensive technical design translating requirements (WHAT) into architecture (HOW) with discovery process. Use when creating architecture from requirements.
-allowed-tools: Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, Agent
+allowed-tools: spawn_agent
 argument-hint: <feature-name> [-y]
 metadata:
   shared-rules: "design-principles.md, design-discovery-full.md, design-discovery-light.md, design-synthesis.md, design-review-gate.md"
@@ -84,7 +84,7 @@ Otherwise, load all necessary context:
 
 #### Parallel Research (subagent dispatch)
 
-The following research areas are independent and can be dispatched as **subagents** via the Agent tool. The agent should decide the optimal decomposition based on feature complexity — split, merge, add, or skip subagents as needed. Each subagent returns a **findings summary** (not raw data) to keep the main context clean for synthesis.
+The following research areas are independent and can be dispatched as **subagents** via Codex `spawn_agent`. The parent should decide the optimal decomposition based on feature complexity — split, merge, add, or skip subagents as needed. Each subagent message must start with `PIPELINE_AGENT_FQN: <canonical-fqn>`, and each subagent returns a **findings summary** (not raw data) to keep the main context clean for synthesis.
 
 **Typical research areas** (adjust as appropriate):
 - **Codebase analysis**: Existing architecture patterns, integration points, code conventions (using Grep/Glob)

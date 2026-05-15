@@ -15,7 +15,7 @@ expected_outputs:
   - property_tests_plan: list
 expected_next: 5
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Heavy) - Dominio e regras de negocio (aplicabilidade explicita)

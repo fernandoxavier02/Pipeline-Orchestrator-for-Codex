@@ -21,6 +21,6 @@ Accepted user responses:
 - `adjust`, `ajustar`: ask one short clarification question and rebuild the method gate.
 - `no`, `nao`, `não`, `cancel`: stop before execution.
 
-For `/pipeline`, this gate must happen before Phase 0 agent dispatch. The task-orchestrator may later refine classification, but if the refined workflow differs from this approved method, the parent must surface the change and ask again before execution.
+For `/pipeline-orchestrator-for-codex:pipeline`, this gate must happen before Phase 0 agent dispatch. The task-orchestrator may later refine classification, but if the refined workflow differs from this approved method, the parent must surface the change and ask again before execution.
 
 `continue` is the only narrow exception: it may resume an already approved workflow, but it must still state the resumed workflow and stop if the existing session has no approval proof.

@@ -15,7 +15,7 @@ expected_outputs:
 expected_next: 5
 gate_required: true
 gate_name: "post-impl-validation"
-allowed_tools: [Read, Grep, Glob, Bash]
+allowed_tools: [shell_read, shell_command]
 ---
 
 # Spec Lifecycle (Light) — Step 04: Post-Impl Validation (6-axis congruence)
@@ -144,9 +144,9 @@ Score eixo: XX/100
 
 ---
 
-## Gate (AskUserQuestion mandatorio)
+## Gate (GATE_REQUEST mandatorio)
 
-Apos emitir o report, abrir AskUserQuestion com header `Post-Impl` e opcoes:
+Apos emitir o report, abrir GATE_REQUEST com header `Post-Impl` e opcoes:
 - **Aprovar (Recomendado se PASS)** — prosseguir para step 05 (dashboard).
 - **Aprovar com warnings (PASS_WITH_WARNINGS)** — prosseguir; warnings registrados no closure-report.
 - **Remediar e re-rodar** — voltar ao step 03 com lista de remediacao.

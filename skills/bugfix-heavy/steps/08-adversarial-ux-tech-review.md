@@ -18,7 +18,7 @@ expected_outputs:
   - askuserquestion_response: string
 expected_next: 9
 gate_required: true
-allowed_tools: [Task, Read, Grep, Glob, AskUserQuestion]
+allowed_tools: [spawn_agent, shell_read, GATE_REQUEST]
 ---
 
 # Step 08 — Adversarial UX+Tech Review (3 parallel subagents) — GAP CLOSED
@@ -29,14 +29,14 @@ Try to "break" the fix mentally from three independent expert angles in parallel
 
 ## Why subagent (parallel x3)
 
-Three specialized subagents read the diff and surrounding code from independent adversarial perspectives. They run in PARALLEL: a single message containing three Task tool calls, one per agent. Latency = max(individual), not sum.
+Three specialized subagents read the diff and surrounding code from independent adversarial perspectives. They run in PARALLEL: one parent turn containing three `spawn_agent` dispatches, one per agent. Latency = max(individual), not sum.
 
-Parallel spawn pattern (single message, three Task calls):
+Parallel spawn pattern (single message, three spawn_agent calls):
 
 ```
-Task → pipeline-orchestrator-for-codex:executor:type-specific:adversarial-security-scanner
-Task → pipeline-orchestrator-for-codex:executor:type-specific:adversarial-architecture-critic
-Task → pipeline-orchestrator-for-codex:executor:type-specific:adversarial-quality-reviewer
+spawn_agent -> pipeline-orchestrator-for-codex:executor:type-specific:adversarial-security-scanner
+spawn_agent -> pipeline-orchestrator-for-codex:executor:type-specific:adversarial-architecture-critic
+spawn_agent -> pipeline-orchestrator-for-codex:executor:type-specific:adversarial-quality-reviewer
 ```
 
 Each receives the fix_diff + context from steps 6–7 and reports back independent findings.
@@ -90,9 +90,9 @@ Each agent returns a list of findings classified as:
 
 Consolidate into a single ranked list (`consolidated_blockers` covers BLOCKER + MAJOR).
 
-### 8.3 AskUserQuestion gate (mandatory — no prose substitute)
+### 8.3 GATE_REQUEST gate (mandatory — no prose substitute)
 
-Per global rule, invoke AskUserQuestion. Use this shape:
+Per global rule, invoke GATE_REQUEST. Use this shape:
 
 ```
 header: "Adversarial"
@@ -107,7 +107,7 @@ options:
     description: "Findings revelam que a proposta de step 4 esta errada; abortar este skill e replanejar."
 ```
 
-The AskUserQuestion tool automatically appends "Other" — do NOT add manually.
+The GATE_REQUEST tool automatically appends "Other" — do NOT add manually.
 
 ### 8.4 Record decision
 
@@ -125,7 +125,7 @@ The AskUserQuestion tool automatically appends "Other" — do NOT add manually.
 
 - Three adversaries spawned in parallel; all returned.
 - Findings consolidated and classified.
-- AskUserQuestion invoked (not substituted).
+- GATE_REQUEST invoked (not substituted).
 - Decision recorded and audit-logged.
 
 ## Outputs (handoff to step 9 OR loop/exit)

@@ -1,7 +1,7 @@
 ---
 name: review
 description: Review a task implementation against approved specs, task boundaries, and verification evidence. Use after an implementer finishes a task, after remediation, or before accepting a task as complete.
-allowed-tools: Read, Bash, Grep, Glob
+allowed-tools: spawn_agent
 argument-hint: <task-id>
 disable-model-invocation: true
 gates_at: [phase-1]
@@ -25,6 +25,11 @@ If the user switches workflow, rebuild the gate and ask again. If the gate canno
 ## NEXT_STEP Contract
 
 When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
+
+## Codex Parent Protocol Contract
+
+Codex does not execute Claude-only task or question primitives as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
 
 ## Overview
 

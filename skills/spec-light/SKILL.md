@@ -6,12 +6,12 @@ description: |
   content-review phase, focusing instead on a 25-check Format Gate, ATDD seed, TDD
   implementation with adversarial loop, 6-axis post-impl congruence, simplified confidence
   dashboard, and formal closure). Sequence is locked (1→6, no skip, no reorder). 4 mandatory
-  AskUserQuestion gates at steps 1 (format-gate-approval), 2 (tdd-scenarios-approval),
+  GATE_REQUEST gates at steps 1 (format-gate-approval), 2 (tdd-scenarios-approval),
   3 (adversarial-loop-checkpoint), 4 (post-impl-validation). 3 reused executor agents:
   spec-format-gate (1), spec-post-impl-validator (4), spec-closer (6); step 2 and 5 inline.
   Manual-only invocation via /pipeline-orchestrator-for-codex:spec-light.
 disable-model-invocation: true
-allowed-tools: [Task, Read, Grep, Glob, AskUserQuestion, Edit, Write, Bash]
+allowed-tools: spawn_agent
 argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"
 sequence: [1, 2, 3, 4, 5, 6]
 sequence_lock: true
@@ -37,6 +37,11 @@ If the user switches workflow, rebuild the gate and ask again. If the gate canno
 ## NEXT_STEP Contract
 
 When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
+
+## Codex Parent Protocol Contract
+
+Codex does not execute Claude `Task` or direct `GATE_REQUEST` calls as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
 
 6 prescriptive steps for the Spec Lifecycle in Light mode. Each step file declares its execution contract (sequence, ownership, gates) via frontmatter consumed by the orchestrator. Project-neutral wording — designed to work in any codebase that follows the spec layout under `pipeline-runs/<run_id>/01-spec/`.
 
@@ -68,7 +73,7 @@ Se durante a analise surgirem indicios de domain/contratos complexos, integracoe
 | 05 | inline | — (orchestrator inline, scoring math) |
 | 06 | subagent | `pipeline-orchestrator-for-codex:executor:spec-closer` |
 
-## Gates (4 mandatory AskUserQuestion checkpoints)
+## Gates (4 mandatory GATE_REQUEST checkpoints)
 
 | Step | gate_name | What the user approves |
 |---|---|---|
@@ -77,7 +82,7 @@ Se durante a analise surgirem indicios de domain/contratos complexos, integracoe
 | 3 | `adversarial-loop-checkpoint` | Adversarial loop verdict (continue / escalate / accept-warnings / abort) — escalation prompt every 3 attempts |
 | 4 | `post-impl-validation` | Post-impl decision (PASS / PASS_WITH_WARNINGS / FAIL) and remediation plan |
 
-`AskUserQuestion` is non-negotiable at these gates — prose substitution is forbidden by the global rule "Decisoes do Usuario — AskUserQuestion sempre".
+`GATE_REQUEST` is non-negotiable at these gates — prose substitution is forbidden by the global rule "Decisoes do Usuario — GATE_REQUEST sempre".
 
 ## Sentinel checkpoints
 
@@ -101,7 +106,7 @@ The 8 enforcement rules inherited from v4.7.0+ contract apply:
 2. Execution-mode lock per step.
 3. Agent-type whitelist when `execution_mode: subagent`.
 4. Output schema verified before next step proceeds.
-5. AskUserQuestion mandatory at the 4 gates.
+5. GATE_REQUEST mandatory at the 4 gates.
 6. STOP RULE: 2 consecutive failures halt the pipeline (`stop_rule_max_failures: 2`).
 7. Audit log append-only to `.pipeline/gate-decisions.jsonl`.
 8. Sentinel checkpoints (`pre_1`, `pre_3`, `pre_6`).

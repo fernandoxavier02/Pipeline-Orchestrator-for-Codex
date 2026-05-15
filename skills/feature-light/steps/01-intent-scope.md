@@ -14,7 +14,7 @@ expected_outputs:
   - applicability_assessment: object
 expected_next: 2
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Light) - Intencao, valor e limites de escopo

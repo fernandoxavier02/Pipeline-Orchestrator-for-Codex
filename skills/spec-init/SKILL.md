@@ -1,7 +1,7 @@
 ---
 name: spec-init
 description: Initialize a new specification with detailed project description
-allowed-tools: Bash, Read, Write, Glob, AskUserQuestion
+allowed-tools: spawn_agent
 argument-hint: <project-description>
 disable-model-invocation: true
 gates_at: [phase-1]

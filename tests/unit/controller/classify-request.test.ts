@@ -14,7 +14,7 @@ describe("classifyRequest", () => {
     const cases = [
       { input: "fix checkout timeout", variant: "bugfix-heavy" as const },
       { input: "audit auth flow", variant: "audit-heavy" as const },
-      { input: "build new dashboard", variant: "implement-light" as const },
+      { input: "build new dashboard", variant: "feature-light" as const },
       { input: "story for onboarding flow", variant: "user-story-heavy" as const },
     ];
 

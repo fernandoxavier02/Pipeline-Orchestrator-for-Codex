@@ -5,14 +5,14 @@ description: |
   scope, controlled risk, prefer speed with discipline). Imported from Pulsar
   Implement_new_feature/Ligth/ — every step file mirrors the canonical Pulsar prompt 1:1
   while declaring an execution contract (execution_mode, agent_type, expected_*, gate_required)
-  via frontmatter. Sequence is locked (1→13, no skip, no reorder). 4 mandatory AskUserQuestion
+  via frontmatter. Sequence is locked (1→13, no skip, no reorder). 4 mandatory GATE_REQUEST
   gates at steps 3 (acceptance-matrix-approval), 7 (architecture-choice), 9 (plan-approval),
   10 (tdd-tests-approval). 5 reused executor agents: feature-vertical-slice-planner (3 spawns
   at 3, 7, 9), pre-tester (10), feature-implementer (11), feature-integration-validator (12).
   Manual-only invocation via /pipeline-orchestrator-for-codex:feature-light or via
   /pipeline-orchestrator-for-codex:feature --light.
 disable-model-invocation: true
-allowed-tools: [Task, Read, Grep, Glob, AskUserQuestion, Edit, Write, Bash]
+allowed-tools: spawn_agent
 argument-hint: "[feature description with user story + DoD]"
 sequence: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 sequence_lock: true
@@ -38,6 +38,11 @@ If the user switches workflow, rebuild the gate and ask again. If the gate canno
 ## NEXT_STEP Contract
 
 When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
+
+## Codex Parent Protocol Contract
+
+Codex does not execute Claude `Task` or direct `GATE_REQUEST` calls as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
 
 13 passos canônicos espelhando 1:1 a fonte Pulsar `D:\Projeto Pulsar\.claude\commands\Prompts\Implement_new_feature\Ligth\`. Each step file's prompt body is verbatim from Pulsar; the frontmatter adds the execution contract (sequence, ownership, gates) consumed by the orchestrator.
 
@@ -71,7 +76,7 @@ Use **feature-light** quando a feature/melhoria é pequena a média, com risco c
 | 11 | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:feature-implementer` |
 | 12 | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:feature-integration-validator` |
 
-## Gates (4 mandatory AskUserQuestion checkpoints)
+## Gates (4 mandatory GATE_REQUEST checkpoints)
 
 | Step | gate_name | What the user approves |
 |---|---|---|
@@ -80,7 +85,7 @@ Use **feature-light** quando a feature/melhoria é pequena a média, com risco c
 | 9 | `plan-approval` | Implementation plan (increments + ordering) before TDD |
 | 10 | `tdd-tests-approval` | Test files (RED state confirmed) before code execution |
 
-`AskUserQuestion` is non-negotiable at these gates — prose substitution is forbidden by the global rule "Decisoes do Usuario — AskUserQuestion sempre".
+`GATE_REQUEST` is non-negotiable at these gates — prose substitution is forbidden by the global rule "Decisoes do Usuario — GATE_REQUEST sempre".
 
 ## Sentinel checkpoints
 
@@ -96,7 +101,7 @@ The 8 enforcement rules inherited from Slice 1.5 (§21.3) apply:
 2. Execution-mode lock per step.
 3. Agent-type whitelist when `execution_mode: subagent`.
 4. Output schema verified before next step proceeds.
-5. AskUserQuestion mandatory at the 4 gates.
+5. GATE_REQUEST mandatory at the 4 gates.
 6. STOP RULE: 2 consecutive failures halt the pipeline (`stop_rule_max_failures: 2`).
 7. Audit log append-only to `.pipeline/gate-decisions.jsonl`.
 8. Sentinel checkpoints (`pre_3`, `pre_10`, `pre_13`).

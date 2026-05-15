@@ -13,7 +13,7 @@ expected_outputs:
 expected_next: 3
 gate_required: true
 gate_name: "content-review-approval"
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 <!--
@@ -160,9 +160,9 @@ Step 03 (TDD Scenarios) se GO ou GO-WARN; STOP se NO-GO ate correcoes serem apli
 
 ---
 
-## Gate (AskUserQuestion mandatorio)
+## Gate (GATE_REQUEST mandatorio)
 
-Apos emitir o report, abrir AskUserQuestion com header `Content` e opcoes:
+Apos emitir o report, abrir GATE_REQUEST com header `Content` e opcoes:
 - **Aprovar (Recomendado se GO)** — prosseguir para step 03 (TDD scenarios).
 - **Aprovar com warnings (GO-WARN)** — seguir; correcoes recomendadas registradas no closure-report.
 - **Corrigir spec (NO-GO)** — pausar pipeline ate as correcoes [BLOCKER] serem aplicadas.

@@ -10,7 +10,7 @@ describe("full mode distinction", () => {
         expect(result.mode).toBe("full");
         expect(result.type).toBe("Feature");
         expect(result.complexity).toBe("MEDIA");
-        expect(result.variant).toBe("implement-light");
+        expect(result.variant).toBe("feature-light");
         expect(result.proposal.planModeStatus).toBe("skipped");
         expect(result.proposal.designReviewStatus).toBe("skipped");
     });

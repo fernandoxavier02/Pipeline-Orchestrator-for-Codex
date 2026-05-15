@@ -47,7 +47,7 @@ export function renderPlanModeRequestBlock(request) {
     return lines.join("\n");
 }
 export function createImplementationPlan(input) {
-    const variant = input.variant ?? "implement-light";
+    const variant = input.variant ?? "feature-light";
     return {
         kind: "IMPLEMENTATION_PLAN",
         status: input.status,

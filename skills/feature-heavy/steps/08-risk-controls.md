@@ -15,7 +15,7 @@ expected_outputs:
   - atomicity_strategy: object
 expected_next: 9
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Heavy) - Riscos e controles: idempotencia/atomicidade/concorrrencia (se aplicavel)

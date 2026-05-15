@@ -19,7 +19,7 @@ expected_outputs:
   - high_risk_migrations: list
 expected_next: 6
 gate_required: false
-allowed_tools: [Task, Read, Grep, Glob, Bash]
+allowed_tools: [spawn_agent, shell_read, shell_command]
 ---
 
 # Step 05 — Data + Migrations + Integrity + Security

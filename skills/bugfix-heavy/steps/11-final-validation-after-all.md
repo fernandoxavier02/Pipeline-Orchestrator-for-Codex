@@ -19,7 +19,7 @@ expected_outputs:
   - sweep_notes: list
 expected_next: null
 gate_required: false
-allowed_tools: [Bash, Read, Grep, Glob]
+allowed_tools: [shell_command, shell_read]
 ---
 
 # Step 11 — Final Validation After-All (POST-DECISION SANITY SWEEP) — GAP CLOSED
@@ -34,7 +34,7 @@ A post-decision sanity sweep run **after** step 10's GO/NO-GO decision. This ste
 |--------|---------------------|---------------------------|
 | Nature | Subjective synthesis | Mechanical verification |
 | Output | Decision (GO / CONDITIONAL / NO-GO) | Status (GREEN / YELLOW / RED) |
-| Gate | Yes (AskUserQuestion) | No (read-only assertion) |
+| Gate | Yes (GATE_REQUEST) | No (read-only assertion) |
 | When | Before close-out | After-all (post-decision) |
 | Risk model | Residual risks accepted | Discovers latent risks (after-all) |
 | Failure handling | NO-GO loops back to earlier step | RED triggers caller-level decision |

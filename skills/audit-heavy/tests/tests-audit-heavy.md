@@ -13,8 +13,8 @@ These guidelines are adapted from `D:\Projeto Pulsar\.claude\commands\Prompts\Au
 | Frontmatter contract | Each `steps/0X-*.md` declares `step_number`, `execution_mode`, `agent_type`, `expected_inputs`, `expected_outputs`, `expected_next`, `gate_required`, `production_writes_allowed: false`. | Static parser walks all 9 step files. Hooks `dispatch-guard` + `sentinel-hook` enforce at runtime. |
 | Sequence lock | Steps execute strictly 1→2→3→4→5→6→7→8→9. No skip, no reorder. | Golden run on a fixture repo. Audit log `.pipeline/gate-decisions.jsonl` shows linear step transitions. |
 | Iron Law (read-only) | No `Edit` / `Write` tool call originates from any audit-* agent or step body. | `edit-guard-hook.cjs` blocks. Test asserts hook fires when an audit step accidentally tries to write. |
-| Gate at step 1 (scope approval) | `AskUserQuestion` is invoked exactly once with `header: "Escopo"` and 3 options before step 2 runs. | Golden run captures hook events; `gate-decisions.jsonl` has 1 entry tagged `pre_2`. |
-| Gate at step 9 (Pa de Cal) | `AskUserQuestion` is invoked exactly once with `header: "GO/NO-GO"` and 3 options at the terminal step. | Golden run; `gate-decisions.jsonl` has the GO/CONDITIONAL/NO-GO entry. |
+| Gate at step 1 (scope approval) | `GATE_REQUEST` is invoked exactly once with `header: "Escopo"` and 3 options before step 2 runs. | Golden run captures hook events; `gate-decisions.jsonl` has 1 entry tagged `pre_2`. |
+| Gate at step 9 (Pa de Cal) | `GATE_REQUEST` is invoked exactly once with `header: "GO/NO-GO"` and 3 options at the terminal step. | Golden run; `gate-decisions.jsonl` has the GO/CONDITIONAL/NO-GO entry. |
 | Sentinel checkpoints | Sentinel state validates before steps 1, 5, 9 (`pre_1`, `pre_5`, `pre_9`). | `sentinel-hook` records validation events; test asserts 3 events per run. |
 | STOP RULE | 2 consecutive failures (e.g., agent timeout, missing input field) halt the pipeline. | Inject failure into a fixture; expect halt + audit log entry tagged `stop_rule_triggered`. |
 | Output schema | Each step's `expected_outputs` keys exist and are well-typed. The next step verifies inputs match. | Schema check on the JSON deliverable per step. |
@@ -96,6 +96,6 @@ Things this workflow MUST NOT do (and tests must catch):
 
 - Modify any production file — `edit-guard-hook` rejects.
 - Skip a step or reorder — `sequence_lock: true` enforced.
-- Substitute AskUserQuestion with prose — `gate_required: true` step that completes without a recorded `askuserquestion_response` triggers a failed assertion.
+- Substitute GATE_REQUEST with prose — `gate_required: true` step that completes without a recorded `askuserquestion_response` triggers a failed assertion.
 - Promote `[HYPOTHESIS]` to `[VERIFIED]` without new evidence — diff between step 8 outputs and step 9 risk matrix surfaces any silent promotion.
 - Recommend a code-change as if it were the audit's deliverable — recommendations are advisory; remediation requires a downstream Bug Fix / Feature pipeline.

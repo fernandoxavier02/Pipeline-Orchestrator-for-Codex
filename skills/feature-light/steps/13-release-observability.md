@@ -14,7 +14,7 @@ expected_outputs:
   - rollback_plan: object
 expected_next: "complete"
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Bash]
+allowed_tools: [shell_read, shell_command]
 ---
 
 # Feature Pipeline (Light) - Prontidao de release, observabilidade e rollback

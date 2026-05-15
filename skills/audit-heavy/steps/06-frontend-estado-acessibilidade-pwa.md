@@ -19,7 +19,7 @@ expected_outputs:
   - ui_regression_controls_recommended: list
 expected_next: 7
 gate_required: false
-allowed_tools: [Task, Read, Grep, Glob, Bash]
+allowed_tools: [spawn_agent, shell_read, shell_command]
 ---
 
 # Step 06 — Frontend + State + Accessibility + PWA

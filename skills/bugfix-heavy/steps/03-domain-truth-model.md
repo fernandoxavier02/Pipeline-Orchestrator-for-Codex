@@ -17,7 +17,7 @@ expected_outputs:
   - transactional_consistency_tests: list
 expected_next: 4
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Step 03 — Domain Truth Model + Source of Truth + Invariants — GAP CLOSED (NET-NEW)
@@ -95,7 +95,7 @@ These tests, combined with the property tests, form the invariant-protection har
 
 ### 3.8 Ambiguities surfaced to the user
 
-If during 3.1–3.5 you found ambiguities (rules with multiple valid interpretations, sources of truth that are unclear, invariants that conflict with current behavior), list them explicitly. They will be included in the AskUserQuestion prompt at step 4.
+If during 3.1–3.5 you found ambiguities (rules with multiple valid interpretations, sources of truth that are unclear, invariants that conflict with current behavior), list them explicitly. They will be included in the GATE_REQUEST prompt at step 4.
 
 ## Done criteria
 

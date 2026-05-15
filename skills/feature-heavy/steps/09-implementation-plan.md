@@ -17,7 +17,7 @@ expected_outputs:
 expected_next: 10
 gate_required: true
 gate_name: "plan-approval"
-allowed_tools: [Read, Grep, Glob, AskUserQuestion]
+allowed_tools: [shell_read, GATE_REQUEST]
 ---
 
 # Feature Pipeline (Heavy) - Plano de implementacao em incrementos

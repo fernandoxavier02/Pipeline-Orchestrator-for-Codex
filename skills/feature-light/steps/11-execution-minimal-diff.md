@@ -14,7 +14,7 @@ expected_outputs:
   - green_status: object
 expected_next: 12
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Edit, Bash]
+allowed_tools: [shell_read, apply_patch, shell_command]
 ---
 
 # Feature Pipeline (Light) - Execucao disciplinada (mudanca minima / preservar estilo)

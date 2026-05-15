@@ -14,7 +14,7 @@ expected_outputs:
   - divergence_risks: list
 expected_next: 6
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Heavy) - Fonte da verdade e modelo de estado

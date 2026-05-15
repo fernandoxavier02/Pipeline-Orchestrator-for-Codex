@@ -19,7 +19,7 @@ expected_outputs:
   - post_fix_e2e_status: "PASS | FAIL | PARTIAL"
 expected_next: 10
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Bash]
+allowed_tools: [shell_read, shell_command]
 ---
 
 # Step 09 — UX User Journey End-to-End (POST-FIX) — GAP CLOSED

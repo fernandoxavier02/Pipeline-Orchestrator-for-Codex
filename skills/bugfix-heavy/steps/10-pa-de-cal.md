@@ -17,7 +17,7 @@ expected_outputs:
   - askuserquestion_response: string
 expected_next: 11
 gate_required: true
-allowed_tools: [AskUserQuestion, Read, Grep, Bash]
+allowed_tools: [GATE_REQUEST, shell_read, shell_command]
 ---
 
 # Step 10 — Pá de Cal (Final GO / CONDITIONAL / NO-GO Gate)
@@ -108,9 +108,9 @@ For each item: declare status + evidence + action-if-fail.
 
 For each: PASS / FAIL + evidence.
 
-### 10.4 AskUserQuestion gate (mandatory — no prose substitute)
+### 10.4 GATE_REQUEST gate (mandatory — no prose substitute)
 
-Per global rule, invoke AskUserQuestion. This gate has 3 outcomes (GO/CONDITIONAL/NO-GO):
+Per global rule, invoke GATE_REQUEST. This gate has 3 outcomes (GO/CONDITIONAL/NO-GO):
 
 ```
 header: "GO/NO-GO"
@@ -145,7 +145,7 @@ Any item left INCONCLUSIVE → declare which evidence is missing and how to get 
 
 - 9-section checklist completed with PASS/FAIL/INCONCLUSIVE + evidence per item.
 - Minimum non-negotiable scenarios declared with evidence.
-- AskUserQuestion invoked (not substituted with prose).
+- GATE_REQUEST invoked (not substituted with prose).
 - Final decision recorded in rigid format with reasons + blockers/residual risks + rollback plan.
 
 ## Outputs (handoff to step 11)

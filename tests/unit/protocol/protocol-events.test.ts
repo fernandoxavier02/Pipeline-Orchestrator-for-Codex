@@ -7,7 +7,10 @@ import {
   parseProtocolBlocks,
   protocolEventSchema,
 } from "../../../src/protocol/protocol-events.js";
-import { recordProtocolGateResponse } from "../../../src/protocol/protocol-handler.js";
+import {
+  processProtocolBlocksForParent,
+  recordProtocolGateResponse,
+} from "../../../src/protocol/protocol-handler.js";
 
 describe("v5.2 protocol event contract", () => {
   it("parses GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST blocks", () => {
@@ -79,6 +82,69 @@ source: pipeline-controller
     });
   });
 
+  it("rejects GATE_REQUEST blocks with fewer than two options", () => {
+    expect(() => parseProtocolBlocks(`
+=== GATE_REQUEST v1 ===
+gate_id: brainstorm-explore-q1
+question: What decision is missing?
+header: Decide
+options:
+  - label: Continue
+    description: Continue with the inferred direction.
+    recommended: true
+source: brainstorm-controller
+=== END GATE_REQUEST ===
+`)).toThrow(/at least two meaningful options/i);
+  });
+
+  it("rejects GATE_REQUEST options without trade-off descriptions", () => {
+    expect(() => parseProtocolBlocks(`
+=== GATE_REQUEST v1 ===
+gate_id: brainstorm-explore-q1
+question: What decision is missing?
+header: Decide
+options:
+  - Continue
+  - Stop
+source: brainstorm-controller
+=== END GATE_REQUEST ===
+`)).toThrow(/Expected object/i);
+
+    expect(() => parseProtocolBlocks(`
+=== GATE_REQUEST v1 ===
+gate_id: brainstorm-explore-q2
+question: Which scope should we use?
+header: Scope
+options:
+  - label: Narrow
+    description: ""
+    recommended: true
+  - label: Broad
+    description: Include adjacent decisions now.
+    recommended: false
+source: brainstorm-controller
+=== END GATE_REQUEST ===
+`)).toThrow(/non-empty trade-off description/i);
+  });
+
+  it("rejects GATE_REQUEST blocks with multiple recommended options", () => {
+    expect(() => parseProtocolBlocks(`
+=== GATE_REQUEST v1 ===
+gate_id: brainstorm-explore-q3
+question: Which scope should we use?
+header: Scope
+options:
+  - label: Narrow
+    description: Keep the first version small.
+    recommended: true
+  - label: Broad
+    description: Include adjacent decisions now.
+    recommended: true
+source: brainstorm-controller
+=== END GATE_REQUEST ===
+`)).toThrow(/at most one option as recommended/i);
+  });
+
   it("persists protocol-events.jsonl separately from gate-decisions.jsonl", async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-protocol-events-"));
     const log = createProtocolEventLog(root);
@@ -118,5 +184,87 @@ source: pipeline-controller
     expect(gateRaw).toContain("\"gate\":\"CLOSEOUT_CONFIRM\"");
     expect(gateRaw).toContain("\"decision\":\"pass\"");
     expect(gateRaw).toContain("gate_id=phase-3-closeout");
+  });
+
+  it("parent handler dispatches agents, answers gates, fulfills plan requests, and logs actions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pipeline-protocol-parent-"));
+    const blocks = parseProtocolBlocks(`=== DISPATCH_REQUEST v1 ===
+dispatch_id: dispatch-1
+target_kind: agent
+target_name: pipeline-orchestrator-for-codex:core:information-gate
+description: Ask one question
+prompt: Ask one question at a time.
+phase: phase-0
+=== END DISPATCH_REQUEST ===
+
+=== GATE_REQUEST v1 ===
+gate_id: phase-2-adversarial-batch-1
+question: Continue?
+header: Review
+options:
+  - label: Continue
+    description: Continue after review.
+    recommended: true
+  - label: Block
+    description: Stop for fixes.
+    recommended: false
+=== END GATE_REQUEST ===
+
+=== PLAN_MODE_REQUEST v1 ===
+plan_id: plan-1
+research_scope: Inspect affected files.
+expected_deliverables:
+  - Implementation plan
+=== END PLAN_MODE_REQUEST ===`);
+
+    const result = await processProtocolBlocksForParent({
+      stateRoot: root,
+      blocks,
+      adapters: {
+        async dispatchAgent(request) {
+          return {
+            targetName: request.targetName,
+            output: "INFORMATION_GATE\nSTATUS: passed",
+          };
+        },
+        async answerGate(request) {
+          return {
+            gateId: request.gateId,
+            selectedLabel: request.options[0].label,
+            selectedIndex: 0,
+          };
+        },
+        async fulfillPlanMode(request) {
+          return {
+            planId: request.planId,
+            output: `Plan for ${request.researchScope}`,
+          };
+        },
+      },
+    });
+
+    expect(result.dispatchResults).toEqual([
+      expect.objectContaining({
+        dispatchId: "dispatch-1",
+        targetName: "pipeline-orchestrator-for-codex:core:information-gate",
+      }),
+    ]);
+    expect(result.gateResponses).toEqual([
+      expect.objectContaining({
+        gateId: "phase-2-adversarial-batch-1",
+        selectedLabel: "Continue",
+      }),
+    ]);
+    expect(result.planModeResults).toEqual([
+      expect.objectContaining({
+        planId: "plan-1",
+        output: "Plan for Inspect affected files.",
+      }),
+    ]);
+
+    const rawEvents = await readFile(join(root, "protocol-events.jsonl"), "utf8");
+    expect(rawEvents).toContain("\"status\":\"dispatched\"");
+    expect(rawEvents).toContain("\"status\":\"completed\"");
+    expect(rawEvents).toContain("\"status\":\"answered\"");
   });
 });

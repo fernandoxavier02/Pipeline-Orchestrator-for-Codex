@@ -330,9 +330,9 @@ async function executeApprovedContinuation(input: {
       mode: input.session.mode ?? input.mode,
       complexity: resolveExecutionComplexity({
         mode: input.session.mode ?? input.mode,
-        variant: input.session.variant ?? input.session.proposal?.variant ?? "implement-light",
+        variant: input.session.variant ?? input.session.proposal?.variant ?? "feature-light",
       }),
-      variant: input.session.variant ?? input.session.proposal?.variant ?? "implement-light",
+      variant: input.session.variant ?? input.session.proposal?.variant ?? "feature-light",
       proposal,
       tasks: input.session.proposal?.affectedFiles ?? input.session.touchedFiles ?? [],
       approvedScenarios: authoritativeExecutionProof.approvedScenarios,
@@ -558,7 +558,7 @@ function resolveSpecIdFromSession(session: PipelineSessionState) {
 }
 
 function requiresSpecArtifacts(variant: string) {
-  return isSpecLifecycleVariant(variant) || (variant.endsWith("-heavy") && variant !== "audit-heavy");
+  return isSpecLifecycleVariant(variant);
 }
 
 function evaluateSpecPhaseGate(input: {
@@ -1113,7 +1113,7 @@ export function createPipelineController(runtime?: {
       }
       const trimmedInput = input.trim();
       const normalizedResponse = trimmedInput.toLowerCase();
-      const { mode, normalizedRequest } = parseMode(input);
+      const { mode, normalizedRequest, explicitClassification } = parseMode(input);
       const stateRoot = getStateRoot(runtime);
       const workflowSwitchClassification = resolveWorkflowSwitch({
         response: normalizedResponse,
@@ -1573,7 +1573,7 @@ export function createPipelineController(runtime?: {
       }
 
       const referenceIndex = await runtime?.referenceIndex?.();
-      const baseClassification = classifyRequest(normalizedRequest, referenceIndex);
+      const baseClassification = explicitClassification ?? classifyRequest(normalizedRequest, referenceIndex);
       const classificationResult = applyClassificationOverrides(mode, baseClassification, referenceIndex);
       const infoGate = runInformationGate({
         request: normalizedRequest,
@@ -1692,6 +1692,8 @@ export function createPipelineController(runtime?: {
               status: "blocked",
               hardness: "HARD",
               reason: detail,
+              specPath: specArtifactGate.specPath,
+              missingArtifacts: specArtifactGate.missingArtifacts,
             },
           ],
           missingArtifacts: specArtifactGate.missingArtifacts,

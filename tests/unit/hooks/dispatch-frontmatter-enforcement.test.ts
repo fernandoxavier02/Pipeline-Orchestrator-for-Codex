@@ -187,6 +187,84 @@ describe("dispatch-guard frontmatter enforcement", () => {
     }
   });
 
+  it("resolves trusted skill frontmatter from CODEX_PLUGIN_ROOT before Claude fallback", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    const codexPluginRoot = mkdtempSync(join(tmpdir(), "pipeline-codex-root-"));
+    const claudePluginRoot = mkdtempSync(join(tmpdir(), "pipeline-claude-root-"));
+    try {
+      writeTrustedSkill(codexPluginRoot, "pipeline", [
+        "agent_type: worker",
+        "gates_at: [phase-0]",
+        "sentinel_checkpoints: [post_orchestrator]",
+      ].join("\n"));
+      writeTrustedSkill(claudePluginRoot, "pipeline", [
+        "agent_type: root",
+        "gates_at: [not-a-phase]",
+        "sentinel_checkpoints: [skip-everything]",
+      ].join("\n"));
+
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "pipeline",
+        },
+      }, {
+        CODEX_PLUGIN_ROOT: codexPluginRoot,
+        CLAUDE_PLUGIN_ROOT: claudePluginRoot,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(codexPluginRoot, { recursive: true, force: true });
+      rmSync(claudePluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("validates Codex spawn_agent payloads instead of only Claude subagent_type payloads", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      const result = runHook(cwd, {
+        tool_name: "spawn_agent",
+        tool_input: {
+          agent_type: "worker",
+          message: [
+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:information-gate",
+            "Ask one question at a time.",
+          ].join("\n"),
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("denies Codex spawn_agent payloads with legacy pipeline namespace", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      const result = runHook(cwd, {
+        tool_name: "spawn_agent",
+        tool_input: {
+          agent_type: "worker",
+          message: [
+            "PIPELINE_AGENT_FQN: pipeline-orchestrator:core:information-gate",
+            "Ask one question at a time.",
+          ].join("\n"),
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("legacy namespace");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("allows imported v5.2 governed skills with manual-only frontmatter and step gates", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
     try {
@@ -322,11 +400,9 @@ describe("dispatch-guard frontmatter enforcement", () => {
     }
   });
 
-  it("fail-closed on internal hook crash", () => {
+  it("denies non-string agent identities instead of silently allowing malformed payloads", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
     try {
-      // Craft a payload that causes an internal TypeError in evaluateAgent:
-      // subagent_type is a number, so .startsWith() throws.
       const result = runHook(cwd, {
         tool_name: "Agent",
         tool_input: {
@@ -336,7 +412,7 @@ describe("dispatch-guard frontmatter enforcement", () => {
 
       expect(result.status).toBe(0);
       expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
-      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("crashed");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("agent identity");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

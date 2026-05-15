@@ -13,7 +13,7 @@ expected_outputs:
   - persistence_plan: object
 expected_next: 7
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Light) - Modelo de dados e persistencia (se aplicavel)

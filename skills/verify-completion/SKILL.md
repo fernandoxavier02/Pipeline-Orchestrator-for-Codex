@@ -1,7 +1,7 @@
 ---
 name: verify-completion
 description: Verify completion and success claims with fresh evidence. Use before claiming a task is complete, a fix works, tests pass, or a feature is ready for GO.
-allowed-tools: Read, Bash, Grep, Glob
+allowed-tools: spawn_agent
 argument-hint: <claim-type> <claim>
 disable-model-invocation: true
 gates_at: [phase-1]

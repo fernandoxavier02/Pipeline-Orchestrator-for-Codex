@@ -1,6 +1,6 @@
 ---
 name: pipeline
-description: "Automated pipeline orchestrator for any project. Default runtime uses parallel local emulation (test/contract harness); real multi-agent execution requires explicit strictAgents=true. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. A single /pipeline command auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. Always use this for tasks affecting 2+ files or requiring careful orchestration. Even if the user doesn't mention 'pipeline' — if the task is non-trivial, this skill applies."
+description: "Automated pipeline orchestrator for any project. Operational execution requires real Codex spawn_agent support and blocks with blocked-no-agent-runtime when unavailable. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. The public command /pipeline-orchestrator-for-codex:pipeline auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. Always use this for tasks affecting 2+ files or requiring careful orchestration. Even if the user doesn't mention 'pipeline' — if the task is non-trivial, this skill applies."
 agent_type: worker
 gates_at: [phase-0, phase-1, phase-1.5, phase-2, phase-3]
 sentinel_checkpoints: [post_orchestrator, phase_0_to_1, phase_1_to_2, phase_2_to_3, post_final_validator]
@@ -27,21 +27,21 @@ When this workflow reaches any terminal state, emit the `NEXT_STEP` block define
 <MANDATORY-SUBAGENT-RULE>
 ## Subagent Delegation Behavior
 
-When the user invokes `/pipeline`, they are requesting structured execution. The plugin supports two runtime modes:
+When the user invokes `/pipeline-orchestrator-for-codex:pipeline`, they are requesting structured execution. The plugin supports two runtime modes:
 
-### `strictAgents = true` (Explicit Opt-In)
+### `strictAgents = true` (Operational)
 - **ALWAYS** call `spawn_agent` for every phase.
 - **NEVER** execute agent work inline.
 - If `spawn_agent` is unavailable, stop with `blocked-no-agent-runtime` and tell the user that real Codex agent support is required.
 - This is the production-grade mode with real context isolation between reviewers and implementers.
 
-### `strictAgents = false` (Default — Test/Contract Harness)
+### `strictAgents = false` (Diagnostic/Test Harness Only)
 - The runtime uses **local emulation** via TypeScript heuristic functions.
 - "Agents" run as async functions in the same Node process with **zero context isolation**.
 - This is a **test harness and contract validator**, not production multi-agent execution.
 - Emulation accurately models gate logic, protocol blocks, and confidence scoring, but does NOT provide real adversarial review independence.
 
-**Default:** `strictAgents` defaults to `false`. To enable real agents, the user must explicitly set `strictAgents = true` in runtime options AND ensure `multi_agent = true` in `~/.codex/config.toml`.
+**Operational default:** production-grade use requires `strictAgents = true` and `multi_agent = true` in `~/.codex/config.toml`. Harness mode is allowed only for diagnostics or tests.
 
 Do not present emulation mode as real multi-agent execution. Always document which mode is active in execution logs.
 </MANDATORY-SUBAGENT-RULE>
@@ -51,7 +51,7 @@ You are the **PIPELINE SKILL** — a thin delegator. Your ONLY job is:
 1. Open the visible plan (`update_plan`)
 2. Show the workflow/method gate
 3. **Read** `agents/core/pipeline-controller.md`
-4. **Dispatch** it as a worker agent via `spawn_agent(agent_type: "worker", name: "pipeline-orchestrator-for-codex:core:pipeline-controller")`
+4. **Dispatch** it as a worker agent via `spawn_agent(agent_type: "worker", message: <controller prompt>)`
 5. **Process** the structured blocks it emits (`=== DISPATCH_REQUEST v1 ===`, `=== GATE_REQUEST v1 ===`, `=== PLAN_MODE_REQUEST v1 ===`)
 6. **Re-dispatch** the same agent with responses prepended until it emits `PIPELINE COMPLETE`
 
@@ -66,8 +66,7 @@ $ARGUMENTS
 **Step 1.** Read `agents/core/pipeline-controller.md`
 **Step 2.** Call `spawn_agent` with:
 - `agent_type: "worker"`
-- `name: "pipeline-orchestrator-for-codex:core:pipeline-controller"`
-- `message`: the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
+- `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, followed by the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
 **Step 3.** Wait for the controller to return its output
 **Step 4.** Parse structured protocol blocks:
 - `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent` for the requested agent
@@ -89,17 +88,17 @@ If `spawn_agent` fails or is unavailable, tell the user: "blocked-no-agent-runti
 
 | Pattern | Mode | Description |
 |---------|------|-------------|
-| `/pipeline [task]` | **FULL** | All 4 phases through Pa de Cal |
-| `/pipeline diagnostic [task]` | **DIAGNOSTIC** | Stops after Phase 1 (classification only) |
-| `/pipeline continue` | **CONTINUE** | Resumes from Phase 2 using existing docs |
-| `/pipeline --simples [task]` | FULL + force SIMPLES | Override classification |
-| `/pipeline --media [task]` | FULL + force MEDIA | Override classification |
-| `/pipeline --complexa [task]` | FULL + force COMPLEXA | Override classification |
-| `/pipeline --hotfix [task]` | **HOTFIX** | Emergency bypass for production incidents |
-| `/pipeline --grill [task]` | FULL + design interrogation | Force design-interrogator |
-| `/pipeline --plan [task]` | FULL + plan mode | Force plan-architect |
-| `/pipeline --no-plan [task]` | FULL + skip plan mode (MEDIA only) | Bypass plan |
-| `/pipeline review-only` | **REVIEW-ONLY** | Runs final adversarial review on uncommitted changes |
+| `/pipeline-orchestrator-for-codex:pipeline [task]` | **FULL** | All 4 phases through Pa de Cal |
+| `/pipeline-orchestrator-for-codex:pipeline diagnostic [task]` | **DIAGNOSTIC** | Stops after Phase 1 (classification only) |
+| `/pipeline-orchestrator-for-codex:pipeline continue` | **CONTINUE** | Resumes from Phase 2 using existing docs |
+| `/pipeline-orchestrator-for-codex:pipeline --simples [task]` | FULL + force SIMPLES | Override classification |
+| `/pipeline-orchestrator-for-codex:pipeline --media [task]` | FULL + force MEDIA | Override classification |
+| `/pipeline-orchestrator-for-codex:pipeline --complexa [task]` | FULL + force COMPLEXA | Override classification |
+| `/pipeline-orchestrator-for-codex:pipeline --hotfix [task]` | **HOTFIX** | Emergency bypass for production incidents |
+| `/pipeline-orchestrator-for-codex:pipeline --grill [task]` | FULL + design interrogation | Force design-interrogator |
+| `/pipeline-orchestrator-for-codex:pipeline --plan [task]` | FULL + plan mode | Force plan-architect |
+| `/pipeline-orchestrator-for-codex:pipeline --no-plan [task]` | FULL + skip plan mode (MEDIA only) | Bypass plan |
+| `/pipeline-orchestrator-for-codex:pipeline review-only` | **REVIEW-ONLY** | Runs final adversarial review on uncommitted changes |
 
 ### HOTFIX Mode
 
@@ -139,7 +138,7 @@ SOFT: STALE_CONTEXT, INFO_GATE_OK, DESIGN_INTERROGATION, REDUCED_VALIDATION_USAG
 | Plan rejected by user | → Phase 1 (re-classify) | `PLAN_REJECTED` (HARD) |
 | Phase 2 systemic failure | → Phase 1.5 (re-plan) OR → Phase 1 (re-classify) | `STOP_RULE` (CIRCUIT_BREAKER) |
 | Final adversarial critical findings | → Phase 2 (new fix batch) | `FINAL_ADVERSARIAL_REWORK` (HARD) |
-| `/pipeline continue` with stale context | → Phase 0 (re-validate) OR proceed | `STALE_CONTEXT` (SOFT) |
+| `/pipeline-orchestrator-for-codex:pipeline continue` with stale context | → Phase 0 (re-validate) OR proceed | `STALE_CONTEXT` (SOFT) |
 
 ## GATE_DECISION_LOG (JSONL)
 

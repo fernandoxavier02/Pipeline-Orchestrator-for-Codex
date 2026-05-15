@@ -14,7 +14,7 @@ expected_outputs:
   - migration_tests_plan: list
 expected_next: 7
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Heavy) - Modelo de dados e persistencia (se aplicavel)

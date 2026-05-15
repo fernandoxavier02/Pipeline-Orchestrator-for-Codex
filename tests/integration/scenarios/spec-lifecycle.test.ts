@@ -28,7 +28,7 @@ function writeSpecContentReviewPass(specDir: string) {
 }
 
 describe("spec lifecycle controller gating", () => {
-  it("blocks non-spec heavy proposals when required spec artifacts are missing", async () => {
+  it("does not block generic non-spec heavy proposals as spec lifecycle work", async () => {
     const workspaceRoot = mkdtempSync(join(tmpdir(), "pipeline-heavy-spec-required-"));
     const gateEntries: Array<Record<string, unknown>> = [];
     let savedSession: unknown;
@@ -58,17 +58,14 @@ describe("spec lifecycle controller gating", () => {
 
       const result = await controller.start("/pipeline --complexa feature onboarding flow");
 
-      expect(result.status).toBe("blocked");
-      expect(result.blockedBy).toBe("SPEC_ARTIFACT_MISSING");
+      expect(result.status).not.toBe("blocked");
+      expect(result.blockedBy).not.toBe("SPEC_ARTIFACT_MISSING");
       expect(result.type).toBe("Feature");
-      expect(result.variant).toBe("implement-heavy");
-      expect(result.gates.map((gate: { gate: string }) => gate.gate)).toContain("SPEC_ARTIFACT_MISSING");
-      expect(gateEntries.some((entry) => entry.gate === "SPEC_ARTIFACT_MISSING" && entry.decision === "block")).toBe(true);
-      expect(savedSession).toMatchObject({
-        currentPhase: "phase-1",
-        pendingDecision: "spec-artifacts-required",
-        unresolvedBlockers: [expect.stringContaining("requirements.md")],
-      });
+      expect(result.variant).toBe("feature-heavy");
+      expect(result.gates.map((gate: { gate: string }) => gate.gate)).not.toContain("SPEC_ARTIFACT_MISSING");
+      expect(gateEntries.some((entry) => entry.gate === "SPEC_ARTIFACT_MISSING" && entry.decision === "block")).toBe(false);
+      expect((savedSession as { pendingDecision?: string } | undefined)?.pendingDecision)
+        .not.toBe("spec-artifacts-required");
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }
@@ -102,7 +99,7 @@ describe("spec lifecycle controller gating", () => {
       expect(result.status).not.toBe("blocked");
       expect(result.type).toBe("Feature");
       expect(result.complexity).toBe("COMPLEXA");
-      expect(result.variant).toBe("implement-heavy");
+      expect(result.variant).toBe("feature-heavy");
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }

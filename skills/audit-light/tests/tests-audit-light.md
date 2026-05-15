@@ -14,8 +14,8 @@ Adapted from `D:\Projeto Pulsar\.claude\commands\Prompts\Audtiroria\light\TESTS_
 | Sequence lock | Steps execute strictly 1→2→3→4→5→6→7→8→9. | Golden run; audit log shows linear transitions. |
 | Iron Law (read-only) | No Edit / Write call originates from any audit-* agent or step body. | `edit-guard-hook.cjs`. |
 | Light_mode marking | Steps 2–4 invoke `audit-compliance-checker` with `agent_invocation_mode: "light_mode"` and the agent annotates outputs accordingly. | Deliverable JSON contains `light_mode: true` and `domain_analysis_source: "inline (audit-domain-analyzer skipped)"`. |
-| Gate at step 1 | AskUserQuestion `Escopo` invoked exactly once. | Hook event capture. |
-| Gate at step 9 | AskUserQuestion `GO/NO-GO` invoked, with dynamic recommendation logic respected (escalate-to-heavy when triggers fire). | Golden runs across 3 fixture types. |
+| Gate at step 1 | GATE_REQUEST `Escopo` invoked exactly once. | Hook event capture. |
+| Gate at step 9 | GATE_REQUEST `GO/NO-GO` invoked, with dynamic recommendation logic respected (escalate-to-heavy when triggers fire). | Golden runs across 3 fixture types. |
 | Sentinel checkpoints | Sentinel state validates before steps 1 and 9 (`pre_1`, `pre_9`). | `sentinel-hook` events. |
 | STOP RULE | 2 consecutive failures halt the pipeline. | Inject failure; expect halt. |
 | Output schema | Each step's `expected_outputs` is well-typed. | Schema check on JSON deliverable. |
@@ -69,7 +69,7 @@ Adapted from `D:\Projeto Pulsar\.claude\commands\Prompts\Audtiroria\light\TESTS_
 - `AuditFinalSeal` JSON has eight top-level keys.
 - `escalation_assessment.recommend_escalate_to_heavy` is boolean.
 - `go_no_go` ∈ `{GO, CONDITIONAL, NO-GO, ESCALATE-TO-HEAVY}`.
-- AskUserQuestion option 1 is dynamic (escalation when triggers fire).
+- GATE_REQUEST option 1 is dynamic (escalation when triggers fire).
 
 ## Golden runs (suggested)
 
@@ -81,6 +81,6 @@ Adapted from `D:\Projeto Pulsar\.claude\commands\Prompts\Audtiroria\light\TESTS_
 
 - No code modification (Iron Law).
 - No skip / reorder (sequence_lock).
-- No prose substitute for AskUserQuestion (gate_required).
+- No prose substitute for GATE_REQUEST (gate_required).
 - No silent promotion of `[HYPOTHESIS]` to `[VERIFIED]`.
-- No GO when escalation trigger fires (the workflow MAY allow user to override but it MUST be a conscious choice via the AskUserQuestion answer, not the agent's default).
+- No GO when escalation trigger fires (the workflow MAY allow user to override but it MUST be a conscious choice via the GATE_REQUEST answer, not the agent's default).

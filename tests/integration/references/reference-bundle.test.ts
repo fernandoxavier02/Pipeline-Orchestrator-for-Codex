@@ -11,7 +11,7 @@ describe("reference bundle", () => {
     const index = createReferenceProfileIndex(bundle);
     const profile = index.getPipelineProfile("bugfix-heavy");
 
-    expect(Object.keys(bundle.pipelineProfiles)).toHaveLength(14);
+    expect(Object.keys(bundle.pipelineProfiles)).toHaveLength(15);
     expect(profile.variant).toBe("bugfix-heavy");
     expect(profile.type).toBe("Bug Fix");
     expect(profile.complexity).toBe("COMPLEXA");
@@ -30,6 +30,11 @@ describe("reference bundle", () => {
     });
     expect(index.getPipelineProfileForRoute("Spec", "light")).toMatchObject({
       variant: "spec-light",
+      type: "Spec",
+      intensity: "light",
+    });
+    expect(index.getPipelineProfile("spec-audit-only")).toMatchObject({
+      variant: "spec-audit-only",
       type: "Spec",
       intensity: "light",
     });
@@ -123,8 +128,8 @@ describe("reference bundle", () => {
     try {
       await cp(sourceRefs, copiedRefs, { recursive: true });
       await rename(
-        join(copiedRefs, "pipelines", "implement-heavy.md"),
         join(copiedRefs, "pipelines", "feature-heavy.md"),
+        join(copiedRefs, "pipelines", "feature-heavy-renamed.md"),
       );
       await rename(
         join(copiedRefs, "checklists", "auth.md"),
@@ -132,7 +137,7 @@ describe("reference bundle", () => {
       );
 
       const bundle = await loadReferenceBundle(root);
-      expect(bundle.pipelineProfiles["implement-heavy"].sourcePath).toContain("feature-heavy.md");
+      expect(bundle.pipelineProfiles["feature-heavy"].sourcePath).toContain("feature-heavy-renamed.md");
       expect(bundle.checklists.auth.sourcePath).toContain("access-control.md");
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -147,12 +152,12 @@ describe("reference bundle", () => {
     try {
       await cp(sourceRefs, copiedRefs, { recursive: true });
       await writeFile(
-        join(copiedRefs, "pipelines", "implement-light.md"),
+        join(copiedRefs, "pipelines", "feature-light.md"),
         `---\nkind: pipeline-profile\nvariant: feature-light\ntype: Feature\ncomplexity: MEDIA\nintensity: light\nbatchSize: 3\nsummary: Feature work with a renamed light variant for team-route resolution.\nchecklists:\n  - business-logic\n  - error-handling\n  - input-validation\n---\n# feature-light\nRuntime proof variant.\n`,
       );
       await writeFile(
         join(copiedRefs, "complexity-matrix.md"),
-        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n  - type: Spec\n    light: spec-light\n    heavy: spec-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
+        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: feature-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n  - type: Spec\n    light: spec-light\n    heavy: spec-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
       );
 
       const bundle = await loadReferenceBundle(root);
@@ -205,7 +210,7 @@ describe("reference bundle", () => {
       await cp(sourceRefs, copiedRefs, { recursive: true });
       await writeFile(
         join(copiedRefs, "complexity-matrix.md"),
-        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: implement-light\n    heavy: bugfix-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n---\n# Complexity Matrix\nBroken on purpose for validation.\n`,
+        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: bugfix-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n---\n# Complexity Matrix\nBroken on purpose for validation.\n`,
       );
 
       await expect(loadReferenceBundle(root)).rejects.toThrow(

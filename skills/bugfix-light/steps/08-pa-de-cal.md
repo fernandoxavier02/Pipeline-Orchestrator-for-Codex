@@ -16,7 +16,7 @@ expected_outputs:
   - askuserquestion_response: string
 expected_next: null
 gate_required: true
-allowed_tools: [AskUserQuestion, Read, Grep, Bash]
+allowed_tools: [GATE_REQUEST, shell_read, shell_command]
 ---
 
 # Step 08 — Pá de Cal (Final GO/NO-GO Gate)
@@ -51,9 +51,9 @@ Walk this checklist. For each item, state PASS / FAIL / INCONCLUSIVE and the evi
    - Are there multi-step flows? If yes — atomicity / no orphan intermediate state?
 5. **Build and tests sanity (minimum)** — build passes; lint / relevant tests pass.
 
-### 8.2 AskUserQuestion (mandatory — no prose substitute)
+### 8.2 GATE_REQUEST (mandatory — no prose substitute)
 
-Invoke AskUserQuestion. Use this shape (note: this is a binary CONFIRMATION gate per global rule "regra 2", so neither option needs `(Recomendado)` — but if the agent's verification surfaced a clear winner, the agent MAY mark it):
+Invoke GATE_REQUEST. Use this shape (note: this is a binary CONFIRMATION gate per global rule "regra 2", so neither option needs `(Recomendado)` — but if the agent's verification surfaced a clear winner, the agent MAY mark it):
 
 ```
 header: "GO/NO-GO"
@@ -81,7 +81,7 @@ options:
 ## Done criteria
 
 - 5-item checklist completed with PASS/FAIL/INCONCLUSIVE + evidence per item.
-- AskUserQuestion invoked (not substituted).
+- GATE_REQUEST invoked (not substituted).
 - Final decision recorded with reasons + residual risks + observability hooks.
 
 ## Outputs (terminal step — handoff back to caller)

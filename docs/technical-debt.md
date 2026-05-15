@@ -114,13 +114,13 @@ Owner: dispatcher
 
 **Location:** `src/dispatcher/single-agent-runner.ts`, `src/dispatcher/parallel-emulation-runner.ts`
 
-**Description:** The default runtime (`strictAgents=false`) uses local TypeScript heuristic functions instead of real `spawn_agent` calls. The "parallel emulation" runs `Promise.all` over `runSingleAgentRole`, which means all "agents" execute in the same Node process with zero context isolation. The canonical repository (at `D:\Pipeline Orchestrator Claude`) has 0 TypeScript files and relies entirely on markdown prompts as SSOT.
+**Description:** Diagnostic/test harness mode (`strictAgents=false`) uses local TypeScript heuristic functions instead of real `spawn_agent` calls. The "parallel emulation" runs `Promise.all` over `runSingleAgentRole`, which means all "agents" execute in the same Node process with zero context isolation. Operational dispatch for `/pipeline-orchestrator-for-codex:pipeline` now requires real agent support and blocks with `blocked-no-agent-runtime` when no adapter exists.
 
 **Impact:** Review independence is violated by design in the default mode. The runtime cannot provide true adversarial review because the "reviewer" and "implementer" share the same heap, event loop, and memory.
 
-**Rationale for acceptance:** The SKILL.md, `09-gap-analysis.md`, and `commands/pipeline.md` all explicitly document this limitation. The default mode is honestly labeled as a "test/contract harness." Changing the default to `strictAgents=true` would break the plugin for all users who do not have `spawn_agent` available.
+**Rationale for acceptance:** The harness remains useful for deterministic tests and diagnostics, but it is no longer accepted as operational proof. Operational plugin use must surface a real-agent adapter or block honestly.
 
-**Resolution trigger:** When Codex CLI makes `spawn_agent` a guaranteed primitive (not an opt-in feature), or when the plugin drops support for non-`spawn_agent` environments.
+**Resolution trigger:** When Codex CLI exposes a stable programmatic `spawn_agent` test double, replace the remaining harness-only tests with real adapter tests.
 
 **Estimated remediation cost:** L (requires shipping a working `agentRuntime` adapter and changing the default).
 
@@ -407,7 +407,7 @@ Owner: docs
 |------|----------|--------|---------|
 | 2026-05-11 | Accept all listed debt as non-blocking for v0.4.x | Rounds 2-5 | All CRITICAL/HIGH/MEDIUM findings resolved; debt is architectural or documented limitation |
 | 2026-05-11 | Defer canonical alignment (80% TS deletion) to product decision | Round 2 | Would break all 539 tests and require full runtime redesign |
-| 2026-05-11 | Keep `strictAgents=false` as default | Rounds 2, 3 | Real `spawn_agent` is opt-in in Codex CLI; changing default would break users without it |
+| 2026-05-14 | Operational public command requires real agent dispatch | Bugfix goal | `/pipeline-orchestrator-for-codex:pipeline` blocks without `spawn_agent`; harness is diagnostic/test-only |
 | 2026-05-11 | Rename `multi-agent` → `parallel-emulation` in source only | Round 3 | Honest naming is more important than doc/runtime parity; docs were updated to match |
 
 ---

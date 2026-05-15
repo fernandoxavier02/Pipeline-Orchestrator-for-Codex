@@ -1,7 +1,7 @@
 const FALLBACK_PROFILE_BY_ROUTE = {
     Feature: {
         light: {
-            variant: "implement-light",
+            variant: "feature-light",
             type: "Feature",
             complexity: "MEDIA",
             intensity: "light",
@@ -10,7 +10,7 @@ const FALLBACK_PROFILE_BY_ROUTE = {
             checklists: ["business-logic", "error-handling", "input-validation"],
         },
         heavy: {
-            variant: "implement-heavy",
+            variant: "feature-heavy",
             type: "Feature",
             complexity: "COMPLEXA",
             intensity: "heavy",
@@ -133,6 +133,17 @@ function getProfileByVariant(variant) {
     }
     return undefined;
 }
+function getReferenceProfileByVariant(referenceIndex, variant) {
+    if (!referenceIndex) {
+        return undefined;
+    }
+    try {
+        return referenceIndex.getPipelineProfile(variant);
+    }
+    catch {
+        return undefined;
+    }
+}
 function resolveProfile(referenceIndex, type, intensity) {
     if (referenceIndex) {
         return referenceIndex.getPipelineProfileForRoute(type, intensity);
@@ -163,11 +174,12 @@ export function applyClassificationOverrides(mode, classification, referenceInde
         nextComplexity = "SIMPLES";
         intensity = "light";
     }
+    const specVariant = mode === "--complexa" || classification.variant === "spec-heavy"
+        ? "spec-heavy"
+        : classification.variant;
     const specProfile = isSpecVariant
         ? {
-            variant: mode === "--complexa" || classification.variant === "spec-heavy"
-                ? "spec-heavy"
-                : classification.variant,
+            variant: specVariant,
             type: classification.type,
             complexity: nextComplexity,
             intensity,
@@ -176,8 +188,11 @@ export function applyClassificationOverrides(mode, classification, referenceInde
             checklists: ["business-logic", "error-handling", "input-validation"],
         }
         : undefined;
-    const profile = specProfile && referenceIndex
-        ? referenceIndex.getPipelineProfileForRoute("Spec", intensity)
+    const exactSpecProfile = specProfile
+        ? getReferenceProfileByVariant(referenceIndex, specProfile.variant)
+        : undefined;
+    const profile = exactSpecProfile
+        ? exactSpecProfile
         : specProfile
             ? {
                 ...specProfile,

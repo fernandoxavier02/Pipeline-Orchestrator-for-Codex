@@ -17,7 +17,7 @@ expected_outputs:
 expected_next: 5
 gate_required: true
 gate_name: "adversarial-loop-checkpoint"
-allowed_tools: [Read, Grep, Glob, Edit, Write, Bash, AskUserQuestion]
+allowed_tools: [shell_read, apply_patch, shell_command, GATE_REQUEST]
 ---
 
 # Spec Lifecycle (Heavy) — Step 04: Implementation (TDD + Vertical Slices + adversarial loop)
@@ -36,7 +36,7 @@ Use apos o ATDD seed (step 03) ter sido aprovado. Entradas obrigatorias: (a) cen
 - Siga o `tasks.md` da spec linha a linha. Reagrupamento por vertical slice e permitido (autorizado pelo content review eixo 7); reordenacao livre de tasks NAO e — exige checkpoint.
 - TDD obrigatorio: para cada task implementadora, escrever teste RED → codigo GREEN → REFACTOR.
 - Build obrigatorio ao final de cada CHECKPOINT (declarado em tasks.md a cada 3-5 tasks).
-- Nao inventar funcionalidades fora da spec. Se surgir necessidade, pause via AskUserQuestion.
+- Nao inventar funcionalidades fora da spec. Se surgir necessidade, pause via GATE_REQUEST.
 - STOP RULE: 3 falhas consecutivas de build/teste no mesmo checkpoint, PARAR e analisar causa raiz. (Heavy permite 3 retries vs 2 do Light por ser pipeline mais longo com mais oportunidades de fix parcial.)
 
 ---
@@ -97,14 +97,14 @@ Para cada slice (grupo de tasks ate o proximo CHECKPOINT):
 
 ## Etapa 3 — Loop adversarial (per batch)
 
-Apos cada CHECKPOINT verde, dispatchar revisao adversarial paralela com os dois agentes via Agent calls em FQDN canonico: `pipeline-orchestrator-for-codex:executor:type-specific:adversarial-architecture-critic` e `pipeline-orchestrator-for-codex:executor:type-specific:adversarial-security-scanner`. No Heavy, esses mesmos agentes rodarao de forma exaustiva nos steps 06 e 07; o loop aqui e leve (focado nos arquivos do slice atual) — review profundo fica para 06+07.
+Apos cada CHECKPOINT verde, dispatchar revisao adversarial paralela com os dois agentes via spawn_agent calls em FQDN canonico: `pipeline-orchestrator-for-codex:executor:type-specific:adversarial-architecture-critic` e `pipeline-orchestrator-for-codex:executor:type-specific:adversarial-security-scanner`. No Heavy, esses mesmos agentes rodarao de forma exaustiva nos steps 06 e 07; o loop aqui e leve (focado nos arquivos do slice atual) — review profundo fica para 06+07.
 
 **Zero-trust:** Os subagentes adversariais recebem APENAS a lista de arquivos do slice; eles DEVEM reler cada arquivo e formar findings a partir do código fonte — NUNCA confiar em resumos narrativos do implementer. Comentarios de commit, descricoes de tasks ou auto-relato do executor sao descartaveis: a unica fonte verdadeira aqui e o conteudo lido diretamente do disco.
 
 ### Loop com escalation a cada 3 tentativas + hard cap
 
 Estado por slice:
-- `loop_attempt` (counter per-slice, comeca em 0; reseta a cada slice; usado pra trigger AskUserQuestion escalation a cada 3).
+- `loop_attempt` (counter per-slice, comeca em 0; reseta a cada slice; usado pra trigger GATE_REQUEST escalation a cada 3).
 - `findings_signature` (hash dos findings da rodada anterior — ver definicao abaixo).
 
 Estado pipeline-level (acumula across slices):
@@ -135,7 +135,7 @@ Duas rodadas consecutivas com a MESMA assinatura forcam checkpoint imediato sem 
 Algoritmo:
 1. Rodar adversarial review.
 2. Se 0 findings: prosseguir para proximo slice.
-3. Se findings > 0: incrementar `loop_attempt` E `total_adversarial_rounds`; aplicar fixes; rodar build+testes. Se `loop_attempt > 0 AND loop_attempt % 3 == 0`, pausar via AskUserQuestion com 4 opcoes:
+3. Se findings > 0: incrementar `loop_attempt` E `total_adversarial_rounds`; aplicar fixes; rodar build+testes. Se `loop_attempt > 0 AND loop_attempt % 3 == 0`, pausar via GATE_REQUEST com 4 opcoes:
    - **Continuar loop (Recomendado se progresso visivel)** — fazer mais 3 tentativas.
    - **Escalar steps 06+07** — promover findings remanescentes para o adversarial profundo (steps 06 e 07 ja vao rodar; antecipar a checagem deep ali).
    - **Aceitar warnings** — registrar findings nao-bloqueantes e seguir.
@@ -188,9 +188,9 @@ approved | checkpoint (escalation needed) | abort
 
 ---
 
-## Gate (AskUserQuestion mandatorio)
+## Gate (GATE_REQUEST mandatorio)
 
-A cada 3 tentativas adversariais, ou ao final do step, abrir AskUserQuestion com header `Adversarial` e as 4 opcoes acima. Recomendacao default: `Continuar loop` se progresso, `Aceitar warnings` se findings sao todos LOW e bloqueio nao e estrutural.
+A cada 3 tentativas adversariais, ou ao final do step, abrir GATE_REQUEST com header `Adversarial` e as 4 opcoes acima. Recomendacao default: `Continuar loop` se progresso, `Aceitar warnings` se findings sao todos LOW e bloqueio nao e estrutural.
 
 ---
 

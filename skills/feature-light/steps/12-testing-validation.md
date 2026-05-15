@@ -13,7 +13,7 @@ expected_outputs:
   - sanity_report: object
 expected_next: 13
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Bash]
+allowed_tools: [shell_read, shell_command]
 ---
 
 # Feature Pipeline (Light) - Testes, validacao e checks de sanidade

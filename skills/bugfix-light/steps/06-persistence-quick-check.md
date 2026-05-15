@@ -15,7 +15,7 @@ expected_outputs:
   - recommendation: string
 expected_next: 7
 gate_required: false
-allowed_tools: [Bash, Read, Grep, Glob]
+allowed_tools: [shell_command, shell_read]
 ---
 
 # Step 06 — Persistence Quick Check — GAP CLOSED (was ABSENT)
@@ -121,4 +121,4 @@ Plugin v4.3.1 had **no agent or step** for persistence quick checks (Light 6 �
 
 ## Next
 
-Proceed to `steps/07-complexity-gate.md` (AskUserQuestion gate — should this remain light or escalate?).
+Proceed to `steps/07-complexity-gate.md` (GATE_REQUEST gate — should this remain light or escalate?).

@@ -77,6 +77,7 @@ export function runFinalValidator(input: {
   verificationEvidence: VerificationEvidence[];
   validationIntent?: string;
   mode?: string;
+  dispatchMode?: "real-agent" | "parallel-emulation" | "single-agent" | "harness" | "diagnostic-harness";
 }) {
   const gateRegistry = createGateRegistry();
   const effectiveGateLog = resolveEffectiveGateLog(input.gateLog);
@@ -97,6 +98,14 @@ export function runFinalValidator(input: {
       .map((evidence) => evidence.kind),
   );
   const missingEvidence = requiredEvidence.filter((kind) => !passedEvidenceKinds.has(kind));
+  if (
+    input.dispatchMode
+    && input.dispatchMode !== "real-agent"
+    && input.mode !== "diagnostic"
+    && input.mode !== "review-only"
+  ) {
+    missingEvidence.push("real-agent-dispatch");
+  }
   const blockedReviews = input.reviews.filter((review) => review.status !== "approved");
 
   let decision: "GO" | "CONDITIONAL" | "NO-GO";

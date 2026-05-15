@@ -19,6 +19,20 @@ function runSentinelHook(cwd: string, subagentType: string) {
   });
 }
 
+function runSentinelHookForSpawnAgent(cwd: string, message: string) {
+  return spawnSync(process.execPath, [HOOK], {
+    cwd,
+    input: JSON.stringify({
+      tool_name: "spawn_agent",
+      tool_input: {
+        agent_type: "worker",
+        message,
+      },
+    }),
+    encoding: "utf8",
+  });
+}
+
 function writeRuntimeSentinelState(cwd: string, expectedNext: string[]) {
   const stateDir = join(cwd, ".codex", "pipeline");
   mkdirSync(stateDir, { recursive: true });
@@ -95,6 +109,42 @@ describe("sentinel hook", () => {
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe("");
     expect(result.stderr.trim()).toBe("");
+  });
+
+  it("allows a Codex spawn_agent payload that matches runtime expectedNext", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeRuntimeSentinelState(cwd, ["information-gate"]);
+
+    const result = runSentinelHookForSpawnAgent(
+      cwd,
+      [
+        "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:information-gate",
+        "Ask one question at a time.",
+      ].join("\n"),
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("");
+    expect(result.stderr.trim()).toBe("");
+  });
+
+  it("denies a Codex spawn_agent payload that diverges from runtime expectedNext", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeRuntimeSentinelState(cwd, ["information-gate"]);
+
+    const result = runSentinelHookForSpawnAgent(
+      cwd,
+      [
+        "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:executor:executor-controller",
+        "Execute the batch.",
+      ].join("\n"),
+    );
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("Expected");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("information-gate");
   });
 
   it("denies a pipeline agent that diverges from runtime camelCase expectedNext", () => {

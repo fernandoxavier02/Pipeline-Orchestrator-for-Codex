@@ -1,6 +1,6 @@
 ---
 kind: pipeline-profile
-variant: implement-light
+variant: feature-light
 type: Feature
 complexity: MEDIA
 intensity: light
@@ -99,7 +99,7 @@ checklists:
 - No scope creep beyond declared boundaries
 
 ## Escalation
-- Scope exceeds 5 files -> consider implement-heavy
+- Scope exceeds 5 files -> consider feature-heavy
 - Data model changes required -> elevate to COMPLEXA
 - Auth/security impact discovered -> add security checklists
 

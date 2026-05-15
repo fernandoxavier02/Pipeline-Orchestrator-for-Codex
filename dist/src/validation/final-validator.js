@@ -59,6 +59,12 @@ export function runFinalValidator(input) {
         .filter((evidence) => evidence.passed)
         .map((evidence) => evidence.kind));
     const missingEvidence = requiredEvidence.filter((kind) => !passedEvidenceKinds.has(kind));
+    if (input.dispatchMode
+        && input.dispatchMode !== "real-agent"
+        && input.mode !== "diagnostic"
+        && input.mode !== "review-only") {
+        missingEvidence.push("real-agent-dispatch");
+    }
     const blockedReviews = input.reviews.filter((review) => review.status !== "approved");
     let decision;
     if (blockingGates.length > 0 || blockedReviews.length > 0 || missingEvidence.length > 0 || input.confidenceScore < 0.6) {

@@ -2,7 +2,7 @@ import type { ReferenceProfileIndex } from "../references/reference-profiles.js"
 import type { PipelineClassification } from "./classification-overrides.js";
 
 const FALLBACK_VARIANTS = {
-  Feature: "implement-light",
+  Feature: "feature-light",
   "Bug Fix": "bugfix-heavy",
   Audit: "audit-heavy",
   "User Story": "user-story-heavy",

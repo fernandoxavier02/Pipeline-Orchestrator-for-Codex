@@ -160,7 +160,9 @@ Per the empirical probe documented in `docs/findings/achado-7-subagent-runtime.m
 
 The full protocol schema lives in `references/gate-request-protocol.md`. Apply it as follows:
 
-**At STEP C step-01-explore (the 7-question explore template):** instead of attempting `AskUserQuestion` for each question, emit a single `GATE_REQUEST` block per question (or batch them — up to 4 per emission since AskUserQuestion supports 1-4 questions per call). End your tool result with `STATUS: AWAITING_GATE_RESPONSES` and list the pending `gate_id`s.
+**At STEP C step-01-explore:** first perform `ContextDiscovery` from the prompt, repo, prior artifacts, and intake output. Classify every material uncertainty as a `DecisionGap`. A `DecisionGap` is any human choice that changes product promise, execution scope, output format, tradeoff, or success criteria. Facts that are discoverable from the repo are not user decisions.
+
+For every material `DecisionGap`, emit a `GATE_REQUEST` block. If no material gaps remain after discovery, emit a confirmation `GATE_REQUEST` with `gate_id: brainstorm-explore-no-gaps` asking the user to confirm that synthesis may proceed without more questions. End the result with `STATUS: AWAITING_GATE_RESPONSES` and list the pending `gate_id`s. In short: no synthesis, spec, report, or handoff may proceed before the parent re-dispatches with `GATE_RESPONSES` for the pending explore gate ids.
 
 Concrete example for the first explore question (apply the same pattern to Q2-Q7):
 
@@ -188,7 +190,7 @@ context: |
 === END GATE_REQUEST ===
 ```
 
-After emitting all 7 (or batched), end with `STATUS: AWAITING_GATE_RESPONSES` and list `gate_id`s `brainstorm-explore-q1` through `brainstorm-explore-q7`. The parent will call AskUserQuestion in batches of up to 4 and re-dispatch you with `GATE_RESPONSES:` prepended.
+After emitting the required decision-gap gates (or the `brainstorm-explore-no-gaps` confirmation), end with `STATUS: AWAITING_GATE_RESPONSES` and list the pending gate ids. The parent will call AskUserQuestion in batches of up to 4 and re-dispatch you with `GATE_RESPONSES:` prepended. Treat missing `GATE_RESPONSES` as a blocker, never as approval, absence of gaps, or permission to continue.
 
 **At STEP E step-08 handoff:** emit `GATE_REQUEST` with options ["Run pipeline now (Recomendado)", "Stop here", "Save and notify later"]. End with `STATUS: AWAITING_GATE_RESPONSES`.
 

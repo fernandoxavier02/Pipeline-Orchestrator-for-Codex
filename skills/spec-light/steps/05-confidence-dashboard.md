@@ -15,7 +15,7 @@ expected_outputs:
   - traceability_summary: object
 expected_next: 6
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Spec Lifecycle (Light) — Step 05: Confidence Dashboard

@@ -26,7 +26,7 @@ expected_outputs:
   - askuserquestion_response: string
 expected_next: null
 gate_required: true
-allowed_tools: [Task, Read, Grep, Glob, AskUserQuestion]
+allowed_tools: [spawn_agent, shell_read, GATE_REQUEST]
 ---
 
 # Step 09 — Pá de Cal + Conclusion + Plan (Light) — REQUIRES GO/NO-GO
@@ -41,7 +41,7 @@ Close the Light audit with a clear conclusion for a non-technical reader:
 - Suggested action plan (short — no implementation here).
 - **Escalation decision**: does this audit warrant promoting to `audit-heavy`?
 
-This is the **second user-facing gate** (`gate_required: true`). REQUIRES GO/CONDITIONAL/NO-GO via AskUserQuestion. Light has a 4th option: `ESCALATE-TO-HEAVY` (recommended when scope cap was insufficient).
+This is the **second user-facing gate** (`gate_required: true`). REQUIRES GO/CONDITIONAL/NO-GO via GATE_REQUEST. Light has a 4th option: `ESCALATE-TO-HEAVY` (recommended when scope cap was insufficient).
 
 ## Why subagent (audit-risk-matrix-generator)
 
@@ -124,9 +124,9 @@ Recommend `ESCALATE-TO-HEAVY` when ANY of:
 - Cascade risk discovered across 3+ areas (audit was scoped to 1).
 - Regulatory keyword detected (GDPR, HIPAA, SOC2, LGPD) — audit-light is BLOCKED for these (per §11.2).
 
-If any trigger fires, the AskUserQuestion gate at step 9 surfaces escalation as the **recommended** option.
+If any trigger fires, the GATE_REQUEST gate at step 9 surfaces escalation as the **recommended** option.
 
-### 9.4 AskUserQuestion gate (mandatory — no prose substitute)
+### 9.4 GATE_REQUEST gate (mandatory — no prose substitute)
 
 ```
 header: "GO/NO-GO"
@@ -147,7 +147,7 @@ options:
 - Else if findings show CONDITIONAL surface (medium-severity gaps) → option 1 = `"CONDITIONAL — aprovar com follow-up (Recomendado)"`, option 2 = `"GO — encerrar agora"`, option 3 = `"NO-GO — voltar a etapa apropriada"`.
 - Else (clean audit) → option 1 = `"GO — relatório aprovado, encerrar (Recomendado)"`, option 2 = `"CONDITIONAL — quero adicionar follow-up"`, option 3 = `"NO-GO — algo critico foi notado fora do JSON"`.
 
-(AskUserQuestion automatically appends "Other".)
+(GATE_REQUEST automatically appends "Other".)
 
 ### 9.5 Final decision
 
@@ -161,7 +161,7 @@ options:
 - Closing narrative written.
 - `AuditFinalSeal` populated with all eight top-level fields.
 - Escalation assessment present.
-- AskUserQuestion invoked.
+- GATE_REQUEST invoked.
 - Decision audit-logged.
 
 ## Outputs (terminal step)

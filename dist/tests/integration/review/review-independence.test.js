@@ -46,6 +46,26 @@ describe("review independence", () => {
         expect(request.input).not.toHaveProperty("implementationSummary");
         expect(request.prompt).not.toContain("session handling");
     });
+    it("requires real agent dispatch for operational batch review when configured", async () => {
+        const { createReviewOrchestrator } = await import("../../../src/review/review-orchestrator.js");
+        const runRole = vi.fn().mockResolvedValue({
+            mode: "real-agent",
+            role: "review-orchestrator",
+            output: {
+                findings: [],
+            },
+        });
+        const orchestrator = createReviewOrchestrator({ runRole, requireRealAgent: true });
+        await orchestrator.reviewBatch({
+            batch: {
+                name: "Batch operational-review",
+                files: ["src/index.ts"],
+            },
+        });
+        expect(runRole.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+            requireRealAgent: true,
+        }));
+    });
     it("returns parsed reviewer outputs so downstream execution can consume direct review decisions", async () => {
         const { createReviewOrchestrator } = await import("../../../src/review/review-orchestrator.js");
         const runRole = vi.fn().mockResolvedValue({
@@ -249,5 +269,28 @@ describe("review independence", () => {
             "architecture",
             "quality",
         ]);
+    });
+    it("requires real agent dispatch for operational final adversarial review when configured", async () => {
+        const { createFinalAdversarialOrchestrator } = await import("../../../src/review/final-adversarial-orchestrator.js");
+        const runRole = vi.fn().mockResolvedValueOnce({
+            mode: "real-agent",
+            role: "final-adversarial-orchestrator",
+            output: {
+                agents: [
+                    { role: "security-reviewer", output: { findings: [] } },
+                    { role: "architecture-reviewer", output: { findings: [] } },
+                    { role: "quality-reviewer", output: { findings: [] } },
+                ],
+            },
+        });
+        const orchestrator = createFinalAdversarialOrchestrator({ runRole, requireRealAgent: true });
+        await orchestrator.reviewFinal({
+            scope: {
+                files: ["src/index.ts"],
+            },
+        });
+        expect(runRole.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+            requireRealAgent: true,
+        }));
     });
 });

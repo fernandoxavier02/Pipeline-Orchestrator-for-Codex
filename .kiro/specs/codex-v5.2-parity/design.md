@@ -19,7 +19,7 @@ The implementation keeps the existing TypeScript runtime as the Codex substrate 
 
 ## Real-Agent Boundary
 
-The product `/pipeline` path requires real agent dispatch. Local single-agent and multi-agent TypeScript runners remain available only as harnesses or explicit tests. This prevents claims of multi-agent parity when no `spawn_agent` bridge exists.
+The product `/pipeline-orchestrator-for-codex:pipeline` path requires real agent dispatch. Local single-agent and multi-agent TypeScript runners remain available only as harnesses or explicit tests. This prevents claims of multi-agent parity when no `spawn_agent` bridge exists.
 
 ## Safety
 

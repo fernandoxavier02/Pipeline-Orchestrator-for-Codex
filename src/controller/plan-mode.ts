@@ -89,7 +89,7 @@ export function createImplementationPlan(input: {
   variant?: string;
   validationIntent?: "standard" | "reduced";
 }): ImplementationPlan {
-  const variant = input.variant ?? "implement-light";
+  const variant = input.variant ?? "feature-light";
 
   return {
     kind: "IMPLEMENTATION_PLAN",

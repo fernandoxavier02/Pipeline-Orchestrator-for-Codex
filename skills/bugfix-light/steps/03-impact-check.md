@@ -14,7 +14,7 @@ expected_outputs:
   - cascade_assessment: string
 expected_next: 4
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Bash]
+allowed_tools: [shell_read, shell_command]
 ---
 
 # Step 03 — Impact Check (Invariants BEFORE Fix) — GAP CLOSED

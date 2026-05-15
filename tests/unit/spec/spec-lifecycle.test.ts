@@ -27,6 +27,13 @@ describe("spec lifecycle artifact validation", () => {
     expect(deriveSpecIdFromRequest("/pipeline close spec codex harness")).toBe("codex-harness");
   });
 
+  it("derives explicit spec paths without command flags contaminating the id", () => {
+    expect(deriveSpecIdFromRequest("/pipeline-orchestrator-for-codex:spec --audit-only .kiro/specs/payment-flow"))
+      .toBe("payment-flow");
+    expect(deriveSpecIdFromRequest("/pipeline-orchestrator-for-codex:spec-audit-only pipeline-runs/001-payment/01-spec"))
+      .toBe("001-payment");
+  });
+
   it("blocks when a spec lifecycle flow has no required spec artifacts", () => {
     const root = freshRoot();
     try {

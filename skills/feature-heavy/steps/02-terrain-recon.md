@@ -15,7 +15,7 @@ expected_outputs:
   - evidence_vs_assumption: list
 expected_next: 3
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Heavy) - Reconhecimento do terreno do projeto

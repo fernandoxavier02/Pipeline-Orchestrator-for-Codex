@@ -13,7 +13,7 @@ expected_outputs:
   - state_model: object
 expected_next: 6
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Light) - Fonte da verdade e modelo de estado

@@ -44,11 +44,24 @@ export function isSpecLifecycleVariant(variant: string) {
 }
 
 export function deriveSpecIdFromRequest(request: string): string {
+  const explicitPath = request.match(/(?:^|\s)(?:\.kiro[\\/]+specs[\\/]+([^\\/\s"']+)|pipeline-runs[\\/]+([^\\/\s"']+)(?:[\\/]+01-spec)?)/iu);
+  if (explicitPath) {
+    return (explicitPath[1] ?? explicitPath[2] ?? "spec-request")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, "-")
+      .replace(/^-+|-+$/gu, "") || "spec-request";
+  }
+
   const normalized = request
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+    .replace(/^\/pipeline-orchestrator-for-codex:pipeline\s+/u, "")
+    .replace(/^\/pipeline-orchestrator-for-codex:spec(?:-light|-heavy|-audit-only)?\s+/u, "")
     .replace(/^\/pipeline\s+/u, "")
+    .replace(/\s--(?:audit-only|light|heavy|simples|media|complexa|plan|grill|hotfix)\b/gu, " ")
     .replace(/\b(criar|create|fechar|close|implementar|implement|validar|validate|spec|para|for|de|do|da|the|a|an|um|uma)\b/gu, " ")
     .replace(/[^a-z0-9]+/gu, "-")
     .replace(/^-+|-+$/gu, "");

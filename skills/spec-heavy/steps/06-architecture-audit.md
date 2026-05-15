@@ -12,7 +12,7 @@ expected_outputs:
   - findings_by_severity: object
 expected_next: 7
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Bash]
+allowed_tools: [shell_read, shell_command]
 ---
 
 # Spec Lifecycle (Heavy) — Step 06: Architecture Audit
@@ -142,7 +142,7 @@ floor at 0
 
 ---
 
-## Sem gate AskUserQuestion proprio
+## Sem gate GATE_REQUEST proprio
 
 Step 06 nao emite gate proprio — findings sao consumidos pelo step 08 (confidence dashboard) e pelo step 09 (closure). O usuario aprova o consolidado em step 08 indireto e em step 09 direto via spec-closer.
 

@@ -33,12 +33,12 @@ describe("reference-backed runtime", () => {
     try {
       await cp(sourceRefs, copiedRefs, { recursive: true });
       await writeFile(
-        join(copiedRefs, "pipelines", "implement-light.md"),
+        join(copiedRefs, "pipelines", "feature-light.md"),
         `---\nkind: pipeline-profile\nvariant: feature-light\ntype: Feature\ncomplexity: MEDIA\nintensity: light\nbatchSize: 3\nsummary: Feature work with a renamed light variant for runtime verification.\nchecklists:\n  - business-logic\n  - error-handling\n  - input-validation\n---\n# feature-light\nRuntime proof variant.\n`,
       );
       await writeFile(
         join(copiedRefs, "complexity-matrix.md"),
-        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: implement-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n  - type: Spec\n    light: spec-light\n    heavy: spec-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
+        `---\nkind: complexity-matrix\ntypes:\n  - type: Feature\n    light: feature-light\n    heavy: feature-heavy\n  - type: Bug Fix\n    light: bugfix-light\n    heavy: bugfix-heavy\n  - type: Audit\n    light: audit-light\n    heavy: audit-heavy\n  - type: User Story\n    light: user-story-light\n    heavy: user-story-heavy\n  - type: UX Simulation\n    light: ux-sim-light\n    heavy: ux-sim-heavy\n  - type: Spec\n    light: spec-light\n    heavy: spec-heavy\n---\n# Complexity Matrix\nRuntime proof matrix.\n`,
       );
       await writeFile(
         join(copiedRefs, "gates", "macro-gate-questions.md"),
@@ -61,15 +61,15 @@ describe("reference-backed runtime", () => {
     }
   });
 
-  it("fails against the target workspace when its bundle is missing", async () => {
+  it("falls back to bundled references when the target workspace bundle is missing", async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-runtime-missing-"));
 
     try {
       const runtime = createPipelineRuntime({ cwd: root, codexHome: "/codex-home" });
 
-      await expect(runtime.controller.start("build new dashboard")).rejects.toThrow(
-        new RegExp(root.replaceAll("\\", "\\\\")),
-      );
+      const result = await runtime.controller.start("build new dashboard");
+
+      expect(result.variant).toBe("feature-light");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

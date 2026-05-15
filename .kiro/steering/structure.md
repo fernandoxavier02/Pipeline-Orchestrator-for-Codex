@@ -10,7 +10,7 @@
 ## Runtime e Contratos
 
 - `skills/pipeline/SKILL.md`: contrato operacional principal do skill.
-- `commands/pipeline.md`: entrypoint `/pipeline`.
+- `commands/pipeline.md`: thin entrypoint for `/pipeline-orchestrator-for-codex:pipeline`.
 - `src/controller/**`: classificacao, proposta, modos e controller.
 - `src/execution/**`: batches, pre-test, checkpoint e execucao.
 - `src/gates/**`: information gate, micro gate, hardness e confidence.

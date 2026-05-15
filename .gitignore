@@ -2,6 +2,10 @@ node_modules/
 dist/*
 !dist/src/
 dist/src/*
+!dist/src/cli/
+dist/src/cli/*
+!dist/src/cli/pipeline-cli.js
+!dist/src/cli/agent-runtime-loader.js
 !dist/src/controller/
 dist/src/controller/*
 !dist/src/controller/build-proposal.js

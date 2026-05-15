@@ -36,7 +36,7 @@ const FALLBACK_PROFILE_BY_ROUTE: Record<
 > = {
   Feature: {
     light: {
-      variant: "implement-light",
+      variant: "feature-light",
       type: "Feature",
       complexity: "MEDIA",
       intensity: "light",
@@ -45,7 +45,7 @@ const FALLBACK_PROFILE_BY_ROUTE: Record<
       checklists: ["business-logic", "error-handling", "input-validation"],
     },
     heavy: {
-      variant: "implement-heavy",
+      variant: "feature-heavy",
       type: "Feature",
       complexity: "COMPLEXA",
       intensity: "heavy",
@@ -172,6 +172,18 @@ function getProfileByVariant(variant: string) {
   return undefined;
 }
 
+function getReferenceProfileByVariant(referenceIndex: ReferenceProfileIndex | undefined, variant: string) {
+  if (!referenceIndex) {
+    return undefined;
+  }
+
+  try {
+    return referenceIndex.getPipelineProfile(variant);
+  } catch {
+    return undefined;
+  }
+}
+
 function resolveProfile(
   referenceIndex: ReferenceProfileIndex | undefined,
   type: PipelineClassification["type"],
@@ -211,11 +223,12 @@ export function applyClassificationOverrides(
     intensity = "light";
   }
 
+  const specVariant = mode === "--complexa" || classification.variant === "spec-heavy"
+    ? "spec-heavy"
+    : classification.variant;
   const specProfile = isSpecVariant
     ? {
-        variant: mode === "--complexa" || classification.variant === "spec-heavy"
-          ? "spec-heavy"
-          : classification.variant,
+        variant: specVariant,
         type: classification.type,
         complexity: nextComplexity,
         intensity,
@@ -225,9 +238,13 @@ export function applyClassificationOverrides(
       }
     : undefined;
 
+  const exactSpecProfile = specProfile
+    ? getReferenceProfileByVariant(referenceIndex, specProfile.variant)
+    : undefined;
+
   const profile =
-    specProfile && referenceIndex
-      ? referenceIndex.getPipelineProfileForRoute("Spec", intensity)
+    exactSpecProfile
+      ? exactSpecProfile
       : specProfile
         ? {
             ...specProfile,

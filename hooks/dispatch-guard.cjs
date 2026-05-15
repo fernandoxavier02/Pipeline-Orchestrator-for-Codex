@@ -2,13 +2,13 @@
 'use strict';
 
 /**
- * dispatch-guard.cjs — PreToolUse:Agent / PreToolUse:Skill guard.
+ * dispatch-guard.cjs — PreToolUse:spawn_agent / PreToolUse:Agent / PreToolUse:Skill guard.
  *
  * Enforces the dispatch contract:
- *   - Pipeline agents must be spawned via Agent with FQN
+ *   - Pipeline agents must be spawned via Codex spawn_agent with FQN marker
  *     "pipeline-orchestrator-for-codex:<folder>:<leaf>".
  *   - Calling a pipeline agent leaf via Skill is denied.
- *   - Bare leaf names (no namespace) on Agent are denied with a hint.
+ *   - Bare leaf names (no namespace) are denied with a hint.
  *
  * Output contract (Codex PreToolUse hook):
  *   exit 0 + {} → allow
@@ -162,6 +162,7 @@ function loadTrustedSkillFrontmatter(skillName) {
   if (!skillName) return undefined;
   const leaf = skillName.includes(':') ? skillName.split(':').pop() : skillName;
   const roots = [
+    process.env.CODEX_PLUGIN_ROOT,
     process.env.CLAUDE_PLUGIN_ROOT,
   ].filter((entry) => typeof entry === 'string' && entry.length > 0);
 
@@ -275,8 +276,36 @@ function validateSkillFrontmatter(toolInput) {
   return { kind: 'allow' };
 }
 
+function extractPipelineAgentType(toolInput) {
+  if (!toolInput || typeof toolInput !== 'object') return '';
+
+  const direct = toolInput.subagent_type || toolInput.subagentType || toolInput.target_name || toolInput.targetName;
+  if (direct !== undefined && direct !== null) {
+    if (typeof direct !== 'string') {
+      return { invalid: true, value: direct };
+    }
+    return direct;
+  }
+
+  const message = toolInput.message || toolInput.prompt || toolInput.description;
+  if (typeof message === 'string') {
+    const marker = message.match(/\bPIPELINE_AGENT_FQN:\s*([^\s\r\n]+)/u);
+    if (marker?.[1]) return marker[1].trim();
+  }
+
+  return '';
+}
+
 function evaluateAgent(toolInput) {
-  const subagentType = (toolInput && (toolInput.subagent_type || toolInput.subagentType)) || '';
+  const subagentType = extractPipelineAgentType(toolInput);
+  if (subagentType && typeof subagentType === 'object' && subagentType.invalid) {
+    return {
+      kind: 'deny',
+      reason: "DISPATCH_GUARD: pipeline agent identity must be a string.",
+      attempted: String(subagentType.value),
+      expected: "string agent identity",
+    };
+  }
   if (!subagentType) return { kind: 'allow' };
 
   if (subagentType.startsWith(`${LEGACY_PIPELINE_NAMESPACE}:`)) {
@@ -295,7 +324,7 @@ function evaluateAgent(toolInput) {
       return {
         kind: 'deny',
         reason:
-          `DISPATCH_GUARD: subagent_type="${subagentType}" uses the pipeline namespace ` +
+          `DISPATCH_GUARD: pipeline agent identity "${subagentType}" uses the pipeline namespace ` +
           `but its leaf "${leaf}" is not a registered pipeline agent.`,
         attempted: subagentType,
       };
@@ -305,7 +334,7 @@ function evaluateAgent(toolInput) {
       return {
         kind: 'deny',
         reason:
-          `DISPATCH_GUARD: subagent_type="${subagentType}" is not the expected canonical FQN. ` +
+          `DISPATCH_GUARD: pipeline agent identity "${subagentType}" is not the expected canonical FQN. ` +
           `Use "${expectedFqn}".`,
         attempted: subagentType,
         expected: expectedFqn,
@@ -318,8 +347,8 @@ function evaluateAgent(toolInput) {
     return {
       kind: 'deny',
       reason:
-        `DISPATCH_GUARD: subagent_type="${subagentType}" is missing the namespace. ` +
-        `Use Agent with subagent_type="${fqnFor(subagentType)}" instead.`,
+        `DISPATCH_GUARD: pipeline agent identity "${subagentType}" is missing the namespace. ` +
+        `Use spawn_agent with PIPELINE_AGENT_FQN: ${fqnFor(subagentType)} instead.`,
       attempted: subagentType,
       expected: fqnFor(subagentType),
     };
@@ -342,8 +371,8 @@ function evaluateSkill(toolInput) {
       kind: 'deny',
       reason:
         `DISPATCH_GUARD: Skill "${skillName}" maps to pipeline agent "${leaf}". ` +
-        `Pipeline agents must be spawned via the Agent tool with ` +
-        `subagent_type="${fqnFor(leaf)}", not via Skill.`,
+        `Pipeline agents must be spawned via spawn_agent with ` +
+        `PIPELINE_AGENT_FQN: ${fqnFor(leaf)}, not via Skill.`,
       attempted: skillName,
       expected: fqnFor(leaf),
     };
@@ -357,13 +386,13 @@ function handle(input) {
 
   let verdict = { kind: 'allow' };
 
-  if (toolName === 'Agent') {
+  if (toolName === 'Agent' || toolName === 'spawn_agent') {
     verdict = evaluateAgent(toolInput);
   } else if (toolName === 'Skill') {
     verdict = evaluateSkill(toolInput);
   } else {
     // Be tolerant: hosts may pass empty tool_name. Try both detectors.
-    if (toolInput && (toolInput.subagent_type || toolInput.subagentType)) {
+    if (toolInput && (toolInput.subagent_type || toolInput.subagentType || toolInput.message || toolInput.prompt)) {
       verdict = evaluateAgent(toolInput);
     } else if (toolInput && (toolInput.skill || toolInput.skill_name || toolInput.skillName)) {
       verdict = evaluateSkill(toolInput);

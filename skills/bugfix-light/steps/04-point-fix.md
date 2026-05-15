@@ -14,7 +14,7 @@ expected_outputs:
   - before_after_explanation: string
 expected_next: 5
 gate_required: false
-allowed_tools: [Read, Edit, Write, Bash, Grep]
+allowed_tools: [shell_read, apply_patch, shell_command]
 ---
 
 # Step 04 — Point Fix (TDD GREEN, minimal diff)
@@ -34,7 +34,7 @@ If you find yourself wanting to exceed these limits, STOP and let step 7 (Comple
 
 ## Non-Invention guard (mandatory)
 
-Even on a light fix, **STOP and ask the user** (via AskUserQuestion) if any of these hold:
+Even on a light fix, **STOP and ask the user** (via GATE_REQUEST) if any of these hold:
 
 - The intended correct behavior is not 100% clear.
 - The fix touches billing / credits / financial values / security-sensitive paths.

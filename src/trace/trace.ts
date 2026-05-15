@@ -83,7 +83,7 @@ export function generateTrace(input: TraceInput) {
     "## Classification",
     "",
     `- type: ${input.classification.type}`,
-    `- type_source: ${input.classification.typeSource ?? "auto via /pipeline"}`,
+    `- type_source: ${input.classification.typeSource ?? "auto via /pipeline-orchestrator-for-codex:pipeline"}`,
     `- complexity: ${input.classification.complexity}`,
     `- complexity_source: ${input.classification.complexitySource ?? input.classification.variant}`,
     `- justification: ${input.classification.justification ?? "Runtime closeout trace generated from authoritative pipeline state."}`,

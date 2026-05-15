@@ -19,7 +19,7 @@ expected_outputs:
   - gate_decision: "approved | revise | abort"
 expected_next: 2
 gate_required: true
-allowed_tools: [Task, Read, Grep, Glob, Bash, AskUserQuestion]
+allowed_tools: [spawn_agent, shell_read, shell_command, GATE_REQUEST]
 ---
 
 # Step 01 — Initial Read + Project Map (Light) — REQUIRES SCOPE APPROVAL
@@ -30,7 +30,7 @@ Open the audit by producing (a) a flowing-text report explaining what kind of sy
 
 **Evidence rule (same as Heavy):** every claim cites file paths; if it cannot be proven, declare "not evidenced".
 
-This is the **first user-facing gate** (`gate_required: true`). REQUIRES SCOPE APPROVAL via AskUserQuestion before deeper steps run.
+This is the **first user-facing gate** (`gate_required: true`). REQUIRES SCOPE APPROVAL via GATE_REQUEST before deeper steps run.
 
 ## Why subagent (audit-intake)
 
@@ -85,7 +85,7 @@ AuditSnapshot:
 
 Start by reading README (if it exists), `package.json` (or equivalent: `requirements.txt`, `pyproject.toml`, `Cargo.toml`, `go.mod`, …), and the main directory tree.
 
-### 1.3 AskUserQuestion gate (mandatory)
+### 1.3 GATE_REQUEST gate (mandatory)
 
 ```
 header: "Escopo"
@@ -100,7 +100,7 @@ options:
     description: "Cobertura precisa de audit-heavy (regulatorio, multi-axis); abortar e re-invocar."
 ```
 
-(AskUserQuestion automatically appends "Other".)
+(GATE_REQUEST automatically appends "Other".)
 
 ### 1.4 Record the decision
 
@@ -118,7 +118,7 @@ options:
 
 - Snapshot narrative written in plain language.
 - `AuditSnapshot` populated with all five fields.
-- AskUserQuestion invoked.
+- GATE_REQUEST invoked.
 - Decision audit-logged.
 
 ## Outputs (handoff to step 2)

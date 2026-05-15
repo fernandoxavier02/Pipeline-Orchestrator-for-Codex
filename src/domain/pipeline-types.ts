@@ -20,6 +20,8 @@ export type PipelinePhase = "phase-0" | "phase-1" | "phase-1.5" | "phase-2" | "p
 export type PipelineVariant =
   | "implement-light"
   | "implement-heavy"
+  | "feature-light"
+  | "feature-heavy"
   | "bugfix-light"
   | "bugfix-heavy"
   | "audit-light"

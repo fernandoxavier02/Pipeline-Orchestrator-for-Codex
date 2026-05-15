@@ -5,7 +5,7 @@ description: |
   data, integrations, multiple flows, contracts, jobs, mobile; or maximum predictability
   desired before implementation). Adds full content review (12 axes) and parallel adversarial
   audits (architecture-critic + security-scanner) on top of the Light pipeline. Sequence is
-  locked (1→9, no skip, no reorder). 5 mandatory AskUserQuestion gates at steps 1
+  locked (1→9, no skip, no reorder). 5 mandatory GATE_REQUEST gates at steps 1
   (format-gate-approval), 2 (content-review-approval), 3 (tdd-scenarios-approval),
   4 (adversarial-loop-checkpoint), 5 (post-impl-validation). 6 reused agents:
   spec-format-gate (1), spec-content-reviewer (2), spec-post-impl-validator (5),
@@ -13,7 +13,7 @@ description: |
   steps 3, 4 and 8 inline. stop_rule_max_failures: 3 (longer workflow warrants more
   tolerance). Manual-only invocation via /pipeline-orchestrator-for-codex:spec-heavy.
 disable-model-invocation: true
-allowed-tools: [Task, Read, Grep, Glob, AskUserQuestion, Edit, Write, Bash]
+allowed-tools: spawn_agent
 argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"
 sequence: [1, 2, 3, 4, 5, 6, 7, 8, 9]
 sequence_lock: true
@@ -39,6 +39,11 @@ If the user switches workflow, rebuild the gate and ask again. If the gate canno
 ## NEXT_STEP Contract
 
 When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
+
+## Codex Parent Protocol Contract
+
+Codex does not execute Claude `Task` or direct `GATE_REQUEST` calls as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
 
 9 prescriptive steps for the Spec Lifecycle in Heavy mode. Each step file declares its execution contract (sequence, ownership, gates) via frontmatter consumed by the orchestrator. Project-neutral wording — designed to work in any codebase that follows the spec layout under `pipeline-runs/<run_id>/01-spec/`.
 
@@ -76,7 +81,7 @@ Se a spec for de risco pequeno-a-medio e voce confia no conteudo, prefira `spec-
 | 08 | inline | — (orchestrator inline, scoring math) |
 | 09 | subagent | `pipeline-orchestrator-for-codex:executor:spec-closer` |
 
-## Gates (5 mandatory AskUserQuestion checkpoints)
+## Gates (5 mandatory GATE_REQUEST checkpoints)
 
 | Step | gate_name | What the user approves |
 |---|---|---|
@@ -86,7 +91,7 @@ Se a spec for de risco pequeno-a-medio e voce confia no conteudo, prefira `spec-
 | 4 | `adversarial-loop-checkpoint` | Adversarial loop verdict (continue / escalate / accept-warnings / abort) — escalation prompt every 3 attempts |
 | 5 | `post-impl-validation` | Post-impl decision (PASS / PASS_WITH_WARNINGS / FAIL) and remediation plan |
 
-`AskUserQuestion` is non-negotiable at these gates — prose substitution is forbidden by the global rule "Decisoes do Usuario — AskUserQuestion sempre".
+`GATE_REQUEST` is non-negotiable at these gates — prose substitution is forbidden by the global rule "Decisoes do Usuario — GATE_REQUEST sempre".
 
 ## Steps 05, 06 e 07 — auditorias independentes em sequencia
 
@@ -115,7 +120,7 @@ The 8 enforcement rules inherited from v4.7.0+ contract apply:
 2. Execution-mode lock per step.
 3. Agent-type whitelist when `execution_mode: subagent`.
 4. Output schema verified before next step proceeds.
-5. AskUserQuestion mandatory at the 5 gates.
+5. GATE_REQUEST mandatory at the 5 gates.
 6. STOP RULE: 3 consecutive failures halt the pipeline (`stop_rule_max_failures: 3`). Heavy tolera mais que Light (2) por ser pipeline mais longo com mais oportunidades de retry parcial.
 7. Audit log append-only to `.pipeline/gate-decisions.jsonl`.
 8. Sentinel checkpoints (`pre_1`, `pre_3`, `pre_5`, `pre_9`).

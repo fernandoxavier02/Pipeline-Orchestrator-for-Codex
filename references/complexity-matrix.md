@@ -2,8 +2,8 @@
 kind: complexity-matrix
 types:
   - type: Feature
-    light: implement-light
-    heavy: implement-heavy
+    light: feature-light
+    heavy: feature-heavy
   - type: Bug Fix
     light: bugfix-light
     heavy: bugfix-heavy
@@ -75,7 +75,7 @@ Values at exact boundaries (e.g., exactly 3 files, exactly 30 lines) are classif
 | Type \ Complexity | SIMPLES | MEDIA | COMPLEXA |
 |-------------------|---------|-------|----------|
 | **Bug Fix** | DIRETO | bugfix-light | bugfix-heavy |
-| **Feature** | DIRETO | implement-light | implement-heavy |
+| **Feature** | DIRETO | feature-light | feature-heavy |
 | **User Story** | DIRETO | user-story-light | user-story-heavy |
 | **Audit** | DIRETO | audit-light | audit-heavy |
 | **UX Simulation** | DIRETO | ux-sim-light | ux-sim-heavy |
@@ -85,7 +85,7 @@ DIRETO = Direct execution without pipeline (build + test only, max 2 files, < 30
 
 ### Heavy Spec Gate
 
-COMPLEXA execution variants must have spec artifacts before implementation can start. Runtime enforces this with `SPEC_ARTIFACT_MISSING` for `*-heavy` variants, except `audit-heavy` because it is report-only and must not modify code. The accepted artifact locations are `pipeline-runs/<run_id>/01-spec/` and `.kiro/specs/<spec_id>/`, each with `requirements.md`, `design.md`, and `tasks.md`.
+Spec lifecycle variants must have spec artifacts before spec execution can start. Runtime enforces this with `SPEC_ARTIFACT_MISSING` for `spec-*` variants. Generic code-changing heavy variants such as `bugfix-heavy` and `feature-heavy` may recommend a spec, but they must not be blocked as if they were spec lifecycle commands. The accepted artifact locations are `pipeline-runs/<run_id>/01-spec/` and `.kiro/specs/<spec_id>/`, each with `requirements.md`, `design.md`, and `tasks.md`.
 
 ---
 

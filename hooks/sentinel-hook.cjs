@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * sentinel-hook.cjs — PreToolUse:Agent guard for pipeline-orchestrator-for-codex.
+ * sentinel-hook.cjs — PreToolUse:spawn_agent/Agent guard for pipeline-orchestrator-for-codex.
  *
  * Protocol:
  *   - Exit 0 with no stdout → allow (silent pass)
@@ -99,6 +99,22 @@ function normalizeState(state) {
   };
 }
 
+function extractPipelineAgentType(input) {
+  const toolInput = input.tool_input || input.toolInput || {};
+  const direct = toolInput.subagent_type || toolInput.subagentType || toolInput.target_name || toolInput.targetName;
+  if (typeof direct === 'string' || typeof direct === 'number') {
+    return String(direct);
+  }
+
+  const message = toolInput.message || toolInput.prompt || toolInput.description;
+  if (typeof message === 'string') {
+    const marker = message.match(/\bPIPELINE_AGENT_FQN:\s*([^\s\r\n]+)/u);
+    if (marker?.[1]) return marker[1].trim();
+  }
+
+  return '';
+}
+
 // ── Main Handler ────────────────────────────────────────────────────────────
 
 function handleInput(raw) {
@@ -121,8 +137,7 @@ function handleInput(raw) {
   }
 
   // 2. Extract agent identity from tool_input
-  const toolInput = input.tool_input || {};
-  const fullAgentType = toolInput.subagent_type || '';
+  const fullAgentType = extractPipelineAgentType(input);
 
   // Only validate pipeline-orchestrator agents — allow all others
   // Support both namespaces: pipeline-orchestrator: and pipeline-orchestrator-for-codex:
@@ -168,7 +183,7 @@ function handleInput(raw) {
           `Agent "${agentName}" requires an active pipeline with state tracking.\n\n` +
           'ACTION REQUIRED: Create sentinel-state.json before spawning pipeline agents.\n' +
           'If this is a new pipeline, spawn task-orchestrator first (it bootstraps the state file).\n' +
-          'If resuming, use /pipeline continue to restore state.'
+          'If resuming, use /pipeline-orchestrator-for-codex:pipeline continue to restore state.'
       }
     };
     recordHookEvent({
@@ -307,7 +322,7 @@ function handleInput(raw) {
         `SENTINEL DIVERGENCE DETECTED.\n` +
         `  Attempted: "${agentName}"\n` +
         `  Expected:  "${normalizedState.expectedNext.join(', ')}" (Phase ${normalizedState.currentPhase || '?'}, Variant: ${normalizedState.variant || '?'})\n\n` +
-        `ACTION REQUIRED: Spawn the sentinel agent (subagent_type: "pipeline-orchestrator-for-codex:core:sentinel") ` +
+        `ACTION REQUIRED: Spawn the sentinel agent with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:sentinel ` +
         `with mode SEQUENCE_VALIDATION to diagnose and auto-correct.\n` +
         `Pass these parameters in the prompt:\n` +
         `  - mode: SEQUENCE_VALIDATION\n` +

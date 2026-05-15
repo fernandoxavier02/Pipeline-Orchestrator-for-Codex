@@ -12,25 +12,25 @@ The user-story translation guidelines that originally lived in this file (Pulsar
 |-------|--------------|-----|
 | Frontmatter contract | Each `steps/0X-*.md` declares `step_number`, `step_name`, `source`, `description`, `execution_mode`, `agent_type`, `expected_inputs`, `expected_outputs`, `expected_next`, `gate_required`, `allowed_tools`. | Static parser walks all 13 step files. Hooks `dispatch-guard` + `sentinel-hook` enforce at runtime (advisory model — see §17.4 #8). |
 | Sequence lock | Steps execute strictly 1→2→3→...→13. No skip, no reorder. | Golden run on a fixture repo. Audit log `.pipeline/gate-decisions.jsonl` shows linear step transitions. |
-| Gate at step 3 (acceptance-matrix-approval) | `AskUserQuestion` invoked exactly once with the recommended option marked, before step 4 runs. | Golden run captures hook events; `gate-decisions.jsonl` has 1 entry tagged `pre_4`. |
-| Gate at step 7 (architecture-choice) | `AskUserQuestion` invoked exactly once with 2 options, before step 8 runs. | `gate-decisions.jsonl` has 1 entry tagged `pre_8`. |
-| Gate at step 9 (plan-approval) | `AskUserQuestion` invoked exactly once before TDD. | `gate-decisions.jsonl` has 1 entry tagged `pre_10`. |
-| Gate at step 10 (tdd-tests-approval) | `AskUserQuestion` invoked once after RED tests written, before step 11 (execution). | `gate-decisions.jsonl` has 1 entry tagged `pre_11`. |
+| Gate at step 3 (acceptance-matrix-approval) | `GATE_REQUEST` invoked exactly once with the recommended option marked, before step 4 runs. | Golden run captures hook events; `gate-decisions.jsonl` has 1 entry tagged `pre_4`. |
+| Gate at step 7 (architecture-choice) | `GATE_REQUEST` invoked exactly once with 2 options, before step 8 runs. | `gate-decisions.jsonl` has 1 entry tagged `pre_8`. |
+| Gate at step 9 (plan-approval) | `GATE_REQUEST` invoked exactly once before TDD. | `gate-decisions.jsonl` has 1 entry tagged `pre_10`. |
+| Gate at step 10 (tdd-tests-approval) | `GATE_REQUEST` invoked once after RED tests written, before step 11 (execution). | `gate-decisions.jsonl` has 1 entry tagged `pre_11`. |
 | Sentinel checkpoints | Sentinel state validates before steps 3, 10, 13 (`pre_3`, `pre_10`, `pre_13`). | `sentinel-hook` records validation events; test asserts 3 events per run. |
 | STOP RULE | 2 consecutive failures (e.g., agent timeout, missing input field) halt the pipeline. | Inject failure into a fixture; expect halt + audit log entry tagged `stop_rule_triggered`. |
 | Output schema | Each step's `expected_outputs` keys exist; the next step verifies inputs match. | Schema check on the JSON deliverable per step. |
-| Agent dispatch | Steps 3, 7, 9 spawn `feature-vertical-slice-planner`; step 10 spawns `pre-tester`; step 11 spawns `feature-implementer`; step 12 spawns `feature-integration-validator`. | Golden run inspects Task tool invocations and matches `subagent_type`. |
-| Inline steps | Steps 1, 2, 4, 5, 6, 8, 13 execute inline (no Task spawn). | Golden run asserts no Task call for these steps. |
+| Codex dispatch | Steps 3, 7, 9 spawn `feature-vertical-slice-planner`; step 10 spawns `pre-tester`; step 11 spawns `feature-implementer`; step 12 spawns `feature-integration-validator`. | Golden run inspects `spawn_agent` invocations and matches the `PIPELINE_AGENT_FQN` marker. |
+| Inline steps | Steps 1, 2, 4, 5, 6, 8, 13 execute inline (no spawn_agent dispatch). | Golden run asserts no spawn_agent call for these steps. |
 
 ## Smoke test scenarios
 
 ### Scenario A — Happy path (small feature, all gates approved)
 
 1. Invoke `/pipeline-orchestrator-for-codex:feature-light "add dark-mode toggle to settings page; user story: as a user, I can toggle dark mode and the choice persists across sessions; DoD: toggle visible, persists in localStorage, applies on next load"`.
-2. Expect steps 1→2 inline, step 3 spawns planner + AskUserQuestion (Escopo).
-3. Approve → steps 4→6 inline, step 7 spawns planner + AskUserQuestion (Architecture).
-4. Approve → step 8 inline, step 9 spawns planner + AskUserQuestion (Plan).
-5. Approve → step 10 spawns pre-tester + AskUserQuestion (TDD RED).
+2. Expect steps 1→2 inline, step 3 spawns planner + GATE_REQUEST (Escopo).
+3. Approve → steps 4→6 inline, step 7 spawns planner + GATE_REQUEST (Architecture).
+4. Approve → step 8 inline, step 9 spawns planner + GATE_REQUEST (Plan).
+5. Approve → step 10 spawns pre-tester + GATE_REQUEST (TDD RED).
 6. Approve → step 11 spawns implementer (GREEN), step 12 spawns integration-validator, step 13 inline.
 7. Final state: `gate-decisions.jsonl` has 4 gate entries; sentinel events for `pre_3`, `pre_10`, `pre_13`.
 
@@ -44,7 +44,7 @@ The user-story translation guidelines that originally lived in this file (Pulsar
 
 1. Invoke `feature-light` with a request that includes "modificar schema do banco + integração com Stripe + concorrência multi-user".
 2. Expect step 1 (intent) to flag scope as out-of-bounds for light, recommend `feature-heavy`.
-3. User can abort and re-invoke `feature-heavy` (or pipeline-controller auto-escalates if dispatched via `/pipeline`).
+3. User can abort and re-invoke `feature-heavy` (or pipeline-controller auto-escalates if dispatched via `/pipeline-orchestrator-for-codex:pipeline`).
 
 ## Per-step contract assertions
 

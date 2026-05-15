@@ -13,7 +13,7 @@ expected_outputs:
   - controls_plan: object
 expected_next: 9
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Light) - Riscos e controles: idempotencia/atomicidade/concorrrencia (se aplicavel)

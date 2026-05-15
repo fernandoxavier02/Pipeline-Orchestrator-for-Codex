@@ -2,7 +2,7 @@
 
 **Status:** Active. Achado #7 mitigation (M-1 partial + M-2 hybrid). See `docs/findings/achado-7-subagent-runtime.md` for the empirical evidence and architectural rationale.
 
-**Purpose:** workaround the Claude Code runtime constraint that strips `AskUserQuestion`, `Agent`, and `EnterPlanMode` from the subagent tool manifest. Subagents cannot ask the user questions or dispatch nested subagents directly. This protocol formalizes the "hoist to parent" pattern: the subagent emits a structured block in its tool result, the parent (main LLM, where these tools work) processes the block and re-dispatches the subagent with the answer or result attached.
+**Purpose:** formalize the Codex parent-handler pattern for requests that cannot be completed inside a child context. Subagents cannot ask the user questions, dispatch nested subagents, or open a parent-visible plan directly. The subagent emits a structured block in its tool result; the parent main LLM processes the block and re-dispatches the subagent with the answer, dispatch result, or plan result attached.
 
 This protocol does NOT change which agents exist, what they classify, or what artifacts they produce. It only changes HOW an agent that needs an interactive surface delegates that surface upward.
 
@@ -12,9 +12,9 @@ This protocol does NOT change which agents exist, what they classify, or what ar
 
 | Subagent need | Block type to emit | Parent handles |
 |---|---|---|
-| Ask user a multiple-choice question (formerly AskUserQuestion) | `GATE_REQUEST` | Calls `AskUserQuestion`, captures answer, re-dispatches subagent with `GATE_RESPONSE` payload |
-| Dispatch a peer/leaf agent (formerly Agent tool) | `DISPATCH_REQUEST` | Calls `Agent(subagent_type, prompt)`, captures result, re-dispatches caller with `DISPATCH_RESULT` payload |
-| Enter plan mode (formerly EnterPlanMode) | `PLAN_MODE_REQUEST` | Calls `EnterPlanMode` directly in parent context, runs the plan in-place, returns plan to caller |
+| Ask user a multiple-choice question | `GATE_REQUEST` | Asks in parent context, captures answer, re-dispatches subagent with `GATE_RESPONSE` payload |
+| Dispatch a peer/leaf agent | `DISPATCH_REQUEST` | Calls Codex `spawn_agent`, captures result, re-dispatches caller with `DISPATCH_RESULT` payload |
+| Request parent-visible planning | `PLAN_MODE_REQUEST` | Opens/updates a visible read-only Codex plan, runs the plan in parent context, returns plan to caller |
 | Continue without user interaction | (no block) | n/a — subagent returns final result normally |
 
 A subagent MAY emit multiple blocks of different types in a single tool result. The parent processes them in declaration order.
@@ -51,7 +51,7 @@ After emitting `GATE_REQUEST`, the subagent MUST stop work that depends on the a
 ```yaml
 === DISPATCH_REQUEST v1 ===
 dispatch_id: <unique-id-within-run>
-target_kind: agent | skill          # agent for top-level Agent tool; skill for Skill tool (works in subagents)
+target_kind: agent | skill
 target_name: <subagent_type or skill name>
 description: <short label for the parent's tool call>
 prompt: |
@@ -63,7 +63,7 @@ context_for_parent: |
 
 If `target_kind: skill`, the subagent SHOULD prefer to dispatch the skill itself directly (Skill tool works in subagents). Only emit DISPATCH_REQUEST for skills when the dispatch must be observed/audited by the parent for some reason.
 
-For `target_kind: agent`, the parent uses `Agent(subagent_type: <target_name>, ...)`.
+For `target_kind: agent`, the parent uses Codex `spawn_agent`.
 
 ### PLAN_MODE_REQUEST
 
@@ -78,7 +78,7 @@ expected_deliverables:
 === END PLAN_MODE_REQUEST ===
 ```
 
-The parent invokes `EnterPlanMode`, conducts the read-only research per `research_scope`, exits plan mode with the plan, and re-dispatches the caller with the plan attached as `PLAN_MODE_RESULT`.
+The parent opens or updates the visible Codex plan, conducts the read-only research per `research_scope`, and re-dispatches the caller with the plan attached as `PLAN_MODE_RESULT`.
 
 ### Response payloads (parent → subagent on re-dispatch)
 
@@ -120,15 +120,15 @@ When a parent dispatches a subagent that uses this protocol, it MUST:
 
 1. Read the entire tool result for `=== <BLOCK_TYPE> v1 ===` ... `=== END <BLOCK_TYPE> ===` markers.
 2. Process blocks in declaration order:
-   - `GATE_REQUEST` → invoke `AskUserQuestion` with the gate's question + options. Collect answer.
-   - `DISPATCH_REQUEST` → invoke the target via `Agent` or `Skill`. Capture result.
-   - `PLAN_MODE_REQUEST` → invoke `EnterPlanMode`, conduct research, exit with plan.
+   - `GATE_REQUEST` → ask the gate's question and options in parent context. Collect answer.
+   - `DISPATCH_REQUEST` → invoke the target via Codex `spawn_agent` or an explicit skill dispatch. Capture result.
+   - `PLAN_MODE_REQUEST` → open/update the visible Codex plan, conduct research, return the plan.
 3. Aggregate all responses/results into `GATE_RESPONSES` / `DISPATCH_RESULTS` / `PLAN_MODE_RESULTS` payloads.
 4. If the subagent's tool result ended with `STATUS: AWAITING_GATE_RESPONSES` (or AWAITING_DISPATCH_RESULTS, AWAITING_PLAN_MODE_RESULTS), re-dispatch the SAME subagent with the original prompt + the response payloads prepended.
 5. If the subagent emitted blocks but did NOT end with AWAITING_*, the parent MUST still process the blocks but MAY skip the re-dispatch (the subagent decided it could continue past the blocks; the responses are still recorded for audit).
 6. Persist every gate response and dispatch result to a SEPARATE log file `{PIPELINE_DOC_PATH}/protocol-events.jsonl` (NOT to `gate-decisions.jsonl`) with the `gate_id` / `dispatch_id` for cross-reference. See "Audit-trail entries" below for the exact schema and the rationale (avoiding collision with the strict 22-gate registry validation in `final-validator`).
 
-The parent MUST NOT silently default. If a `GATE_REQUEST` is malformed (missing required fields, no options), the parent emits an error to the user and does NOT re-dispatch the subagent until the malformed block is corrected.
+The parent MUST NOT silently default. If a `GATE_REQUEST` is malformed (missing required fields, fewer than two meaningful options, or unusable option text), the parent emits an error to the user and does NOT re-dispatch the subagent until the malformed block is corrected.
 
 ## Audit-trail entries
 
@@ -170,6 +170,7 @@ When a GATE_REQUEST corresponds to a gate in the 22-gate registry, the parent du
 | `phase-3-closeout` | `CLOSEOUT_CONFIRM` | SOFT |
 | `phase-0-info-gate-<topic>` | `INFO_GATE_BLOCKED` (only when blocking) | HARD |
 | `brainstorm-explore-q<N>` | (no canonical gate — protocol-events only) | n/a |
+| `brainstorm-explore-no-gaps` | (no canonical gate — protocol-events only) | n/a |
 | `brainstorm-handoff` | (no canonical gate — protocol-events only) | n/a |
 | Any other custom gate_id | (no canonical gate — protocol-events only) | n/a |
 
@@ -185,13 +186,13 @@ Each subagent dispatch creates a `.pipeline/sessions/<session-id>.lock` file (vi
 
 **Permanent fix (deferred to v5.2 follow-up):** add a stale-lock detection in `edit-guard-hook.cjs` — when a lock is found AND the lock is older than N minutes (suggested: 30 min default, configurable), AND the lock's owning session is no longer the active session, treat as stale and ignore. Requires schema extension to lock files (add `last_heartbeat_at` updated by re-dispatch events). Estimated 3-5h.
 
-Until v5.2, when you (the parent) hit a PIPELINE_LOCK_ACTIVE error during legitimate protocol re-dispatch, present the user via AskUserQuestion: "stale lock from prior session — delete manually OR abort pipeline". Do NOT auto-delete without explicit user authorization.
+When you (the parent) hit a PIPELINE_LOCK_ACTIVE error during legitimate protocol re-dispatch, present the stale-lock choice in parent context: "stale lock from prior session — delete manually OR abort pipeline". Do NOT auto-delete without explicit user authorization.
 
-## Skill dispatch (works in subagents — no protocol needed)
+## Skill dispatch
 
-Skills can be dispatched directly from inside a subagent via the `Skill` tool (confirmed available by empirical probe). When a subagent's contract says "dispatch skill X", it does so directly without going through `DISPATCH_REQUEST`. The protocol only kicks in for `Agent` tool dispatches that the subagent cannot perform itself.
+Skills can be dispatched directly only when the host exposes that capability to the current context. When the dispatch must be observed, audited, or performed by the parent, use `DISPATCH_REQUEST`. The operational Codex path uses real `spawn_agent`; harness-only dispatch is diagnostic and must be labeled as such.
 
-Mixed dispatch is fine: a subagent may use `Skill` directly for some peers AND emit `DISPATCH_REQUEST` for others.
+Mixed dispatch is fine when supported by the host: a subagent may use a direct skill dispatch for some peers and emit `DISPATCH_REQUEST` for others.
 
 ## Backward compatibility
 

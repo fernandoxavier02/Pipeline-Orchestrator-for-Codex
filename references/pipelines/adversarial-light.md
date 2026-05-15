@@ -17,7 +17,7 @@ checklists:
 - Type: Audit (sub-routed via adversarial keyword detection + user confirmation)
 - Complexity: SIMPLES (1-2 files, <30 lines, 1 domain)
 
-**Sub-route trigger:** executor-controller detects adversarial keywords ("adversarial review", "security audit", "threat model") in the task description AND user confirms via AskUserQuestion.
+**Sub-route trigger:** executor-controller detects adversarial keywords ("adversarial review", "security audit", "threat model") in the task description and the user confirms through a parent-context gate.
 
 **CRITICAL: Review-only mode produces REPORTS ONLY. Fix mode spawns executor-implementer-task for critical/high findings.**
 

@@ -2,7 +2,7 @@
 name: audit-heavy
 description: Prescriptive 9-step audit workflow for COMPLEXA audits (full system, multi-axis, regulatory, security-sensitive). Imported from Pulsar audit workflow per spec §22. Use when audit complexity is heavy or when audit-light auto-escalates at its scope gate. REPORT-ONLY by Iron Law — no code modification under any circumstance. Steps 1 subagent gate (intake + spec + inventory — REQUIRES SCOPE APPROVAL), 2-4 subagent (architecture + domain/SSOT + contracts via audit-domain-analyzer), 5-8 subagent (data + frontend + backend + governance via audit-compliance-checker), 9 subagent gate (Pa de Cal + risk matrix via audit-risk-matrix-generator — REQUIRES GO/NO-GO). Each step produces a typed JSON output (AuditIntake, DependencyImpactAudit, DecisionSSOTAudit, ContractGovernanceAudit, DataGovernanceAudit, FrontendDeepAudit, BackendDeepAudit, DeliveryGovernanceAudit, AuditMasterSeal). Manual-only invocation via /pipeline-orchestrator-for-codex:audit-heavy or via /pipeline-orchestrator-for-codex:audit --heavy.
 disable-model-invocation: true
-allowed-tools: [Task, Read, Grep, Glob, AskUserQuestion]
+allowed-tools: spawn_agent
 argument-hint: [audit scope — modules, axes, baseline]
 sequence: [1, 2, 3, 4, 5, 6, 7, 8, 9]
 sequence_lock: true
@@ -29,6 +29,11 @@ If the user switches workflow, rebuild the gate and ask again. If the gate canno
 ## NEXT_STEP Contract
 
 When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
+
+## Codex Parent Protocol Contract
+
+Codex does not execute Claude `Task` or direct `GATE_REQUEST` calls as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
 
 This skill executes a deterministic 9-step procedure for COMPLEXA audits. The procedure is **non-negotiable**: order is locked, execution mode per step is locked, gates cannot be skipped, and **no production file may be modified at any point**. Every audit agent is read-only by frontmatter and Iron Law.
 
@@ -73,9 +78,9 @@ These rules are baked into the frontmatter contract. The `dispatch-guard` hook +
 2. **Execution-mode lock** — each step declares `execution_mode: subagent`. Cannot be swapped to inline at runtime.
 3. **Agent-type whitelist** — when `execution_mode: subagent`, the step declares the EXACT `agent_type:` allowed. `dispatch-guard` rejects any other agent.
 4. **Output schema** — each step declares `expected_outputs:`; the next step verifies inputs match before proceeding. Fail-closed.
-5. **AskUserQuestion gates obrigatórios** — steps 1 (scope approval) and 9 (Pa de Cal GO/NO-GO) declare `gate_required: true`. The skill MUST invoke AskUserQuestion at those points. Prose substitution is forbidden.
+5. **GATE_REQUEST gates obrigatórios** — steps 1 (scope approval) and 9 (Pa de Cal GO/NO-GO) declare `gate_required: true`. The skill MUST emit a GATE_REQUEST at those points. Prose substitution is forbidden.
 6. **STOP RULE** — 2 consecutive failures (missing inputs, invalid evidence chain, agent timeout) halt the pipeline. `stop_rule_max_failures: 2` enforced by sanity-checker + checkpoint-validator.
-7. **Audit log append-only** — every gate decision, AskUserQuestion answer, step transition, and STOP event is appended to `.pipeline/gate-decisions.jsonl`.
+7. **Audit log append-only** — every gate decision, GATE_REQUEST answer, step transition, and STOP event is appended to `.pipeline/gate-decisions.jsonl`.
 8. **Sentinel checkpoints** — `sentinel-hook` validates state coherence before steps 1, 5, 9 (`sentinel_checkpoints: [pre_1, pre_5, pre_9]`). Outside these checkpoints, sentinel blocks execution.
 
 ## Iron-Law extension — Read-only enforcement
@@ -89,10 +94,10 @@ Beyond the 8 rules above, this skill carries a 9th non-negotiable invariant uniq
 1. The skill is invoked via `/pipeline-orchestrator-for-codex:audit-heavy "<scope description>"` (or via `/pipeline-orchestrator-for-codex:audit --heavy` after pipeline-controller dispatch, or via auto-escalation from `audit-light` step 9).
 2. The orchestrator reads `sequence:` and walks the steps.
 3. For each step, the orchestrator opens `steps/0X-*.md`, reads the frontmatter, and:
-   - spawns a Task with the declared `agent_type:` and passes `expected_inputs` from previous steps
+   - calls spawn_agent with the declared `agent_type:` and passes `expected_inputs` from previous steps
    - the audit agent produces the typed JSON deliverable plus narrative
 4. Outputs accumulate; `expected_next` chains the next step.
-5. Gates (steps 1 and 9) raise AskUserQuestion before transitioning.
+5. Gates (steps 1 and 9) raise GATE_REQUEST before transitioning.
 6. On any failure, the STOP RULE may halt the pipeline.
 
 ## Reference docs
@@ -108,7 +113,7 @@ Beyond the 8 rules above, this skill carries a 9th non-negotiable invariant uniq
 
 Before Slice 3a the plugin had the 4 audit agents (`audit-intake`, `audit-domain-analyzer`, `audit-compliance-checker`, `audit-risk-matrix-generator`) and the team-composition references (`references/pipelines/audit-{heavy,light}.md`), but no prescriptive step procedure. The `audit-heavy` reference described WHO runs WHEN; this skill prescribes WHAT each step must produce, in WHAT FORMAT, with WHAT EVIDENCE, and chains them under sequence-lock. Closures:
 
-- **Audit 1 — Intake-as-gate**: scope approval is now a mandatory AskUserQuestion gate at step 1 (was implicit "user blesses scope" in references). Prevents scope creep mid-audit.
+- **Audit 1 — Intake-as-gate**: scope approval is now a mandatory GATE_REQUEST gate at step 1 (was implicit "user blesses scope" in references). Prevents scope creep mid-audit.
 - **Audit 2-4 — Architecture/Domain/Contracts as separate steps**: previously bundled under `audit-domain-analyzer` as a single pass. Now three focused invocations, each with its own typed deliverable (DependencyImpactAudit / DecisionSSOTAudit / ContractGovernanceAudit). Reduces context bloat per agent invocation and surfaces issues earlier.
 - **Audit 5-8 — Data/Frontend/Backend/Governance as separate steps**: previously bundled under `audit-compliance-checker`. Now four focused invocations (DataGovernanceAudit / FrontendDeepAudit / BackendDeepAudit / DeliveryGovernanceAudit). Same benefit: focused context, parallel-friendly future evolution.
-- **Audit 9 — Pa de Cal as GO/CONDITIONAL/NO-GO gate**: previously a free-form synthesis. Now an explicit AskUserQuestion gate with risk-matrix-backed decision and rollback plan for any HIGH-severity finding requiring follow-up.
+- **Audit 9 — Pa de Cal as GO/CONDITIONAL/NO-GO gate**: previously a free-form synthesis. Now an explicit GATE_REQUEST gate with risk-matrix-backed decision and rollback plan for any HIGH-severity finding requiring follow-up.

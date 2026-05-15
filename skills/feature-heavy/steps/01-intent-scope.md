@@ -17,7 +17,7 @@ expected_outputs:
   - evidence_vs_assumption: list
 expected_next: 2
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Heavy) - Intencao, valor e limites de escopo

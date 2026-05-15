@@ -11,7 +11,7 @@ expected_outputs:
   - decision_points: list
 expected_next: 2
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Step 01 — Understand Behavior (Light)
@@ -35,7 +35,7 @@ Using the bug description and codebase exploration tools (`Read`, `Grep`, `Glob`
 
 Do NOT propose improvements. Do NOT write tests yet. Do NOT change code.
 
-The objective is purely understanding. If the bug description is ambiguous, use AskUserQuestion to disambiguate the actual vs expected behavior before proceeding (this is a Non-Invention guard — see `.claude/rules/41-no-invention.md` if present).
+The objective is purely understanding. If the bug description is ambiguous, use GATE_REQUEST to disambiguate the actual vs expected behavior before proceeding (this is a Non-Invention guard — see `.claude/rules/41-no-invention.md` if present).
 
 ## Done criteria
 

@@ -4,6 +4,45 @@ import { createProtocolEventLog, parseProtocolBlocks, type ProtocolBlock } from 
 
 type DispatchLike = DispatchResult | RunRoleResult;
 
+export type ParentDispatchRequest = {
+  dispatchId: string;
+  targetKind: "agent" | "skill";
+  targetName: string;
+  description?: string;
+  prompt?: string;
+  phase: string;
+};
+
+export type ParentGateRequest = {
+  gateId: string;
+  question: string;
+  header?: string;
+  multiSelect: boolean;
+  options: Array<{ label: string; description: string; recommended: boolean }>;
+  context?: string;
+};
+
+export type ParentPlanModeRequest = {
+  planId: string;
+  researchScope: string;
+  expectedDeliverables: string[];
+};
+
+export type ParentProtocolAdapters = {
+  dispatchAgent: (request: ParentDispatchRequest) => Promise<Record<string, unknown>>;
+  dispatchSkill?: (request: ParentDispatchRequest) => Promise<Record<string, unknown>>;
+  answerGate: (request: ParentGateRequest) => Promise<{
+    gateId?: string;
+    selectedLabel: string;
+    selectedIndex?: number;
+    userNotes?: string;
+  }>;
+  fulfillPlanMode: (request: ParentPlanModeRequest) => Promise<{
+    planId?: string;
+    output: unknown;
+  }>;
+};
+
 function blockIdentifier(block: ProtocolBlock) {
   if (block.kind === "GATE_REQUEST") return block.gate_id;
   if (block.kind === "DISPATCH_REQUEST") return block.dispatch_id;
@@ -44,6 +83,119 @@ export async function persistProtocolBlocksFromDispatch(input: {
   }
 
   return blocks;
+}
+
+export async function processProtocolBlocksForParent(input: {
+  stateRoot: string;
+  blocks: ProtocolBlock[];
+  adapters: ParentProtocolAdapters;
+  source?: string;
+}) {
+  const log = createProtocolEventLog(input.stateRoot);
+  const timestamp = new Date().toISOString();
+  const dispatchResults: Array<Record<string, unknown>> = [];
+  const gateResponses: Array<Record<string, unknown>> = [];
+  const planModeResults: Array<Record<string, unknown>> = [];
+
+  for (const block of input.blocks) {
+    if (block.kind === "DISPATCH_REQUEST") {
+      const request: ParentDispatchRequest = {
+        dispatchId: block.dispatch_id,
+        targetKind: block.target_kind,
+        targetName: block.target_name,
+        description: block.description,
+        prompt: block.prompt,
+        phase: block.phase,
+      };
+      await log.append({
+        event_id: `dispatch-request-${block.dispatch_id}-dispatched`,
+        kind: "DISPATCH_REQUEST",
+        protocol_version: 1,
+        status: "dispatched",
+        source: input.source ?? "protocol-parent-handler",
+        timestamp,
+        payload: request,
+      });
+      const output = block.target_kind === "skill"
+        ? await input.adapters.dispatchSkill?.(request)
+        : await input.adapters.dispatchAgent(request);
+
+      if (!output) {
+        throw new Error(`DISPATCH_REQUEST ${block.dispatch_id} could not be processed by the parent handler.`);
+      }
+
+      const result = {
+        dispatchId: block.dispatch_id,
+        targetKind: block.target_kind,
+        targetName: block.target_name,
+        output,
+      };
+      dispatchResults.push(result);
+      await log.append({
+        event_id: `dispatch-request-${block.dispatch_id}-completed`,
+        kind: "DISPATCH_REQUEST",
+        protocol_version: 1,
+        status: "completed",
+        source: input.source ?? "protocol-parent-handler",
+        timestamp: new Date().toISOString(),
+        payload: result,
+      });
+      continue;
+    }
+
+    if (block.kind === "GATE_REQUEST") {
+      const response = await input.adapters.answerGate({
+        gateId: block.gate_id,
+        question: block.question,
+        header: block.header,
+        multiSelect: block.multi_select,
+        options: block.options,
+        context: block.context,
+      });
+      const normalized = {
+        gateId: response.gateId ?? block.gate_id,
+        selectedLabel: response.selectedLabel,
+        selectedIndex: response.selectedIndex,
+        userNotes: response.userNotes,
+      };
+      await recordProtocolGateResponse({
+        stateRoot: input.stateRoot,
+        gateId: normalized.gateId,
+        selectedLabel: normalized.selectedLabel,
+        selectedIndex: normalized.selectedIndex,
+        userNotes: normalized.userNotes,
+        source: input.source ?? "protocol-parent-handler",
+      });
+      gateResponses.push(normalized);
+      continue;
+    }
+
+    const planResult = await input.adapters.fulfillPlanMode({
+      planId: block.plan_id,
+      researchScope: block.research_scope,
+      expectedDeliverables: block.expected_deliverables,
+    });
+    const normalized = {
+      planId: planResult.planId ?? block.plan_id,
+      output: planResult.output,
+    };
+    planModeResults.push(normalized);
+    await log.append({
+      event_id: `plan-mode-request-${block.plan_id}-completed`,
+      kind: "PLAN_MODE_REQUEST",
+      protocol_version: 1,
+      status: "completed",
+      source: input.source ?? "protocol-parent-handler",
+      timestamp: new Date().toISOString(),
+      payload: normalized,
+    });
+  }
+
+  return {
+    dispatchResults,
+    gateResponses,
+    planModeResults,
+  };
 }
 
 function canonicalGateForGateId(gateId: string) {

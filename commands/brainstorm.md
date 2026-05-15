@@ -5,7 +5,7 @@ argument-hint: "<task description> [--resume <run-id>] [--type <Type>] [--no-imp
 
 # /pipeline-orchestrator-for-codex:brainstorm
 
-Entry command for the pre-execution brainstorm + spec lifecycle pipeline.
+Entry command for the pre-execution brainstorm + spec lifecycle pipeline. This is a guided exchange: the command must not create a spec, report, plan, or handoff until the user has answered material decision gaps through `GATE_REQUEST` or explicitly confirmed that there are no material gaps.
 
 ## VISIBLE_PLAN
 
@@ -13,13 +13,14 @@ As the first assistant action, open a visible Codex plan with `update_plan` usin
 
 ## WORKFLOW_METHOD_GATE
 
-After the visible plan is open, and still before dispatching, executing, editing files, generating a report, or creating a run directory, show the first visible method gate from `references/workflow-method-gate.md` and wait for the user's answer. State that the selected workflow is `brainstorm`, explain whether implementation handoff is planned, and allow the user to keep it or switch to `audit`, `bugfix`, `feature`, `ux`, `spec`, `review`, `verify-completion`, or `/pipeline`.
+After the visible plan is open, and still before dispatching, executing, editing files, generating a report, or creating a run directory, show the first visible method gate from `references/workflow-method-gate.md` and wait for the user's answer. State that the selected workflow is `brainstorm`, explain whether implementation handoff is planned, and allow the user to keep it or switch to `audit`, `bugfix`, `feature`, `ux`, `spec`, `review`, `verify-completion`, or `/pipeline-orchestrator-for-codex:pipeline`.
 
 ## Behavior
 
 1. Parse arguments. Recognize flags: `--resume <run-id>`, `--type <Type>`, `--no-impl`, `--skip-validate-gap`.
 2. Dispatch the `brainstorm-controller` agent with the parsed arguments. The controller is the N1 orchestrator and handles the full workflow.
-3. **Achado #7 / GATE_REQUEST protocol (2026-05-07+):** the brainstorm-controller subagent CANNOT call `AskUserQuestion` directly (Claude Code runtime strips it from subagent tool manifest). When the controller's tool result contains `=== GATE_REQUEST v1 ===` blocks and ends with `STATUS: AWAITING_GATE_RESPONSES`, you (the parent main LLM) MUST: (a) parse each GATE_REQUEST block, (b) invoke `AskUserQuestion` with the parsed question + options, (c) collect the user's selection, (d) re-dispatch brainstorm-controller with `GATE_RESPONSES: <yaml>` prepended to the original prompt. Repeat until the controller emits its final `BRAINSTORM PIPELINE COMPLETE` block. Full protocol spec in `references/gate-request-protocol.md`.
+3. **Achado #7 / GATE_REQUEST protocol (2026-05-07+):** the brainstorm-controller subagent cannot ask the user directly. When the controller's tool result contains `=== GATE_REQUEST v1 ===` blocks and ends with `STATUS: AWAITING_GATE_RESPONSES`, the parent main LLM must: (a) parse each GATE_REQUEST block, (b) ask the user in the parent context with the parsed question and options, (c) collect the user's selection, (d) re-dispatch brainstorm-controller with `GATE_RESPONSES: <yaml>` prepended to the original prompt. Repeat until the controller emits its final `BRAINSTORM PIPELINE COMPLETE` block. Full protocol spec in `references/gate-request-protocol.md`.
+4. If the controller or step-01 explore has not produced either an answered material `GATE_REQUEST` or an answered `brainstorm-explore-no-gaps` confirmation, treat the brainstorm as blocked. Do not continue with spec lifecycle, report generation, planning, or handoff.
 
 ## Flags
 
@@ -34,7 +35,7 @@ Creates or updates a directory at `pipeline-runs/<NNN>-<slug>/` with the schema 
 
 ## NEXT_STEP
 
-After the brainstorm controller finishes, surface the `NEXT_STEP` block described in `references/workflow-next-step.md`. If the brainstorm is blocked or waiting on the user, the block points back to `brainstorm`; if it passes, it points to the next spec/pipeline handoff.
+After the brainstorm controller finishes, surface the `NEXT_STEP` block described in `references/workflow-next-step.md`. If the brainstorm is blocked or waiting on the user, the block points back to `brainstorm`; if it passes, it points to the next spec or pipeline handoff.
 
 ## See Also
 

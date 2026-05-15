@@ -8,12 +8,38 @@
  *   node dist/src/cli/pipeline-cli.js --continue
  */
 
-import { createPipelineController } from "../controller/pipeline-controller.js";
+import { createPipelineRuntime } from "../index.js";
 import type { RuntimeOptions } from "../domain/pipeline-types.js";
+import { pathToFileURL } from "node:url";
+import { loadAgentRuntimeAdapter } from "./agent-runtime-loader.js";
+
+export function resolveCliExitCode(result: unknown) {
+  if (!result || typeof result !== "object") {
+    return 1;
+  }
+
+  const status = (result as { status?: unknown }).status;
+  if (typeof status === "string" && status.startsWith("blocked")) {
+    return 1;
+  }
+
+  if ((result as { ok?: unknown }).ok === false) {
+    return 1;
+  }
+
+  return 0;
+}
+
+type PipelineCliOptions = RuntimeOptions & {
+  mode?: string;
+  task?: string;
+  continue?: boolean;
+  agentRuntimeAdapter?: string;
+};
 
 function parseArgs(argv: string[]) {
   const args = argv.slice(2);
-  const options: RuntimeOptions & { mode?: string; task?: string; continue?: boolean } = {
+  const options: PipelineCliOptions = {
     cwd: process.cwd(),
     codexHome: process.env.CODEX_HOME || process.cwd(),
   };
@@ -27,6 +53,8 @@ function parseArgs(argv: string[]) {
       options.mode = arg.slice("--mode=".length);
     } else if (arg.startsWith("--strict-agents")) {
       options.strictAgents = true;
+    } else if (arg.startsWith("--agent-runtime-adapter=")) {
+      options.agentRuntimeAdapter = arg.slice("--agent-runtime-adapter=".length);
     } else if (arg.startsWith("--cwd=")) {
       options.cwd = arg.slice("--cwd=".length);
     } else if (!arg.startsWith("-")) {
@@ -38,34 +66,53 @@ function parseArgs(argv: string[]) {
   return options;
 }
 
+export async function runPipelineCli(options: PipelineCliOptions) {
+  const agentRuntime = options.agentRuntime
+    ?? await loadAgentRuntimeAdapter(options.agentRuntimeAdapter ?? process.env.CODEX_AGENT_RUNTIME_ADAPTER);
+
+  if (options.strictAgents && !agentRuntime) {
+    return {
+      status: "blocked-no-agent-runtime",
+      reason: "spawn_agent is not available to this Node process. Provide --agent-runtime-adapter=<module> or CODEX_AGENT_RUNTIME_ADAPTER so the CLI can call a real Codex spawn_agent bridge.",
+      input: options.task,
+    };
+  }
+
+  const runtime = createPipelineRuntime({
+    cwd: options.cwd,
+    codexHome: options.codexHome,
+    strictAgents: options.strictAgents,
+    agentRuntime,
+  });
+
+  const input = options.continue
+    ? "/pipeline-orchestrator-for-codex:pipeline continue"
+    : options.mode
+      ? `/pipeline-orchestrator-for-codex:pipeline ${options.mode} ${options.task}`
+      : `/pipeline-orchestrator-for-codex:pipeline ${options.task}`;
+
+  return runtime.controller.start(input);
+}
+
 async function main() {
   const options = parseArgs(process.argv);
 
   if (!options.task && !options.continue) {
-    console.error("Usage: pipeline-cli <task> [--mode=MODE] [--strict-agents] [--continue]");
+    console.error("Usage: pipeline-cli <task> [--mode=MODE] [--strict-agents] [--agent-runtime-adapter=PATH] [--continue]");
     console.error("Modes: full, diagnostic, continue, review-only, --simples, --media, --complexa, --hotfix, --grill, --plan");
     process.exit(1);
   }
 
-  const controller = createPipelineController({
-    workspaceRoot: options.cwd,
-    strictAgents: options.strictAgents,
-  });
-
-  const input = options.continue
-    ? "/pipeline continue"
-    : options.mode
-      ? `/pipeline ${options.mode} ${options.task}`
-      : `/pipeline ${options.task}`;
-
   try {
-    const result = await controller.start(input);
+    const result = await runPipelineCli(options);
     console.log(JSON.stringify(result, null, 2));
-    process.exit(result?.status === "blocked" ? 1 : 0);
+    process.exit(resolveCliExitCode(result));
   } catch (error) {
     console.error("Pipeline execution failed:", error);
     process.exit(1);
   }
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

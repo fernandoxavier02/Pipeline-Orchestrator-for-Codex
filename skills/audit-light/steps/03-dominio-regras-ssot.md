@@ -18,7 +18,7 @@ expected_outputs:
   - quick_wins: list
 expected_next: 4
 gate_required: false
-allowed_tools: [Task, Read, Grep, Glob, Bash]
+allowed_tools: [spawn_agent, shell_read, shell_command]
 ---
 
 # Step 03 — Domain + Business Rules + SSOT (Light)

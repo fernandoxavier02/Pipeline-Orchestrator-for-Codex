@@ -20,7 +20,7 @@ expected_outputs:
   - recommendations_top3: list
 expected_next: 8
 gate_required: false
-allowed_tools: [Task, Read, Grep, Glob, Bash]
+allowed_tools: [spawn_agent, shell_read, shell_command]
 ---
 
 # Step 07 — Backend Services + Security (Light)

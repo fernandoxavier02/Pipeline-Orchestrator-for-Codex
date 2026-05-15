@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { basename, join } from "node:path";
 import { loadPipelineConfig } from "./config/load-pipeline-config.js";
@@ -5,17 +7,23 @@ import { buildPersistedCloseout, type PersistedCloseout } from "./closeout/persi
 import { renderCloseout } from "./closeout/render-closeout.js";
 import { createPipelineController } from "./controller/pipeline-controller.js";
 import { findLatestRun } from "./continue/find-latest-run.js";
-import type { DispatchRequest } from "./dispatcher/dispatcher-types.js";
+import type { AgentDispatchPhase, DispatchRequest } from "./dispatcher/dispatcher-types.js";
 import { runRole } from "./dispatcher/run-role.js";
 import { PIPELINE_MODES, type RuntimeOptions } from "./domain/pipeline-types.js";
 import { createExecutorController } from "./execution/executor-controller.js";
 import { createConfidenceModel } from "./gates/confidence-model.js";
 import { createGateRegistry } from "./gates/gate-registry.js";
 import { createPromptRegistry } from "./prompts/prompt-registry.js";
-import { persistProtocolBlocksFromDispatch } from "./protocol/protocol-handler.js";
+import {
+  persistProtocolBlocksFromDispatch,
+  processProtocolBlocksForParent,
+  type ParentDispatchRequest,
+} from "./protocol/protocol-handler.js";
+import type { ProtocolBlock } from "./protocol/protocol-events.js";
 import { loadReferenceBundle } from "./references/load-reference-bundle.js";
 import { createReferenceProfileIndex } from "./references/reference-profiles.js";
 import { runAdversarialReview } from "./review/adversarial-review.js";
+import { createFinalAdversarialOrchestrator } from "./review/final-adversarial-orchestrator.js";
 import { createReviewOrchestrator } from "./review/review-orchestrator.js";
 import { createCheckpointStore } from "./state/checkpoint-store.js";
 import { createConfidenceScoreStore } from "./state/confidence-score.js";
@@ -253,6 +261,27 @@ function resolveRuntimePromptName(role: string) {
   return undefined;
 }
 
+function uniqueExistingPromptRoots(roots: string[]) {
+  return [...new Set(roots)]
+    .filter((root) => existsSync(join(root, "prompts")));
+}
+
+function hasReferenceBundle(root: string) {
+  return existsSync(join(root, "references", "complexity-matrix.md"));
+}
+
+function resolveReferenceRoot(roots: string[]) {
+  const resolved = [...new Set(roots)]
+    .filter((root) => root.length > 0)
+    .find(hasReferenceBundle);
+
+  if (!resolved) {
+    return roots[0];
+  }
+
+  return resolved;
+}
+
 function parseSanityCheckerResult(output: unknown): { status: "approved" | "blocked"; evidence: string[]; missingEvidence: string[] } | undefined {
   if (!output || typeof output !== "object") {
     return undefined;
@@ -278,6 +307,66 @@ function parseSanityCheckerResult(output: unknown): { status: "approved" | "bloc
     evidence,
     missingEvidence,
   };
+}
+
+function dispatchOutputText(output: Record<string, unknown>) {
+  return Object.values(output)
+    .filter((value): value is string => typeof value === "string")
+    .join("\n\n");
+}
+
+function containsPipelineCompletion(text: string) {
+  return /\bPIPELINE COMPLETE\b/u.test(text);
+}
+
+function isOperationalPipelineDispatch(request: DispatchRequest) {
+  const requestText = typeof request.input?.request === "string" ? request.input.request.trim() : "";
+  if (!requestText.startsWith("/pipeline-orchestrator-for-codex:pipeline")) {
+    return false;
+  }
+
+  return !requestText.startsWith("/pipeline-orchestrator-for-codex:pipeline diagnostic");
+}
+
+function isBrainstormInteractiveRole(role: string) {
+  return role === "brainstorm-controller"
+    || role.endsWith(":core:brainstorm-controller")
+    || role === "step-01-explore"
+    || role.endsWith(":brainstorm:step-01-explore");
+}
+
+function normalizeDispatchPhase(phase: string): AgentDispatchPhase {
+  if (
+    phase === "phase-0"
+    || phase === "phase-1"
+    || phase === "phase-1.5"
+    || phase === "phase-2"
+    || phase === "phase-3"
+    || phase === "continue"
+  ) {
+    return phase;
+  }
+
+  return "phase-2";
+}
+
+function promptCarriesBrainstormGateResponses(prompt: string) {
+  return /(?:^|\n)GATE_RESPONSES:\s*\n[\s\S]*brainstorm-explore-(?:q\d+|no-gaps)\b/u.test(prompt);
+}
+
+async function stateCarriesAnsweredBrainstormGate(stateDir: string) {
+  try {
+    const raw = await readFile(join(stateDir, "protocol-events.jsonl"), "utf8");
+    return raw.split(/\r?\n/u).some((line) => (
+      line.includes("\"status\":\"answered\"")
+      && /brainstorm-explore-(?:q\d+|no-gaps)/u.test(line)
+    ));
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function parseFinalValidatorResult(output: unknown): {
@@ -385,6 +474,20 @@ async function loadCloseoutSession(input: {
 export function createPipelineRuntime(options: RuntimeOptions) {
   const config = loadPipelineConfig(options.cwd);
   const bundledPromptRoot = fileURLToPath(new URL("../", import.meta.url));
+  const sourcePromptRoot = fileURLToPath(new URL("../../", import.meta.url));
+  const promptFallbackRoots = uniqueExistingPromptRoots([
+    process.env.CODEX_PLUGIN_ROOT ?? "",
+    process.env.CLAUDE_PLUGIN_ROOT ?? "",
+    bundledPromptRoot,
+    sourcePromptRoot,
+  ].filter((root) => root.length > 0));
+  const referenceRoot = resolveReferenceRoot([
+    options.cwd,
+    process.env.CODEX_PLUGIN_ROOT ?? "",
+    process.env.CLAUDE_PLUGIN_ROOT ?? "",
+    bundledPromptRoot,
+    sourcePromptRoot,
+  ]);
   const stateDir = `${options.cwd}/.codex/pipeline`;
   const sessionStore = createSessionStore(stateDir);
   const checkpointStore = createCheckpointStore(stateDir);
@@ -392,7 +495,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
   const confidenceStore = createConfidenceScoreStore(stateDir);
   const sentinelStore = createSentinelStateStore(stateDir);
   const promptRegistry = createPromptRegistry(options.cwd, {
-    fallbackRoots: [bundledPromptRoot],
+    fallbackRoots: promptFallbackRoots,
   });
   const controllerStores = {
     session: sessionStore,
@@ -413,7 +516,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
     let referenceIndexPromise: Promise<ReturnType<typeof createReferenceProfileIndex>> | undefined;
 
     return () => {
-      referenceIndexPromise ??= loadReferenceBundle(options.cwd).then(createReferenceProfileIndex);
+      referenceIndexPromise ??= loadReferenceBundle(referenceRoot).then(createReferenceProfileIndex);
       return referenceIndexPromise;
     };
   })();
@@ -442,7 +545,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
 
     const result = await runRole({
       ...request,
-      requireRealAgent: request.requireRealAgent ?? options.strictAgents ?? false,
+      requireRealAgent: request.requireRealAgent ?? options.strictAgents ?? isOperationalPipelineDispatch(request),
       agentRuntime: request.agentRuntime ?? options.agentRuntime,
       prompt,
       team,
@@ -452,9 +555,117 @@ export function createPipelineRuntime(options: RuntimeOptions) {
       dispatch: result,
       source: request.role,
     });
+    let pendingProtocolBlocks = protocolBlocks;
+    let parentDispatchResults: Array<Record<string, unknown>> = [];
 
-    if (protocolBlocks.length === 0) {
+    if (options.agentRuntime && protocolBlocks.some((block) => block.kind === "DISPATCH_REQUEST")) {
+      const dispatchViaRuntime = async (protocolRequest: ParentDispatchRequest) => {
+        const childResult = await runtimeRunRole({
+          mode: "single-agent",
+          role: protocolRequest.targetName,
+          phase: normalizeDispatchPhase(protocolRequest.phase),
+          prompt: protocolRequest.prompt
+            ?? protocolRequest.description
+            ?? `Process protocol dispatch ${protocolRequest.dispatchId}.`,
+          input: {
+            dispatchId: protocolRequest.dispatchId,
+            targetKind: protocolRequest.targetKind,
+            description: protocolRequest.description,
+          },
+          expectedOutput: [],
+          freshContext: true,
+          reviewOnly: false,
+          filesInScope: [],
+          authorityLevel: "reviewer",
+          requireRealAgent: true,
+          agentRuntime: options.agentRuntime,
+        });
+
+        return childResult.output;
+      };
+      const parentDispatch = await processProtocolBlocksForParent({
+        stateRoot: stateDir,
+        blocks: protocolBlocks.filter((block) => block.kind === "DISPATCH_REQUEST"),
+        source: "runtime-parent-handler",
+        adapters: {
+          dispatchAgent: dispatchViaRuntime,
+          dispatchSkill: dispatchViaRuntime,
+          async answerGate(request) {
+            throw new Error(`GATE_REQUEST ${request.gateId} requires parent/user action.`);
+          },
+          async fulfillPlanMode(request) {
+            throw new Error(`PLAN_MODE_REQUEST ${request.planId} requires parent plan-mode action.`);
+          },
+        },
+      });
+      parentDispatchResults = parentDispatch.dispatchResults;
+      pendingProtocolBlocks = protocolBlocks.filter((block) => block.kind !== "DISPATCH_REQUEST");
+
+      if (pendingProtocolBlocks.length === 0) {
+        return {
+          ...result,
+          output: {
+            ...result.output,
+            protocolStatus: "parent-dispatch-completed",
+            parentDispatchResults,
+          },
+        };
+      }
+    }
+
+    if (
+      pendingProtocolBlocks.length === 0
+      && isBrainstormInteractiveRole(request.role)
+      && !promptCarriesBrainstormGateResponses(prompt)
+      && !(await stateCarriesAnsweredBrainstormGate(stateDir))
+    ) {
+      const attemptedOutputText = dispatchOutputText(result.output);
+      return {
+        ...result,
+        output: {
+          ...result.output,
+          text: [
+            "BLOCKED: brainstorm attempted to continue without an interactive GATE_REQUEST response.",
+            "The parent must collect GATE_RESPONSES for brainstorm-explore-q<N> or brainstorm-explore-no-gaps before synthesis, spec, report, plan, or handoff.",
+          ].join("\n"),
+          attemptedOutputText,
+          status: "blocked",
+          protocolStatus: "blocked-missing-brainstorm-gate",
+          blockedReason: "missing answered brainstorm GATE_REQUEST",
+        },
+      };
+    }
+
+    if (pendingProtocolBlocks.length === 0) {
       return result;
+    }
+
+    const attemptedOutputText = dispatchOutputText(result.output);
+    if (containsPipelineCompletion(attemptedOutputText)) {
+      return {
+        ...result,
+        output: {
+          ...result.output,
+          text: [
+            "BLOCKED: pipeline attempted to complete while protocol blocks were awaiting parent action.",
+            "The parent must process every GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST before PIPELINE COMPLETE is accepted.",
+          ].join("\n"),
+          attemptedOutputText,
+          status: "blocked",
+          protocolStatus: "blocked-awaiting-parent-action",
+          blockedReason: "protocol blocks pending parent action",
+          parentDispatchResults: parentDispatchResults.length > 0 ? parentDispatchResults : undefined,
+          protocolEvents: pendingProtocolBlocks.map((block) => ({
+            kind: block.kind,
+            id:
+              block.kind === "GATE_REQUEST"
+                ? block.gate_id
+                : block.kind === "DISPATCH_REQUEST"
+                  ? block.dispatch_id
+                  : block.plan_id,
+          })),
+        },
+      };
     }
 
     return {
@@ -462,7 +673,8 @@ export function createPipelineRuntime(options: RuntimeOptions) {
       output: {
         ...result.output,
         protocolStatus: "awaiting-parent-action",
-        protocolEvents: protocolBlocks.map((block) => ({
+        parentDispatchResults: parentDispatchResults.length > 0 ? parentDispatchResults : undefined,
+        protocolEvents: pendingProtocolBlocks.map((block) => ({
           kind: block.kind,
           id:
             block.kind === "GATE_REQUEST"
@@ -476,12 +688,20 @@ export function createPipelineRuntime(options: RuntimeOptions) {
   };
   const runtimeReviewOrchestrator = createReviewOrchestrator({
     runRole: runtimeRunRole,
+    requireRealAgent: options.strictAgents === true,
   });
   const runtimeExecutionController = createExecutorController({
     runRole: runtimeRunRole,
     adversarialReview: (input) => runAdversarialReview({
       ...input,
       reviewOrchestrator: runtimeReviewOrchestrator,
+    }),
+    finalAdversarialOrchestrator: (input) => createFinalAdversarialOrchestrator({
+      runRole: runtimeRunRole,
+      requireRealAgent: options.strictAgents === true,
+    }).reviewFinal({
+      scope: input.scope,
+      changedDomains: input.changedDomains,
     }),
   });
   const baseController = createPipelineController({
@@ -696,6 +916,9 @@ export function createPipelineRuntime(options: RuntimeOptions) {
           verificationEvidence,
           validationIntent: input.validationIntent,
           mode: input.mode,
+          dispatchMode: input.mode === "full"
+            ? options.strictAgents ? "real-agent" as const : "harness" as const
+            : undefined,
         };
         const finalValidatorDispatch = await runtimeRunRole({
           mode: "single-agent",

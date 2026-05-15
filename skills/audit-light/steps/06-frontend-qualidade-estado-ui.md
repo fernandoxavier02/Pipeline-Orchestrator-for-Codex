@@ -19,7 +19,7 @@ expected_outputs:
   - recommendations_top3: list
 expected_next: 7
 gate_required: false
-allowed_tools: [Task, Read, Grep, Glob, Bash]
+allowed_tools: [spawn_agent, shell_read, shell_command]
 ---
 
 # Step 06 — Frontend Quality + State + UI (Light)

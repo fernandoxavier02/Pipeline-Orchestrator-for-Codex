@@ -15,7 +15,7 @@ expected_outputs:
   - revert_instructions: string
 expected_next: 7
 gate_required: false
-allowed_tools: [Read, Edit, Write, Bash, Grep, Glob]
+allowed_tools: [shell_read, apply_patch, shell_command]
 ---
 
 # Step 06 — Execute Minimal Diff

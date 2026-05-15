@@ -14,10 +14,10 @@ expected_outputs:
   - askuserquestion_response: string
 expected_next: 8
 gate_required: true
-allowed_tools: [AskUserQuestion, Read]
+allowed_tools: [GATE_REQUEST, shell_read]
 ---
 
-# Step 07 — Complexity Gate (AskUserQuestion)
+# Step 07 — Complexity Gate (GATE_REQUEST)
 
 ## Objective
 
@@ -64,9 +64,9 @@ Pick the recommendation based on a deterministic heuristic:
   - Risk signals mention business rules / source of truth / concurrency / multi-user
 - Otherwise recommend `stay-light`.
 
-### 7.3 AskUserQuestion (mandatory — no prose substitute)
+### 7.3 GATE_REQUEST (mandatory — no prose substitute)
 
-Invoke AskUserQuestion. Per global rule "Decisoes do Usuario — AskUserQuestion sempre", the FIRST option is the agent's recommendation labeled `(Recomendado)`. Use this exact shape:
+Invoke GATE_REQUEST. Per global rule "Decisoes do Usuario — GATE_REQUEST sempre", the FIRST option is the agent's recommendation labeled `(Recomendado)`. Use this exact shape:
 
 ```
 header: "Tier"
@@ -86,7 +86,7 @@ Where the recommendation shapes the labels:
   - Option 1: `"Escalar para bugfix-heavy (Recomendado)"` — citar signals que justificam (ex: "duplication_risk=high + persistence_stable=false").
   - Option 2: `"Manter light mesmo assim"` — assumir o risco residual; recomendado apenas se há urgência operacional e o risco é aceitável.
 
-The AskUserQuestion tool automatically appends an "Other" option for free text — do NOT add it manually.
+The GATE_REQUEST tool automatically appends an "Other" option for free text — do NOT add it manually.
 
 ### 7.4 Record the decision
 
@@ -103,7 +103,7 @@ After the user answers:
 
 ## Done criteria
 
-- AskUserQuestion was invoked (not substituted with prose).
+- GATE_REQUEST was invoked (not substituted with prose).
 - Decision recorded and appended to audit log.
 - Routing executed correctly per the decision.
 

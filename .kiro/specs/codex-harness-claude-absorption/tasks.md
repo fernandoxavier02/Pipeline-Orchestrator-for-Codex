@@ -28,7 +28,7 @@
 
 ## Batch 5 — Skills progressivas + entrypoints
 - Implementar `spec-light`, `spec-heavy`, `spec-audit-only` com frontmatter explícito.
-- Atualizar `/pipeline` e avaliar `/spec` (entrypoint fino) se manifesto suportar.
+- Atualizar `/pipeline-orchestrator-for-codex:pipeline` e avaliar `/pipeline-orchestrator-for-codex:spec` (entrypoint fino) se manifesto suportar.
 - Revisão adversarial: discoverability sem inflar comando principal.
 
 ## Batch 6 — Testes BDD/integração + docs de release

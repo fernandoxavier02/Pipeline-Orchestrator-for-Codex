@@ -53,9 +53,9 @@ Acceptance criteria:
 
 ### R6 — Strict Real-Agent Pipeline
 
-The `/pipeline` path shall require a real Codex agent adapter when running as the product pipeline.
+The `/pipeline-orchestrator-for-codex:pipeline` path shall require a real Codex agent adapter when running as the product pipeline.
 
 Acceptance criteria:
-- No silent fallback from product `/pipeline` to local single-agent emulation.
+- No silent fallback from product `/pipeline-orchestrator-for-codex:pipeline` to local single-agent emulation.
 - Test harnesses may explicitly use local emulation.
 - Missing real-agent runtime returns `blocked-no-agent-runtime`.

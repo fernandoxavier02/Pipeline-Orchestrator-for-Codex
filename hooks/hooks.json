@@ -6,11 +6,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-lock-hook.cjs\""
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/session-lock-hook.cjs\""
           },
           {
             "type": "prompt",
-            "prompt": "Pipeline Orchestrator for Codex v0.4.1 loaded. Parity target: local Claude Code Pipeline Orchestrator v5.2.0 (strict real-agent dispatch, GATE_REQUEST/DISPATCH_REQUEST/PLAN_MODE_REQUEST protocol-events.jsonl, brainstorm pipeline-runs, Spec lifecycle gates, TRACE.md, session-lock, dispatch/edit guards, sentinel checkpoints, atomic stores, cleanup, execution identity tracing). Try: /pipeline [task] for strict execution, /pipeline diagnostic [task] to preview, or /pipeline-orchestrator-for-codex:brainstorm [task] for preparation. Without spawn_agent, strict /pipeline blocks with blocked-no-agent-runtime instead of simulating multi-agent execution."
+            "prompt": "Pipeline Orchestrator for Codex v0.4.1 loaded. Parity target: local Claude Code Pipeline Orchestrator v5.2.0 (strict real-agent dispatch, GATE_REQUEST/DISPATCH_REQUEST/PLAN_MODE_REQUEST protocol-events.jsonl, brainstorm pipeline-runs, Spec lifecycle gates, TRACE.md, session-lock, dispatch/edit guards, sentinel checkpoints, atomic stores, cleanup, execution identity tracing). Try: /pipeline-orchestrator-for-codex:pipeline [task] for strict execution, /pipeline-orchestrator-for-codex:pipeline diagnostic [task] to preview, or /pipeline-orchestrator-for-codex:brainstorm [task] for preparation. Without spawn_agent, operational pipeline execution blocks with blocked-no-agent-runtime instead of simulating multi-agent execution."
           }
         ]
       }
@@ -21,11 +21,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/force-pipeline-agents.cjs\""
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/force-pipeline-agents.cjs\""
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-lock-hook.cjs\""
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/session-lock-hook.cjs\""
           }
         ]
       }
@@ -36,11 +36,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/completion-checklist.cjs\""
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/completion-checklist.cjs\""
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-cleanup-hook.cjs\""
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/session-cleanup-hook.cjs\""
           }
         ]
       }
@@ -51,11 +51,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sentinel-hook.cjs\""
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/sentinel-hook.cjs\""
           }
         ]
       },
@@ -64,7 +64,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
           }
         ]
       },
@@ -73,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/edit-guard-hook.cjs\""
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/edit-guard-hook.cjs\""
           }
         ]
       }

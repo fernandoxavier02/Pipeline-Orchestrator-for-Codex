@@ -110,6 +110,7 @@ function normalizeReviewerResult(input: {
 
 export function createFinalAdversarialOrchestrator(dependencies: {
   runRole?: FinalReviewDispatcher;
+  requireRealAgent?: boolean;
 } = {}) {
   const runRole = dependencies.runRole ?? dispatchRole;
 
@@ -143,6 +144,7 @@ export function createFinalAdversarialOrchestrator(dependencies: {
 
       const dispatch = await runRole({
         mode: "parallel-emulation",
+        requireRealAgent: dependencies.requireRealAgent === true,
         role: "final-adversarial-orchestrator",
         prompt: "Coordinate the independent final adversarial review team.",
         input: {

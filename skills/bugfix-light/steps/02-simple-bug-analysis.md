@@ -13,7 +13,7 @@ expected_outputs:
   - risk_signals: list
 expected_next: 3
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Bash]
+allowed_tools: [shell_read, shell_command]
 ---
 
 # Step 02 — Simple Bug Analysis + RED Test (Light)

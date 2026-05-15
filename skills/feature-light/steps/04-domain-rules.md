@@ -14,7 +14,7 @@ expected_outputs:
   - rule_tests_outline: object
 expected_next: 5
 gate_required: false
-allowed_tools: [Read, Grep, Glob]
+allowed_tools: [shell_read]
 ---
 
 # Feature Pipeline (Light) - Dominio e regras de negocio (aplicabilidade explicita)

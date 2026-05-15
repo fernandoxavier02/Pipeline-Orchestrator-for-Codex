@@ -20,7 +20,7 @@ expected_outputs:
   - recommended_gates: list
 expected_next: 9
 gate_required: false
-allowed_tools: [Task, Read, Grep, Glob, Bash]
+allowed_tools: [spawn_agent, shell_read, shell_command]
 ---
 
 # Step 08 — Governance + Tests + CI/CD + Documentation

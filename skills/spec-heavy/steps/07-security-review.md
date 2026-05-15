@@ -13,7 +13,7 @@ expected_outputs:
   - security_score: number
 expected_next: 8
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Bash]
+allowed_tools: [shell_read, shell_command]
 ---
 
 # Spec Lifecycle (Heavy) — Step 07: Security Review (8 eixos red-team)
@@ -190,7 +190,7 @@ Qualquer BLOCKER forca FAIL independente do score numerico.
 
 ---
 
-## Sem gate AskUserQuestion proprio
+## Sem gate GATE_REQUEST proprio
 
 Step 07 nao emite gate proprio — findings sao consumidos pelo step 08 e pelo step 09. BLOCKERs detectados aqui forcam o step 09 (spec-closer) a emitir status `NOT READY` no relatorio executivo.
 

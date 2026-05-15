@@ -4,7 +4,7 @@ Contexto local para agentes trabalhando em `D:\Pipeline Orchestrator for Codex`.
 
 ## Identidade do Projeto
 
-Este repositorio e o SSOT local do plugin `pipeline-orchestrator-for-codex`. O plugin fornece o comando `/pipeline`, que classifica uma solicitacao, apresenta uma proposta ao usuario, executa em fases, aplica gates de qualidade, revisao adversarial e validacao final.
+Este repositorio e o SSOT local do plugin `pipeline-orchestrator-for-codex`. O plugin fornece o comando publico `/pipeline-orchestrator-for-codex:pipeline`, que classifica uma solicitacao, apresenta uma proposta ao usuario, executa em fases, aplica gates de qualidade, revisao adversarial e validacao final.
 
 O objetivo principal do repositorio e preservar a verdade de runtime do plugin. Documentacao, README e specs ajudam a explicar o sistema, mas nao devem prometer comportamento que o runtime, hooks, skills, prompts e testes nao sustentem.
 
@@ -14,7 +14,7 @@ Quando houver conflito, use esta ordem:
 
 1. Instrucoes de sistema/developer da sessao atual.
 2. Este `AGENTS.md` e arquivos locais em `.kiro/`.
-3. `skills/pipeline/SKILL.md`, que e o contrato operacional do skill `/pipeline`.
+3. `skills/pipeline/SKILL.md`, que e o contrato operacional do skill `/pipeline-orchestrator-for-codex:pipeline`.
 4. `commands/pipeline.md`, que e o entrypoint curto e deve encaminhar para o skill.
 5. `src/**`, `hooks/**`, `agents/**`, `prompts/**` e `references/**`, conforme a area alterada.
 6. `docs/**`, `README.md` e planos historicos, como contexto explicativo.
@@ -29,7 +29,7 @@ Prefira mudanca minima. Nao edite `dist/**` manualmente; ele e saida de build. S
 
 Nao trate execucao local como publicacao. Para responder se o plugin esta publicado, ativo ou carregado pelo Codex, verifique git, marketplace/cache e caminho efetivo de resolucao.
 
-Nao prometa "multi-agent real" se a sessao ou runtime nao tiver suporte efetivo a `spawn_agent`. O contrato de `/pipeline` deve parar com `blocked-no-agent-runtime` quando agentes reais forem obrigatorios e indisponiveis.
+Nao prometa "multi-agent real" se a sessao ou runtime nao tiver suporte efetivo a `spawn_agent`. O contrato de `/pipeline-orchestrator-for-codex:pipeline` deve parar com `blocked-no-agent-runtime` quando agentes reais forem obrigatorios e indisponiveis.
 
 Preserve SSOT: `commands/pipeline.md` deve continuar curto e discoverable; comportamento detalhado deve ficar no skill, runtime TypeScript, hooks, prompts, agentes e referencias adequadas.
 

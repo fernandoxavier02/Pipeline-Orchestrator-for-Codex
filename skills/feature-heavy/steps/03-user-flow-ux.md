@@ -16,7 +16,7 @@ expected_outputs:
 expected_next: 4
 gate_required: true
 gate_name: "acceptance-matrix-approval"
-allowed_tools: [Read, Grep, Glob, AskUserQuestion]
+allowed_tools: [shell_read, GATE_REQUEST]
 ---
 
 # Feature Pipeline (Heavy) - Fluxo do usuario e UX (mobile-first quando aplicavel)

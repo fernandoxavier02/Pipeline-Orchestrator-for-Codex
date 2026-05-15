@@ -58,6 +58,7 @@ function parseDispatchedReviews(dispatch: DispatchResult): ParsedReviewerOutput[
 
 export function createReviewOrchestrator(dependencies: {
   runRole?: ReviewDispatcher;
+  requireRealAgent?: boolean;
 } = {}) {
   const runRole = dependencies.runRole ?? dispatchRole;
 
@@ -71,6 +72,7 @@ export function createReviewOrchestrator(dependencies: {
       };
       const dispatch = await runRole({
         mode: "parallel-emulation",
+        requireRealAgent: dependencies.requireRealAgent === true,
         role: "review-orchestrator",
         prompt: "Coordinate an independent batch review team from fresh context.",
         input: {

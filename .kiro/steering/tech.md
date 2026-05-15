@@ -20,7 +20,7 @@ npm test
 
 ## Superficies de Runtime
 
-`skills/pipeline/SKILL.md` contem o contrato operacional do skill. Ele deve refletir o fluxo real esperado quando `/pipeline` e usado.
+`skills/pipeline/SKILL.md` contem o contrato operacional do skill. Ele deve refletir o fluxo real esperado quando `/pipeline-orchestrator-for-codex:pipeline` e usado.
 
 `commands/pipeline.md` e o entrypoint discoverable. Deve permanecer curto e encaminhar para o skill, sem virar uma segunda implementacao completa.
 
@@ -44,4 +44,4 @@ O estado de execucao do pipeline fica em `.codex/pipeline/` e e ignorado pelo gi
 
 O principal risco e drift entre narrativa e runtime: docs ou README prometem mais do que hooks, skill, dispatcher ou testes garantem.
 
-Outro risco e confundir emulacao de testes com execucao real de agentes. A linha pratica e simples: `/pipeline` com contrato de agentes reais precisa de `spawn_agent`; sem isso, deve bloquear de forma honesta.
+Outro risco e confundir emulacao de testes com execucao real de agentes. A linha pratica e simples: `/pipeline-orchestrator-for-codex:pipeline` com contrato de agentes reais precisa de `spawn_agent`; sem isso, deve bloquear de forma honesta.

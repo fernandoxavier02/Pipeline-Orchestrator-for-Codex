@@ -58,4 +58,22 @@ describe("v5.2 parity public surface", () => {
       expect(content).toContain("protocol-events.jsonl");
     }
   });
+
+  it("makes brainstorm exploration interactive before synthesis", () => {
+    const explore = readFileSync(join(ROOT, "agents", "brainstorm", "step-01-explore.md"), "utf8");
+    const controller = readFileSync(join(ROOT, "agents", "core", "brainstorm-controller.md"), "utf8");
+    const command = readFileSync(join(ROOT, "commands", "brainstorm.md"), "utf8");
+
+    expect(explore).toContain("ContextDiscovery");
+    expect(explore).toContain("DecisionGap");
+    expect(explore).toContain("UserInteractionGate");
+    expect(explore).toContain("GATE_REQUEST");
+    expect(explore).toContain("STATUS: AWAITING_GATE_RESPONSES");
+    expect(explore).not.toContain("Fallback if AskUserQuestion unavailable");
+    expect(explore).not.toMatch(/numbered options as plain text/i);
+    expect(controller).toContain("brainstorm-explore-no-gaps");
+    expect(controller).toContain("no synthesis, spec, report, or handoff may proceed");
+    expect(command).toContain("guided exchange");
+    expect(command).toContain("must not create a spec, report, plan, or handoff");
+  });
 });

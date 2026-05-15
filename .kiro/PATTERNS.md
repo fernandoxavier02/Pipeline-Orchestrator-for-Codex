@@ -2,7 +2,7 @@
 
 ## Fonte Certa Para Cada Mudanca
 
-Mudancas de UX do comando `/pipeline`: comece por `commands/pipeline.md` e `skills/pipeline/SKILL.md`, mas mantenha `commands/pipeline.md` como entrypoint curto.
+Mudancas de UX do comando `/pipeline-orchestrator-for-codex:pipeline`: comece por `commands/pipeline.md` e `skills/pipeline/SKILL.md`, mas mantenha `commands/pipeline.md` como entrypoint curto.
 
 Mudancas de fase, gate, stop rule ou closeout: procure primeiro `src/controller/**`, `src/gates/**`, `src/state/**`, `src/validation/**` e os testes de integracao correspondentes.
 

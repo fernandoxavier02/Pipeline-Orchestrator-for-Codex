@@ -1,7 +1,7 @@
 ---
 name: spec-requirements
 description: Generate EARS-format requirements based on project description and steering context. Use when generating requirements from project description.
-allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebSearch, WebFetch, AskUserQuestion
+allowed-tools: spawn_agent
 metadata:
   shared-rules: "ears-format.md, requirements-review-gate.md"
 disable-model-invocation: true
@@ -57,7 +57,7 @@ Otherwise, load all necessary context:
 
 The following research areas are independent. Decide the optimal decomposition based on project complexity -- split, merge, add, or skip subagents as needed.
 
-**Delegate to subagent via Agent tool** (keeps exploration out of main context):
+**Delegate to subagent via Codex `spawn_agent`** (keeps exploration out of main context; message starts with `PIPELINE_AGENT_FQN: <canonical-fqn>`):
 - **Codebase hints** (brownfield projects): Dispatch a subagent to explore existing implementations that inform requirement scope. Example prompt: "Explore this codebase for existing features related to [feature area]. Summarize: (1) what already exists, (2) relevant interfaces/APIs, (3) patterns that new requirements should align with. Return a summary under 150 lines."
 - **Domain research** (when external knowledge is needed): Dispatch a subagent for WebSearch/WebFetch to research domain-specific requirements, standards, or best practices. Return a concise findings summary.
 - **Additional steering and playbooks**: If many steering files or local agent playbooks exist, dispatch a subagent to scan them and return only the sections relevant to this feature.

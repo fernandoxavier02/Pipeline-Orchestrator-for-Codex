@@ -14,7 +14,7 @@ expected_outputs:
   - verification_plan: list
 expected_next: 2
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Task]
+allowed_tools: [shell_read, spawn_agent]
 ---
 
 # Step 01 — Terrain Recon Diagnostic

@@ -2,7 +2,7 @@
 name: spec-audit-only
 description: Prescriptive 5-step workflow for re-auditing an already-implemented spec without implementation steps. Runs format gate, content review, adversarial audit loop, confidence dashboard, and closure with locked sequence, mandatory gates, and congruence-only corrections.
 disable-model-invocation: true
-allowed-tools: [Task, Read, Grep, Glob, AskUserQuestion, Edit, Write, Bash]
+allowed-tools: spawn_agent
 argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"
 sequence: [1, 2, 3, 4, 5]
 sequence_lock: true
@@ -31,6 +31,11 @@ When this workflow reaches any terminal state, emit the `NEXT_STEP` block define
 
 5 prescriptive steps for re-auditing a spec that is already implemented (or whose implementation has been observed in the working tree). Each step file declares its execution contract (sequence, ownership, gates) via frontmatter consumed by the orchestrator. Project-neutral wording — designed to work in any codebase that follows the spec layout under `pipeline-runs/<run_id>/01-spec/`.
 
+
+## Codex Parent Protocol Contract
+
+Codex does not execute Claude `Task` or direct `GATE_REQUEST` calls as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
+
 ## Quando usar
 
 Use **spec-audit-only** quando voce ja tem uma spec implementada (status `post_impl_validation` ou `closed` em `spec.json`) e quer re-auditar congruencia entre os artefatos da spec e o codigo entregue, sem refazer implementacao. Casos tipicos: revisao apos um merge grande, auditoria periodica, follow-up de incidente, due-diligence pre-release.
@@ -57,7 +62,7 @@ A diferenca para `spec-heavy`: este pipeline NAO tem fase de implementacao — e
 | 04 | inline | — (orchestrator inline, scoring math) |
 | 05 | subagent | `pipeline-orchestrator-for-codex:executor:spec-closer` |
 
-## Gates (3 mandatory AskUserQuestion checkpoints)
+## Gates (3 mandatory GATE_REQUEST checkpoints)
 
 | Step | gate_name | What the user approves |
 |---|---|---|
@@ -65,7 +70,7 @@ A diferenca para `spec-heavy`: este pipeline NAO tem fase de implementacao — e
 | 2 | `content-review-approval` | Content review verdict (12 eixos) and mandatory corrections list |
 | 3 | `adversarial-loop-checkpoint` | Adversarial loop verdict (continue / escalate / accept-warnings / abort) — escalation prompt every 3 attempts |
 
-`AskUserQuestion` is non-negotiable at these gates — prose substitution is forbidden by the global rule "Decisoes do Usuario — AskUserQuestion sempre".
+`GATE_REQUEST` is non-negotiable at these gates — prose substitution is forbidden by the global rule "Decisoes do Usuario — GATE_REQUEST sempre".
 
 ## Modelagem estrutural (sem flag de skip)
 
@@ -104,7 +109,7 @@ The 8 enforcement rules inherited from v4.7.0+ contract apply:
 2. Execution-mode lock per step.
 3. Agent-type whitelist when `execution_mode: subagent`.
 4. Output schema verified before next step proceeds.
-5. AskUserQuestion mandatory at the 3 gates.
+5. GATE_REQUEST mandatory at the 3 gates.
 6. STOP RULE: 2 consecutive failures halt the pipeline (`stop_rule_max_failures: 2`). Audit-only e mais curto que Heavy e tolera menos churn consecutivo.
 7. Audit log append-only to `.pipeline/gate-decisions.jsonl`.
 8. Sentinel checkpoints (`pre_1`, `pre_3`, `pre_5`).

@@ -2,11 +2,11 @@
 /**
  * Hook: force-pipeline-agents v1.0 (Codex port)
  *
- * BLOQUEIA respostas que não usam Task tool para requests de implementação.
+ * BLOQUEIA respostas que não usam o workflow governado para requests de implementação.
  *
  * Este hook é executado em UserPromptSubmit e:
  * 1. Detecta se é request de implementação (não conversacional, não skill)
- * 2. Injeta instrução OBRIGATÓRIA de usar Task tool
+ * 2. Injeta instrução OBRIGATÓRIA de usar o workflow namespaced
  * 3. O hook de resposta (se houver) pode verificar se Task foi chamado
  *
  * Mantém o sistema de agentes funcionando de forma DETERMINÍSTICA.
@@ -24,7 +24,7 @@ const { GOVERNED_SKILLS, GOVERNED_SKILL_SET } = require('./governed-workflows.cj
 
 // Padrões de SKILLS - usa skill, não precisa de orchestrator externo
 const SKILL_PATTERNS = [
-  /^\/(context|commit|code-review|fix|verify|deploy|qa|test|pipeline)\b/i,
+  /^\/(context|commit|code-review|fix|verify|deploy|qa|test)\b/i,
   /^\/pipeline-orchestrator(?:-for-codex)?:[a-z0-9-]+\b/i,
   /^\/kiro:/i,
   /^\/prompts:/i,
@@ -55,7 +55,7 @@ const GOVERNED_WORKFLOW_PATTERN = new RegExp(
   'i',
 );
 
-// Padrões de IMPLEMENTAÇÃO - OBRIGATÓRIO usar Task tool
+// Padrões de IMPLEMENTAÇÃO - OBRIGATÓRIO usar workflow governado
 const IMPLEMENTATION_PATTERNS = [
   // Verbos de ação
   /\b(fix|corrig|arrum|consert|resolv)/i,
@@ -143,10 +143,6 @@ function detectExplicitWorkflow(prompt) {
     }
   }
 
-  if (/^\/pipeline(?:\s|$)/i.test(trimmed)) {
-    return { workflow: 'pipeline', source: 'slash-command' };
-  }
-
   const pluginMention = trimmed.match(/\[(?:@)?pipeline-orchestrator-for-codex\]\(plugin:\/\/pipeline-orchestrator-for-codex@[^)]+\)(?<tail>[\s\S]*)/i)
     || trimmed.match(/@pipeline-orchestrator-for-codex(?<tail>[\s\S]*)/i);
 
@@ -208,8 +204,8 @@ const ENFORCEMENT_MESSAGE = `
 
 Esta solicitação requer o pipeline de agentes. Você DEVE:
 
-1. **USAR** a skill /pipeline — ela orquestra todo o fluxo automaticamente
-   - Ou chamar o Agent tool com subagent_type="task-orchestrator"
+1. **USAR** o comando /pipeline-orchestrator-for-codex:pipeline — ele orquestra todo o fluxo automaticamente
+   - Ou chamar spawn_agent com o prompt do agente task-orchestrator
 
 2. **AGUARDAR** o orchestrator classificar e emitir ORCHESTRATOR_DECISION
 
@@ -229,15 +225,15 @@ const SKILL_MESSAGE = `
 `.trim();
 
 const PIPELINE_SKILL_MESSAGE = `
-⛔ MANDATORY SUBAGENT EXECUTION — /pipeline WAS INVOKED ⛔
+⛔ MANDATORY SUBAGENT EXECUTION — PIPELINE WORKFLOW WAS INVOKED ⛔
 
-The user explicitly invoked /pipeline. This means YOU MUST call spawn_agent for each pipeline phase.
+The user explicitly invoked /pipeline-orchestrator-for-codex:pipeline. This means YOU MUST call spawn_agent for each pipeline phase.
 
 DO NOT execute any phase inline. DO NOT write audit reports, classifications, or reviews yourself.
 DO NOT say "I chose the conservative approach" to skip spawning.
 
 YOUR FIRST ACTION must be:
-1. Find the agents directory using \${CLAUDE_PLUGIN_ROOT}/agents/ (or: find ~/.codex/plugins/cache -path "*/pipeline-orchestrator-for-codex/*/agents" -type d)
+1. Find the agents directory using CODEX_PLUGIN_ROOT/agents/ (CLAUDE_PLUGIN_ROOT is only a compatibility fallback for legacy harness tests)
 2. Read agents/core/task-orchestrator.md
 3. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>)
 4. Wait for the agent to return CLASSIFICATION output
@@ -263,7 +259,7 @@ function workflowSkillMessage(workflow) {
 
 The user explicitly selected the Pipeline Orchestrator brainstorm workflow.
 
-DO NOT route this as generic /pipeline. DO NOT implement directly.
+DO NOT route this as a legacy bare pipeline command. DO NOT implement directly.
 
 YOUR FIRST ACTION must be:
 1. Call update_plan for the visible brainstorm plan.
@@ -280,7 +276,7 @@ If the workflow cannot be started, stop and report the blocker instead of fallin
 
 The user explicitly selected /pipeline-orchestrator-for-codex:${workflow}.
 
-DO NOT route this as generic /pipeline. DO NOT implement directly.
+DO NOT route this as a legacy bare pipeline command. DO NOT implement directly.
 
 YOUR FIRST ACTION must be:
 1. Call update_plan for the visible ${workflow} plan.
@@ -370,7 +366,7 @@ process.stdin.on('end', () => {
       return;
     }
 
-    // 3. Se é request de implementação → FORÇA usar Task tool
+    // 3. Se é request de implementação → FORÇA usar workflow governado
     if (isPipelineWorthy(prompt)) {
       recordHookEvent({
         hook: 'force-pipeline-agents',
@@ -394,7 +390,7 @@ process.stdin.on('end', () => {
     });
     console.log(JSON.stringify({
       continue: true,
-      systemMessage: "💡 Considere usar o Task tool com task-orchestrator para classificar esta solicitação."
+      systemMessage: "💡 Considere usar /pipeline-orchestrator-for-codex:pipeline para classificar esta solicitação."
     }));
 
   } catch (e) {

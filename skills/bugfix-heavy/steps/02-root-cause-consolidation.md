@@ -15,7 +15,7 @@ expected_outputs:
   - red_test_files: list
 expected_next: 3
 gate_required: false
-allowed_tools: [Read, Grep, Glob, Task, Write]
+allowed_tools: [shell_read, spawn_agent, apply_patch]
 ---
 
 # Step 02 — Root Cause Consolidation

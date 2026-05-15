@@ -1,7 +1,7 @@
 ---
 name: validate-design
 description: Interactive technical design quality review and validation. Use when reviewing design before implementation.
-allowed-tools: Read, Grep, Glob, AskUserQuestion
+allowed-tools: spawn_agent
 argument-hint: <feature-name>
 metadata:
   shared-rules: "design-review.md"

@@ -18,7 +18,7 @@ expected_outputs:
 expected_next: 8
 gate_required: true
 gate_name: "architecture-choice"
-allowed_tools: [Read, Grep, Glob, AskUserQuestion]
+allowed_tools: [shell_read, GATE_REQUEST]
 ---
 
 # Feature Pipeline (Light) - Opcoes de design/arquitetura e trade-offs
