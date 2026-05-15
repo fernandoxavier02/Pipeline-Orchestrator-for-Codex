@@ -13,12 +13,12 @@
     "lint:types": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "typescript": "^5.9.3",
     "yaml": "^2.8.1",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   },
   "engines": {
