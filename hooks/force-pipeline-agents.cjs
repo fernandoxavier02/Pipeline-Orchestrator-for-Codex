@@ -211,10 +211,12 @@ Você DEVE iniciar o workflow governado por uma destas duas formas equivalentes:
    - agent_type="worker"
    - message iniciando com:
      PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller
+3. Chamar wait_agent para obter o resultado do controller antes de processar qualquer bloco.
+4. Usar send_input quando precisar reenviar respostas ao mesmo controller aberto.
 
 Depois disso, processe todos os blocos GATE_REQUEST, DISPATCH_REQUEST e PLAN_MODE_REQUEST antes de avançar.
 
-Se spawn_agent não estiver disponível, PARE e responda exatamente com blocked-no-agent-runtime. Não execute inline, não gere auditoria manual, não rode testes como substituto e não diga que foi pipeline real.
+Se spawn_agent, wait_agent ou send_input não estiverem disponíveis, PARE e responda exatamente com blocked-no-agent-runtime. Não execute inline, não gere auditoria manual, não rode testes como substituto e não diga que foi pipeline real.
 
 ⚠️ NÃO COMECE A IMPLEMENTAR, AUDITAR OU VALIDAR SEM O SPAWN REAL OU O BLOQUEIO EXPLÍCITO.
 
@@ -238,10 +240,11 @@ YOUR FIRST ACTION must be:
 1. Find the agents directory using CODEX_PLUGIN_ROOT/agents/ (CLAUDE_PLUGIN_ROOT is only a compatibility fallback for legacy harness tests)
 2. Read agents/core/pipeline-controller.md
 3. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
-4. Wait for the controller to return output
+4. Call wait_agent for the returned agent id
 5. Process every GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST block before advancing
+6. Use send_input to continue the same controller when it is still open, or spawn a fresh worker when a new isolated dispatch is required
 
-If spawn_agent is not available, stop with blocked-no-agent-runtime instead of executing inline.
+If spawn_agent, wait_agent, or send_input is not available, stop with blocked-no-agent-runtime instead of executing inline.
 
 PHASES (each requires spawn_agent or DISPATCH_REQUEST handling by the parent):
 Phase 0: spawn pipeline-controller, then process its task-orchestrator/information-gate dispatches

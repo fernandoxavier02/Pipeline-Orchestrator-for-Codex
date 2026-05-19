@@ -19,7 +19,7 @@ describe("commands/pipeline.md frontmatter", () => {
     .map((t) => t.trim());
 
   it("declares the Codex-native operational dispatch tool", () => {
-    const required = ["spawn_agent"];
+    const required = ["update_plan", "spawn_agent", "wait_agent", "send_input"];
     for (const tool of required) {
       expect(tools).toContain(tool);
     }

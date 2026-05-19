@@ -2,7 +2,7 @@
 name: audit-light
 description: Prescriptive 9-step audit workflow for SIMPLES/MEDIA audits (1 area, 1 depth level, single-axis or narrow scope). Imported from Pulsar audit workflow per spec §22. Use when audit complexity is light. REPORT-ONLY by Iron Law — no code modification under any circumstance. Same 9-step structure as audit-heavy (§7.2.2 — Light = Heavy em estrutura) but capped scope and collapsed ownership audit-domain-analyzer is SKIPPED in Light per references/pipelines/audit-light.md; domain analysis runs inline inside audit-compliance-checker's light_mode fallback. Steps 1 subagent gate (intake — REQUIRES SCOPE APPROVAL), 2-4 subagent (architecture + domain/SSOT + contracts via audit-compliance-checker light_mode), 5-8 subagent (data + frontend + backend + governance via audit-compliance-checker), 9 subagent gate (Pa de Cal via audit-risk-matrix-generator — REQUIRES GO/NO-GO). Manual-only invocation via /pipeline-orchestrator-for-codex:audit-light or via /pipeline-orchestrator-for-codex:audit --light.
 disable-model-invocation: true
-allowed-tools: spawn_agent
+allowed-tools: update_plan, spawn_agent, wait_agent, send_input
 argument-hint: [audit scope — narrow area, single depth level]
 sequence: [1, 2, 3, 4, 5, 6, 7, 8, 9]
 sequence_lock: true

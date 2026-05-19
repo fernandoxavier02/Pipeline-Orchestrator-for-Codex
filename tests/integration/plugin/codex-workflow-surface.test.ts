@@ -16,6 +16,7 @@ const PUBLIC_WORKFLOW_SKILLS = [
   "feature",
   "feature-light",
   "feature-heavy",
+  "pipeline",
   "review",
   "spec",
   "spec-light",
@@ -106,7 +107,10 @@ describe("Codex-native public workflow surface", () => {
       const fm = frontmatter(content);
       const allowedTools = tools(fm["allowed-tools"]);
 
+      expect(allowedTools, `${skill} must be able to open the visible Codex plan`).toContain("update_plan");
       expect(allowedTools, `${skill} must be able to dispatch real Codex agents`).toContain("spawn_agent");
+      expect(allowedTools, `${skill} must be able to wait for spawned Codex agents`).toContain("wait_agent");
+      expect(allowedTools, `${skill} must be able to continue spawned Codex agents`).toContain("send_input");
       expect(allowedTools, `${skill} must not expose Claude Task tool as a Codex contract`).not.toContain("Task");
       expect(allowedTools, `${skill} must not expose Claude AskUserQuestion tool as a Codex contract`).not.toContain("AskUserQuestion");
       expect(allowedTools, `${skill} must not expose Claude Agent tool as a Codex contract`).not.toContain("Agent");

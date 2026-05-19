@@ -1,6 +1,6 @@
 ---
 description: "Single-command multi-agent pipeline. Auto-classifies, confirms with the user, executes in batches, enforces adversarial review per batch, and finishes with quality gate plus final validation."
-allowed-tools: spawn_agent
+allowed-tools: update_plan, spawn_agent, wait_agent, send_input
 argument-hint: "[diagnostic|continue|review-only|--simples|--media|--complexa|--hotfix|--grill|--plan] <tarefa>"
 ---
 
@@ -17,12 +17,12 @@ This is the canonical `quality gate` and `final validation` entrypoint for the p
 `/pipeline-orchestrator-for-codex:pipeline` supports two runtime modes:
 
 ### `strictAgents = true` (Operational Default)
-`spawn_agent` is mandatory. The controller spawns real pipeline agents with context isolation. If `spawn_agent` is unavailable, stop with `blocked-no-agent-runtime`.
+`spawn_agent` plus `wait_agent` is mandatory. The controller spawns real pipeline agents with context isolation, and the parent waits for completed results before processing protocol blocks. If the parent agent toolchain is unavailable, stop with `blocked-no-agent-runtime`.
 
 ### `strictAgents = false` (Diagnostic/Test Harness Only)
 The runtime uses **parallel local emulation** via TypeScript heuristic functions. All "agents" run as async functions in the same Node process with **zero context isolation**. This is a test harness and contract validator, not production multi-agent execution.
 
-**Operational behavior:** production-grade use of `/pipeline-orchestrator-for-codex:pipeline` requires `strictAgents = true` and a working `spawn_agent` adapter. Harness mode is diagnostic/test-only, requires an explicit diagnostic/test path, and must not be reported as real multi-agent execution.
+**Operational behavior:** production-grade use of `/pipeline-orchestrator-for-codex:pipeline` requires `strictAgents = true` plus working `spawn_agent`, `wait_agent`, and continuation support (`send_input` or fresh re-dispatch). Harness mode is diagnostic/test-only, requires an explicit diagnostic/test path, and must not be reported as real multi-agent execution.
 
 ## Codex Primitive Emulation
 
@@ -67,7 +67,7 @@ If the user switches the workflow, rebuild the gate and ask again. If the later 
    - micro-gate
    - adversarial gate
    - final validation
-6. If this command was invoked, never replace it with inline execution. Use real `spawn_agent`; if unavailable, stop with `blocked-no-agent-runtime`.
+6. If this command was invoked, never replace it with inline execution. Use real `spawn_agent`, then `wait_agent`, and use `send_input` when continuing an existing controller thread; if any parent-agent primitive is unavailable, stop with `blocked-no-agent-runtime`.
 
 ## NEXT_STEP
 

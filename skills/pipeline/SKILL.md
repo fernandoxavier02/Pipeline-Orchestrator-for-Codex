@@ -2,6 +2,7 @@
 name: pipeline
 description: "Automated pipeline orchestrator for any project. Operational execution requires real Codex spawn_agent support and blocks with blocked-no-agent-runtime when unavailable. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. The public command /pipeline-orchestrator-for-codex:pipeline auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. Always use this for tasks affecting 2+ files or requiring careful orchestration. Even if the user doesn't mention 'pipeline' — if the task is non-trivial, this skill applies."
 agent_type: worker
+allowed-tools: update_plan, spawn_agent, wait_agent, send_input
 gates_at: [phase-0, phase-1, phase-1.5, phase-2, phase-3]
 sentinel_checkpoints: [post_orchestrator, phase_0_to_1, phase_1_to_2, phase_2_to_3, post_final_validator]
 ---
@@ -52,8 +53,9 @@ You are the **PIPELINE SKILL** — a thin delegator. Your ONLY job is:
 2. Show the workflow/method gate
 3. **Read** `agents/core/pipeline-controller.md`
 4. **Dispatch** it as a worker agent via `spawn_agent(agent_type: "worker", message: <controller prompt>)`
-5. **Process** the structured blocks it emits (`=== DISPATCH_REQUEST v1 ===`, `=== GATE_REQUEST v1 ===`, `=== PLAN_MODE_REQUEST v1 ===`)
-6. **Re-dispatch** the same agent with responses prepended until it emits `PIPELINE COMPLETE`
+5. **Wait** for that agent via `wait_agent`; without a completed result, stop instead of continuing inline
+6. **Process** the structured blocks it emits (`=== DISPATCH_REQUEST v1 ===`, `=== GATE_REQUEST v1 ===`, `=== PLAN_MODE_REQUEST v1 ===`)
+7. **Re-dispatch** the same agent with responses prepended through `send_input` or a fresh `spawn_agent`, then `wait_agent` again until it emits `PIPELINE COMPLETE`
 
 You do NOT classify tasks. You do NOT review code. You do NOT run builds. You do NOT write code. **The pipeline-controller agent does ALL of that.** You are the protocol handler.
 
@@ -67,15 +69,16 @@ $ARGUMENTS
 **Step 2.** Call `spawn_agent` with:
 - `agent_type: "worker"`
 - `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, followed by the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
-**Step 3.** Wait for the controller to return its output
+**Step 3.** Call `wait_agent` for the returned agent id and wait for the controller output
 **Step 4.** Parse structured protocol blocks:
 - `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent` for the requested agent
 - `=== GATE_REQUEST v1 ===` → ask the user and collect the answer
 - `=== PLAN_MODE_REQUEST v1 ===` → enter planning mode (read-only research), return results
-**Step 5.** Re-dispatch the controller with responses prepended
-**Step 6.** Repeat until `PIPELINE COMPLETE` block is emitted
+**Step 5.** Re-dispatch the controller with responses prepended using `send_input` when the original agent is still open, or a fresh `spawn_agent` when a new isolated turn is required
+**Step 6.** Call `wait_agent` after every dispatch
+**Step 7.** Repeat until `PIPELINE COMPLETE` block is emitted
 
-If `spawn_agent` fails or is unavailable, tell the user: "blocked-no-agent-runtime: spawn_agent is not available in this session. The pipeline requires real Codex agent support. Check that multi_agent = true in ~/.codex/config.toml." Do not continue inline.
+If `spawn_agent`, `wait_agent`, or `send_input` fails or is unavailable, tell the user: "blocked-no-agent-runtime: the Codex parent-agent toolchain is not available in this session. The pipeline requires real Codex agent support. Check that multi_agent = true in ~/.codex/config.toml and that the parent runtime exposes spawn_agent/wait_agent/send_input." Do not continue inline.
 
 ## Protocol Processing Rules
 
@@ -165,6 +168,6 @@ You are a **PROTOCOL HANDLER**, not an executor. For EVERY invocation:
 1. **Read** `agents/core/pipeline-controller.md`
 2. **Call `spawn_agent`** with the controller as worker
 3. **Process** protocol blocks (DISPATCH_REQUEST, GATE_REQUEST, PLAN_MODE_REQUEST)
-4. **Re-dispatch** until PIPELINE COMPLETE
+4. **Wait and re-dispatch** until PIPELINE COMPLETE
 
-**Self-check before responding:** Did you call `spawn_agent` at least once? If no, you violated the pipeline contract.
+**Self-check before responding:** Did you call `spawn_agent` at least once and `wait_agent` for its result? If no, you violated the pipeline contract.

@@ -1,0 +1,2 @@
+{"gate":"FINAL_ADVERSARIAL_GATE","hardness":"SOFT","phase":"3b-pre","decision":"PROCEEDED","decided_by":"user","timestamp":"2026-05-19T17:30:00Z","detail":"User confirmed scope: review both KB Codex + new skill","confidence_impact":0}
+{"gate":"FINAL_ADVERSARIAL_GATE","hardness":"SOFT","phase":"3b","decision":"COMPLETED","decided_by":"controller","timestamp":"2026-05-19T19:00:00Z","detail":"3 scanners ran serially (security/architecture/quality); 27 findings, no Critical, 6 High consolidated as 5 actionable recs","confidence_impact":0}

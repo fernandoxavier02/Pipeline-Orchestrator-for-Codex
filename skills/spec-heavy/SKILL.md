@@ -13,7 +13,7 @@ description: |
   steps 3, 4 and 8 inline. stop_rule_max_failures: 3 (longer workflow warrants more
   tolerance). Manual-only invocation via /pipeline-orchestrator-for-codex:spec-heavy.
 disable-model-invocation: true
-allowed-tools: spawn_agent
+allowed-tools: update_plan, spawn_agent, wait_agent, send_input
 argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"
 sequence: [1, 2, 3, 4, 5, 6, 7, 8, 9]
 sequence_lock: true

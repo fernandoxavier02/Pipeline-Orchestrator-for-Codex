@@ -2,7 +2,7 @@
 name: bugfix
 description: Bug Fix shortcut — skips task-orchestrator type-classification by pre-fixing task_type=Bug Fix. Same pipeline machinery as /pipeline-orchestrator-for-codex:pipeline (information-gate, design-interrogator, plan-architect, executor-controller, adversarial review, sanity, Pa de Cal). Invoked manually via `/pipeline-orchestrator-for-codex:bugfix [task]` — never auto-invoked because every bug-fix run has side effects (TDD-RED tests created, code edited, commits proposed) that the user must consciously trigger.
 disable-model-invocation: true
-allowed-tools: spawn_agent
+allowed-tools: update_plan, spawn_agent, wait_agent, send_input
 argument-hint: [bug description with repro details]
 gates_at: [phase-1]
 sentinel_checkpoints: [post_orchestrator]

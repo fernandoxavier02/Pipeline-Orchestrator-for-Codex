@@ -3,5 +3,6 @@
   "created_at": 1779212703738,
   "last_seen_at": 1779212703738,
   "expires_at": 1779219903738,
-  "status": "active"
+  "status": "completed",
+  "completed_at": 1779215186773
 }
