@@ -35,7 +35,7 @@ globs:
   - "references/**/*.md"
   - ".codex-plugin/plugin.json"
   - "AGENTS.md"
-last_verified: "2026-05-18"
+last_verified: "2026-05-19"
 status: "active"
 ---
 
@@ -60,6 +60,7 @@ The `llms.txt` files are preferred as the coverage map because OpenAI publishes 
 
 - [API Platform](api-platform.md): Responses API, tool use, structured output, state, background work, files, evals, and production readiness.
 - [Codex Runtime](codex-runtime.md): Codex app, CLI, IDE, cloud, worktrees, approvals, sandboxing, local environments, Windows, and security boundaries.
+- [Plugin Build Guide](plugin-build-guide.md) **(consolidated, 2026-05-19)**: End-to-end schema-accurate guide for `.codex-plugin/plugin.json`, skills, hooks, custom TOML subagents, MCP servers, marketplace, and `AGENTS.md`. SSOT for new plugin/skill construction; carries drift corrections versus the per-topic articles below.
 - [Skills](skills.md): Skills as reusable knowledge and procedures, including differences between API-hosted skills, Codex skills, and this plugin's skill files.
 - [Plugins](plugins.md): Codex plugin packaging, manifests, local/cache/runtime boundaries, and how this repo should avoid overclaiming availability.
 - [Agents and Subagents](agents-and-subagents.md): Agent orchestration, subagent delegation, context isolation, handoffs, review independence, and local `spawn_agent` limits.

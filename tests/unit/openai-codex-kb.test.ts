@@ -23,11 +23,16 @@ const expectedArticles = [
   "plugins.md",
   "agents-and-subagents.md",
   "mcp-and-connectors.md",
+  "plugin-build-guide.md",
   "rules-hooks-agents-md.md",
   "chatgpt-apps.md",
   "learn-cookbook-patterns.md",
   "source-map.md",
 ];
+const expectedLastVerified = new Map([
+  ["INDEX.md", "2026-05-19"],
+  ["plugin-build-guide.md", "2026-05-19"],
+]);
 const requiredSourceSets = ["API Docs", "Codex", "ChatGPT/Apps SDK", "Learn"];
 const allowedHosts = new Set([
   "developers.openai.com",
@@ -89,7 +94,10 @@ describe("OpenAI Codex knowledge base", () => {
 
       expect(typeof fm.title, `${file} title must be a string`).toBe("string");
       expect(typeof fm.kind, `${file} kind must be a string`).toBe("string");
-      expect(fm.last_verified, `${file} verification date`).toBe("2026-05-18");
+      const articleName = relative(kbRoot, file).split(sep).join("/");
+      expect(fm.last_verified, `${file} verification date`).toBe(
+        expectedLastVerified.get(articleName) ?? "2026-05-18",
+      );
       expect(fm.status, `${file} status`).toBe("active");
 
       expectStringArray(fm.topics, "topics", file);

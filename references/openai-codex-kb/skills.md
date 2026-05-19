@@ -63,6 +63,8 @@ FrontMatter is machine-readable metadata at the top of Markdown. In this repo, d
 
 Do not copy FrontMatter fields from one surface into another without checking tests and hooks. This repo already has tests that reject stale Claude-era fields in some skill contexts.
 
+The system `skill-creator` `quick_validate.py` is still the right validator for ordinary generated skills. It is not the acceptance validator for this plugin's governed workflow skills, because those skills intentionally add runtime-governance fields such as `gates_at`, `sentinel_checkpoints`, `agent_type`, `sequence`, and `disable-model-invocation`. For governed workflow skills, validate against this repo's tests and hook contracts instead of stripping those fields to satisfy the generic scaffold validator.
+
 ## Local Skill Boundaries
 
 For `pipeline-orchestrator-for-codex`:
@@ -102,3 +104,6 @@ When editing skills:
 4. Update `references/openai-codex-kb/**` only when the change affects general Codex/OpenAI knowledge.
 5. Run focused tests first, then broader tests if runtime-facing behavior changed.
 
+## Drift Notes (2026-05-19)
+
+See [plugin-build-guide.md](plugin-build-guide.md) for the schema-accurate consolidated version. Corrections relevant here: standalone skills live in `.agents/skills/` (not `skills/`); plugin-bundled skills stay under `<plugin>/skills/` and are discovered via `plugin.json:skills`. Required frontmatter is `name` + `description` only — extension fields like `agent_type`, `gates_at`, `allowed-tools`, and `argument-hint` are plugin-private and not parsed by Codex itself. Initial skills list is capped at ~2% of context window (~8k chars unknown). Same-name collisions surface both skills in the picker — they do not merge.

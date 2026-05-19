@@ -115,3 +115,7 @@ When changing rules, hooks, or `AGENTS.md`:
 5. Run broader validation when a public workflow changes.
 6. State whether the change is source-only or also synced to an installed cache.
 
+## Drift Notes (2026-05-19)
+
+See [plugin-build-guide.md](plugin-build-guide.md) for the schema-accurate consolidated version. Hook corrections: only `type: "command"` executes — `type: "prompt"` and `type: "agent"` are parsed-but-skipped (treat any `prompt` greeting in `SessionStart` as documentation, not enforcement). Supported events: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `Stop`. Matchers exist only on `PreToolUse` / `PostToolUse` / `PermissionRequest` (tool name regex) and `SessionStart` (start source); `UserPromptSubmit` and `Stop` ignore matchers. Deny contract for `PreToolUse`: `{ "hookSpecificOutput": { "hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "..." } }` (legacy form `{ "decision": "block", "reason": "..." }` still parsed; exit code 2 + stderr also blocks). `AGENTS.md` supports an `AGENTS.override.md` sibling that wins at the same scope; default `project_doc_max_bytes` is 32 KiB. Plugin hooks are default-enabled since 2026.
+

@@ -192,8 +192,8 @@ Registrados em `hooks/hooks.json`:
 - **Spec:** `spec-init`, `spec-requirements`, `spec-design`, `spec-tasks`, `spec-light`, `spec-heavy`, `spec-audit-only`
 - **Validação:** `validate-design`, `validate-gap`, `verify-completion`
 
-### Agentes (44 prompts em `agents/`)
-- **`agents/core/`** (8): task-orchestrator, information-gate, checkpoint-validator, sanity-checker, final-validator, finishing-branch, adversarial-batch, sentinel, brainstorm-controller, pipeline-controller
+### Agentes (45 prompts em `agents/`)
+- **`agents/core/`** (10): task-orchestrator, information-gate, checkpoint-validator, sanity-checker, final-validator, finishing-branch, adversarial-batch, sentinel, brainstorm-controller, pipeline-controller
 - **`agents/executor/`** (21): executor-controller, implementer, spec-reviewer, quality-reviewer, fix, + domínios (bugfix-*, feature-*, audit-*, ux-*, adversarial-*)
 - **`agents/quality/`** (12): quality-gate-router, pre-tester, plan-architect, design-interrogator, review-orchestrator, architecture-reviewer, final-adversarial-orchestrator, spec gates, adversarial-quality-reviewer
 - **`agents/brainstorm/`** (2): step-00-intake, step-01-explore

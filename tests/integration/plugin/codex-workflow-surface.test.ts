@@ -23,6 +23,23 @@ const PUBLIC_WORKFLOW_SKILLS = [
   "spec-audit-only",
 ];
 
+const GOVERNED_SKILL_FRONTMATTER_KEYS = new Set([
+  "agent_type",
+  "allowed-tools",
+  "argument-hint",
+  "description",
+  "disable-model-invocation",
+  "gates_at",
+  "license",
+  "metadata",
+  "name",
+  "report_only",
+  "sentinel_checkpoints",
+  "sequence",
+  "sequence_lock",
+  "stop_rule_max_failures",
+]);
+
 function readSkill(name: string) {
   return readFileSync(join(ROOT, "skills", name, "SKILL.md"), "utf8");
 }
@@ -60,6 +77,29 @@ function relativeToRoot(path: string) {
 }
 
 describe("Codex-native public workflow surface", () => {
+  it("locks governed SKILL.md frontmatter to the repo-local profile", () => {
+    const skillFiles = walkMarkdown(join(ROOT, "skills")).filter((file) => file.endsWith("SKILL.md"));
+    let governedFieldCount = 0;
+
+    for (const file of skillFiles) {
+      const content = readFileSync(file, "utf8");
+      const fm = frontmatter(content);
+      const label = relativeToRoot(file);
+
+      expect(String(fm.name ?? ""), `${label} must declare a skill name`).toMatch(/^[a-z0-9-]{1,64}$/);
+      expect(String(fm.description ?? "").trim(), `${label} must declare a non-empty description`).not.toBe("");
+
+      for (const key of Object.keys(fm)) {
+        expect(GOVERNED_SKILL_FRONTMATTER_KEYS, `${label} has an unsupported frontmatter key: ${key}`).toContain(key);
+        if (!["allowed-tools", "description", "license", "metadata", "name"].includes(key)) {
+          governedFieldCount += 1;
+        }
+      }
+    }
+
+    expect(governedFieldCount, "test must prove governed skills use fields beyond generic skill-creator validation").toBeGreaterThan(0);
+  });
+
   it("keeps public workflow skill frontmatter on Codex-native dispatch primitives", () => {
     for (const skill of PUBLIC_WORKFLOW_SKILLS) {
       const content = readSkill(skill);

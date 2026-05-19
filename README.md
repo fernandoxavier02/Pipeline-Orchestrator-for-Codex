@@ -11,7 +11,7 @@
 > **Full-depth, prompt-driven multi-agent pipeline for OpenAI Codex CLI and Kimi Code CLI.**
 > Ported toward parity with the local canonical Claude Code Pipeline Orchestrator v5.2.0, with runtime-native constraints made explicit for each platform.
 
-A single `/pipeline-orchestrator-for-codex:pipeline` command classifies any task, confirms a proposal with you, then orchestrates **44 agent prompts** across **4 structured phases** when a real `spawn_agent` adapter is available. Without that adapter, operational pipeline execution blocks as `blocked-no-agent-runtime` rather than simulating multi-agent parity. The runtime now includes v5.2 protocol events, brainstorm run directories, Spec lifecycle gates, TRACE.md validation, TDD gates, adversarial review loops, confidence scoring, and Go/No-Go validation.
+A single `/pipeline-orchestrator-for-codex:pipeline` command classifies any task, confirms a proposal with you, then orchestrates **45 agent prompts** across **4 structured phases** when a real `spawn_agent` adapter is available. Without that adapter, operational pipeline execution blocks as `blocked-no-agent-runtime` rather than simulating multi-agent parity. The runtime now includes v5.2 protocol events, brainstorm run directories, Spec lifecycle gates, TRACE.md validation, TDD gates, adversarial review loops, confidence scoring, and Go/No-Go validation.
 
 **New: Kimi Code CLI port** — the same 4-phase pipeline is now available as a Kimi skill (`.kimi/skills/pipeline/`), with 13 agent prompts adapted for Kimi's `coder`/`explore` subagent types, deterministic exec-window scripts, and a parent handler loop that processes `GATE_REQUEST`, `DISPATCH_REQUEST`, and `PLAN_MODE_REQUEST` blocks.
 
@@ -333,8 +333,8 @@ pipeline-orchestrator-for-codex/
 │       ├── audit/
 │       ├── review/
 │       └── spec/
-├── agents/                      # 44 agent prompt files plus inventory README (Codex/Claude)
-│   ├── core/                    #   8 core agents
+├── agents/                      # 45 agent prompt files plus inventory README (Codex/Claude)
+│   ├── core/                    #  10 core agents
 │   ├── executor/                #   5 executor agents
 │   │   └── type-specific/       #  16 domain-specific agents
 │   └── quality/                 #  12 quality/spec lifecycle agents
@@ -415,7 +415,7 @@ The plugin does NOT require a build step for normal use. The runtime components 
 | Component | Files | Dependencies |
 |:---|:---|:---|
 | **Codex** Skill (instructions) | `skills/pipeline/SKILL.md` | None |
-| **Codex** Agents (prompts) | `agents/**/*.md` (44 prompt files plus README) | None |
+| **Codex** Agents (prompts) | `agents/**/*.md` (45 prompt files plus README) | None |
 | **Codex** Hooks (enforcement) | `hooks/*.cjs` (3 files) | Node.js builtins only (fs, path) |
 | **Codex** Manifest | `.codex-plugin/plugin.json` | None |
 | **Kimi** Skill (instructions) | `.kimi/skills/pipeline/SKILL.md` | None |

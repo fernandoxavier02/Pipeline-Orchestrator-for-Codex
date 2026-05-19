@@ -120,3 +120,7 @@ Files under `agents/**` and `prompts/**` are role contracts. They should answer:
 
 When changing these files, check inventory/frontmatter/parity tests and make sure the public workflow still routes to valid role names.
 
+## Drift Notes (2026-05-19)
+
+See [plugin-build-guide.md](plugin-build-guide.md) for the schema-accurate consolidated version. Critical correction: **custom Codex subagents are TOML files** at `~/.codex/agents/*.toml` (personal) or `.codex/agents/*.toml` (project), with required fields `name` / `description` / `developer_instructions` and optional `model`, `model_reasoning_effort`, `sandbox_mode`, `mcp_servers`, `skills.config`, `nickname_candidates`. Markdown files under `agents/**` in this repo are internal role prompts consumed by the plugin's controller — they are not Codex custom subagents. Built-in types are `default`, `worker`, `explorer`. Multi-agent toolset (`spawn_agent`, `send_input`, `resume_agent`, `wait_agent`, `close_agent`) is on by default since 2026 (`features.multi_agent = true`). `[agents] max_depth = 1` by default — raising it amplifies token/latency cost fast.
+

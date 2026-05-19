@@ -109,3 +109,7 @@ Use precise language:
 
 This distinction matters because the user frequently asks whether a plugin "pegou efeito" in real Codex runtime.
 
+## Drift Notes (2026-05-19)
+
+See [plugin-build-guide.md](plugin-build-guide.md) for the schema-accurate consolidated version. Corrections relevant here: marketplace canonical location moved to `.agents/plugins/marketplace.json` (`.codex-plugin/marketplace.json` is legacy); custom prompts (`/prompts:...`) are deprecated in favor of plugin skills; plugin hooks are default-enabled since 2026; environment variables for hooks are `${PLUGIN_ROOT}` / `${PLUGIN_DATA}` (the `CLAUDE_*` prefix remains only for compatibility).
+
