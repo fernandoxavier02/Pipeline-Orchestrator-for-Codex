@@ -27,6 +27,22 @@ describe("version consistency across manifests", () => {
     expect(hooksJson).toContain("v0.4.1");
   });
 
+  it("registers PreToolUse guards for Codex spawn_agent, not only legacy Agent", () => {
+    const parsedHooks = JSON.parse(hooksJson) as {
+      hooks?: {
+        PreToolUse?: Array<{
+          matcher?: string;
+          hooks?: Array<{ command?: string }>;
+        }>;
+      };
+    };
+    const spawnAgentHook = parsedHooks.hooks?.PreToolUse?.find((entry) => entry.matcher === "spawn_agent");
+
+    expect(spawnAgentHook).toBeDefined();
+    expect(spawnAgentHook?.hooks?.some((entry) => entry.command?.includes("dispatch-guard.cjs"))).toBe(true);
+    expect(spawnAgentHook?.hooks?.some((entry) => entry.command?.includes("sentinel-hook.cjs"))).toBe(true);
+  });
+
   it("CHANGELOG has entries for 0.4.1, 0.4.0, and 0.3.0", () => {
     expect(changelog).toMatch(/##\s+\[?0\.4\.1\]?/);
     expect(changelog).toMatch(/##\s+\[?0\.4\.0\]?/);

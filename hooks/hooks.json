@@ -47,6 +47,19 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "spawn_agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/sentinel-hook.cjs\""
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {

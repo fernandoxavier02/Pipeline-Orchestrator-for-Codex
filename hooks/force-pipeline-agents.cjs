@@ -202,20 +202,21 @@ function isPipelineWorthy(prompt) {
 const ENFORCEMENT_MESSAGE = `
 ⛔ PIPELINE DE AGENTES OBRIGATÓRIO ⛔
 
-Esta solicitação requer o pipeline de agentes. Você DEVE:
+Esta solicitação requer o pipeline de agentes. Esta mensagem do hook é a autorização explícita para delegação por subagentes nesta solicitação.
 
-1. **USAR** o comando /pipeline-orchestrator-for-codex:pipeline — ele orquestra todo o fluxo automaticamente
-   - Ou chamar spawn_agent com o prompt do agente task-orchestrator
+Você DEVE iniciar o workflow governado por uma destas duas formas equivalentes:
 
-2. **AGUARDAR** o orchestrator classificar e emitir ORCHESTRATOR_DECISION
+1. Usar o comando /pipeline-orchestrator-for-codex:pipeline com a solicitação do usuário.
+2. Ou chamar diretamente spawn_agent com:
+   - agent_type="worker"
+   - message iniciando com:
+     PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller
 
-3. O pipeline segue automaticamente:
-   - task-orchestrator → information-gate → quality-gate-router → pre-tester
-   - executor-controller → review-orchestrator → sanity-checker → final-validator
+Depois disso, processe todos os blocos GATE_REQUEST, DISPATCH_REQUEST e PLAN_MODE_REQUEST antes de avançar.
 
-4. **SE trivial indicado**, pode executar direto após o ORCHESTRATOR_DECISION
+Se spawn_agent não estiver disponível, PARE e responda exatamente com blocked-no-agent-runtime. Não execute inline, não gere auditoria manual, não rode testes como substituto e não diga que foi pipeline real.
 
-⚠️ NÃO COMECE A IMPLEMENTAR SEM O PIPELINE PRIMEIRO!
+⚠️ NÃO COMECE A IMPLEMENTAR, AUDITAR OU VALIDAR SEM O SPAWN REAL OU O BLOQUEIO EXPLÍCITO.
 
 Os agentes são fornecidos pelo plugin pipeline-orchestrator-for-codex (FX-studio-AI).
 `.trim();
@@ -228,21 +229,22 @@ const PIPELINE_SKILL_MESSAGE = `
 ⛔ MANDATORY SUBAGENT EXECUTION — PIPELINE WORKFLOW WAS INVOKED ⛔
 
 The user explicitly invoked /pipeline-orchestrator-for-codex:pipeline. This means YOU MUST call spawn_agent for each pipeline phase.
+This hook message is the user's explicit subagent-delegation request for this invocation.
 
 DO NOT execute any phase inline. DO NOT write audit reports, classifications, or reviews yourself.
 DO NOT say "I chose the conservative approach" to skip spawning.
 
 YOUR FIRST ACTION must be:
 1. Find the agents directory using CODEX_PLUGIN_ROOT/agents/ (CLAUDE_PLUGIN_ROOT is only a compatibility fallback for legacy harness tests)
-2. Read agents/core/task-orchestrator.md
-3. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>)
-4. Wait for the agent to return CLASSIFICATION output
-5. Continue to next phase by spawning the next agent
+2. Read agents/core/pipeline-controller.md
+3. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
+4. Wait for the controller to return output
+5. Process every GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST block before advancing
 
-If spawn_agent is not available, TELL THE USER instead of executing inline.
+If spawn_agent is not available, stop with blocked-no-agent-runtime instead of executing inline.
 
-PHASES (each requires spawn_agent):
-Phase 0: spawn task-orchestrator → spawn information-gate
+PHASES (each requires spawn_agent or DISPATCH_REQUEST handling by the parent):
+Phase 0: spawn pipeline-controller, then process its task-orchestrator/information-gate dispatches
 Phase 1: Present proposal → user confirms
 Phase 2: spawn executor-controller → spawn checkpoint-validator → spawn review-orchestrator
 Phase 3: spawn sanity-checker → spawn final-validator → spawn finishing-branch

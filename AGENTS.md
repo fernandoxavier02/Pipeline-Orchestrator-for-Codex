@@ -48,3 +48,5 @@ Em Windows, se o Vitest completo falhar por memoria ou IPC, rode subconjuntos fo
 ## Arquivos de Contexto
 
 Leia `.kiro/CONSTITUTION.md` para principios permanentes, `.kiro/steering/product.md` para intencao do produto, `.kiro/steering/tech.md` para stack/runtime e `.kiro/steering/structure.md` para mapa do repositorio.
+
+Antes de alterar superficies ligadas a OpenAI/Codex, API, skills, plugins, MCP, subagentes, rules, hooks ou `AGENTS.md`, consulte `references/openai-codex-kb/INDEX.md` e volte as fontes oficiais quando a mudanca depender de comportamento atual do produto.

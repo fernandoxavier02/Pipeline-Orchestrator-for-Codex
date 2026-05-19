@@ -1,7 +1,7 @@
 # PROJECT CONTEXT — Pipeline Orchestrator for Codex
 
 > Arquivo de contexto persistente para consulta do agente em sessões futuras.
-> Última atualização: 2026-05-11
+> Última atualização: 2026-05-18
 > Versão do projeto: 0.4.1
 > Branch: main
 
@@ -10,7 +10,7 @@
 ## 1. IDENTIDADE DO PROJETO
 
 - **Nome:** `pipeline-orchestrator-for-codex`
-- **Tipo:** Plugin para OpenAI Codex CLI
+- **Tipo:** Plugin para OpenAI Codex
 - **Propósito:** Transforma pedidos livres de desenvolvimento em fluxo de execução governado por 4 fases, com gates de qualidade, revisão adversarial e validação final GO/NO-GO/CONDITIONAL.
 - **Base:** Port do Pipeline Orchestrator para Claude Code (v5.2.0), adaptado às restrições do runtime Codex.
 - **SSOT:** `skills/pipeline/SKILL.md` é o contrato operacional principal.
@@ -92,7 +92,7 @@
 | `workflow/` | `next-step.ts` | Regras de handoff entre workflows |
 | `spec/` | `spec-lifecycle.ts` | Artefatos, format gate, content review, traceability, post-impl |
 | `trace/` | `trace-generator.ts`, `trace-types.ts` | Geração e validação de TRACE.md |
-| `references/` | `load-reference-bundle.ts`, `reference-profiles.ts` | Bundle de complexity matrix, pipeline profiles, gate banks, checklists, team registry |
+| `references/` | `load-reference-bundle.ts`, `reference-profiles.ts`, `openai-codex-kb/**` | Bundle de complexity matrix, pipeline profiles, gate banks, checklists, team registry e KB local OpenAI/Codex |
 | `prompts/` | `prompt-registry.ts` | Registro de 22 prompts pré-carregados |
 | `primitives/` | `ask-user-question.ts`, `plan-session.ts` | Abstrações base |
 | `continue/` | `continue-pipeline.ts`, `continue-state.ts` | Resume pipelines interrompidos |
@@ -204,7 +204,7 @@ Registrados em `hooks/hooks.json`:
 
 ## 10. TESTES
 
-**~95 arquivos de teste** em 3 camadas:
+**110 arquivos de teste** em 3 camadas:
 
 - **`tests/unit/` (62):** Controller, gates, state, security, hooks, modes, primitives, observability, spec lifecycle, closeout, dispatcher
 - **`tests/integration/` (28):** Bootstrap, controller parity, execution flows, modes, planning, plugin surface, review, scenarios, sentinel, validation, protocol hoisting
@@ -218,7 +218,7 @@ Registrados em `hooks/hooks.json`:
 
 - **Entrada:** `src/**/*.ts`, `tests/**/*.ts`, `vitest.config.ts`
 - **Saída:** `dist/src/`, `dist/tests/`, `dist/vitest.config.js`
-- **Compilador:** TypeScript 5.8.3, target ES2022, módulo NodeNext
+- **Compilador:** TypeScript 5.9.3, target ES2022, módulo NodeNext
 - **Não editar `dist/` manualmente** — é saída de build
 
 ---
@@ -238,10 +238,20 @@ Registrados em `hooks/hooks.json`:
 ## 13. DOCUMENTAÇÃO EXISTENTE
 
 - `docs/pipeline-orchestrator-codex/` (11 arquivos): Runtime architecture, phase flow, gates, agents catalog, prompts, references, Codex translation matrix, implementation blueprint, gap analysis, source inventory
+- `docs/openai-codex-kb.md`: Guia humano da base de conhecimento OpenAI/Codex
 - `docs/superpowers/` (5 arquivos): Planos e specs históricos
 - `docs/audits/`: Audit findings
 - `README.md`, `AGENTS.md`, `CHANGELOG.md`
 - `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`
+
+### Base de conhecimento OpenAI/Codex
+
+- **Raiz:** `references/openai-codex-kb/INDEX.md`
+- **Objetivo:** Consulta local, extensa e pesquisável sobre OpenAI API, Codex, ChatGPT Apps SDK, Learn/Cookbook, skills, plugins, agentes, subagentes, MCP, rules, hooks e `AGENTS.md`.
+- **Formato:** Markdown original com FrontMatter, `source_urls`, `source_sets`, `topics`, `globs`, `last_verified` e `status`.
+- **Fonte:** Índices oficiais `llms.txt` da OpenAI em `developers.openai.com`; a KB referencia fontes, mas não espelha conteúdo oficial literalmente.
+- **Regra de uso:** Antes de alterar superfícies OpenAI/Codex, consulte a KB e volte às fontes oficiais quando a mudança depender de comportamento atual do produto.
+- **Validação:** `tests/unit/openai-codex-kb.test.ts` garante FrontMatter válido, fontes oficiais, `globs` não vazios e cobertura de API Docs, Codex, ChatGPT/Apps SDK e Learn.
 
 ---
 
@@ -249,16 +259,23 @@ Registrados em `hooks/hooks.json`:
 
 - **Branch:** `main`
 - **Versão:** 0.4.1
-- **Dirty files (12):**
-  - `commands/pipeline.md` (modificado)
-  - `src/controller/parse-mode.ts` (modificado)
-  - `src/workflow/next-step.ts` (modificado)
-  - Testes de integração (modificados)
-  - Arquivos novos: `commands/help.md`, `skills/help/`, `tests/integration/plugin/help-command-surface.test.ts`
+- **Dirty files observados nesta sessão:**
+  - `.pipeline/sessions/audit.log` (estado operacional/local; já estava modificado antes da KB)
+  - `AGENTS.md` (ponteiro para a KB OpenAI/Codex)
+  - `PROJECT_CONTEXT.md` (este contexto)
+  - `docs/openai-codex-kb.md` (novo guia)
+  - `references/openai-codex-kb/**` (nova KB)
+  - `tests/unit/openai-codex-kb.test.ts` (novo teste de validação)
+- **Validação mais recente:**
+  - `npx vitest run tests/unit/openai-codex-kb.test.ts` → 3 passed
+  - `npm run lint:types` → passou
+  - `npm test` → 110 arquivos / 771 testes passed
+  - `npm run build` → passou
+  - `git diff --check` → passou
 - **Commits recentes:**
-  - `6718a49` fix: align audit-heavy dispatch agent fqns
-  - `b9f1ee7` fix: preserve explicit pipeline workflows
-  - `c7823cd` fix: require specs before heavy execution
+  - `73fc792` docs: add IFRS16 pipeline meta audit spec
+  - `9cf582f` fix: package cli runtime dependency
+  - `54e4baf` fix: restore codex pipeline operational runtime
 
 ---
 

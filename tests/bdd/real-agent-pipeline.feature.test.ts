@@ -11,6 +11,8 @@ describe("Feature: /pipeline requires real Codex agents", () => {
     expect(command).toContain("Agent Execution Contract");
     expect(command).toContain("blocked-no-agent-runtime");
     expect(command).toContain("strictAgents = false");
+    expect(command).toContain("Operational Default");
+    expect(command).toContain("never replace it with inline execution");
   });
 
   it("Given the pipeline skill runs without spawn_agent Then it must block instead of emulating agents", () => {

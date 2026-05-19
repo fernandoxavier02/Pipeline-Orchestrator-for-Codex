@@ -27,6 +27,11 @@ describe("force pipeline agents hook", () => {
     const result = runHook(cwd, "analise este plugin e implemente os gates");
 
     expect(result.status).toBe(0);
+    const output = parseOutput(result);
+    expect(output.systemMessage).toContain("autorização explícita para delegação por subagentes");
+    expect(output.systemMessage).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller");
+    expect(output.systemMessage).toContain("blocked-no-agent-runtime");
+    expect(output.systemMessage).not.toContain("task-orchestrator");
     const eventsPath = join(cwd, ".codex", "pipeline", "hook-events.jsonl");
     expect(existsSync(eventsPath)).toBe(true);
     const event = JSON.parse(readFileSync(eventsPath, "utf8").trim());
@@ -64,6 +69,19 @@ describe("force pipeline agents hook", () => {
     const output = parseOutput(result);
     expect(output.systemMessage).toContain("BRAINSTORM WORKFLOW");
     expect(output.systemMessage).not.toContain("MANDATORY SUBAGENT EXECUTION — /pipeline WAS INVOKED");
+  });
+
+  it("ATDD: explicit pipeline invocation requires pipeline-controller spawn or blocked-no-agent-runtime", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-"));
+
+    const result = runHook(cwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo sem agentes");
+    const output = parseOutput(result);
+
+    expect(output.systemMessage).toContain("MANDATORY SUBAGENT EXECUTION");
+    expect(output.systemMessage).toContain("agents/core/pipeline-controller.md");
+    expect(output.systemMessage).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller");
+    expect(output.systemMessage).toContain("blocked-no-agent-runtime");
+    expect(output.systemMessage).not.toContain("agents/core/task-orchestrator.md");
   });
 
   it("ATDD: preserves explicit governed slash workflow variants exactly", () => {
