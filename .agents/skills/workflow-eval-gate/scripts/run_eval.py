@@ -46,12 +46,18 @@ EVAL_EVIDENCE_MARKERS = (
 )
 
 REQUIRED_VALIDATION_COMMANDS = (
-    "npm run lint:types",
-    "npm run build",
-    "npm test",
-    "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
-    "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
-    "git diff --check",
+    ("npm run lint:types",),
+    ("npm run build",),
+    ("npm test",),
+    (
+        "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
+        "python3 -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
+    ),
+    (
+        "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
+        "python3 .agents/skills/workflow-eval-gate/scripts/run_eval.py",
+    ),
+    ("git diff --check",),
 )
 
 DEFAULT_SCOPE_PREFIXES = (
@@ -254,18 +260,19 @@ def validate_command_evidence(telemetry: dict[str, object]) -> list[str]:
     if not isinstance(commands, dict):
         return ["telemetry validation_evidence.commands must be an object"]
 
-    for command in REQUIRED_VALIDATION_COMMANDS:
-        evidence = commands.get(command)
+    for command_options in REQUIRED_VALIDATION_COMMANDS:
+        command = command_options[0]
+        evidence = next((commands.get(option) for option in command_options if isinstance(commands.get(option), dict)), None)
         if not isinstance(evidence, dict):
-            errors.append(f"missing validation evidence for command: {command}")
+            errors.append(f"missing validation evidence for command: {' or '.join(command_options)}")
             continue
         allowed_statuses = {"PASS"}
-        if command == "npm test":
+        if "npm test" in command_options:
             allowed_statuses.add("PASS_FOCUSED_AFTER_TIMEOUT")
         if evidence.get("status") not in allowed_statuses:
-            errors.append(f"validation command did not pass: {command}")
+            errors.append(f"validation command did not pass: {' or '.join(command_options)}")
         if evidence.get("status") == "PASS_FOCUSED_AFTER_TIMEOUT" and not str(evidence.get("focused_evidence", "")).strip():
-            errors.append(f"validation command needs focused evidence after timeout: {command}")
+            errors.append(f"validation command needs focused evidence after timeout: {' or '.join(command_options)}")
     return errors
 
 

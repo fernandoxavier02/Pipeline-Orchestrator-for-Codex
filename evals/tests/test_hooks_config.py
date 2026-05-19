@@ -24,7 +24,7 @@ class HooksConfigTests(unittest.TestCase):
             self.assertNotIn("`", command)
 
     def test_hook_commands_execute_under_cmd_from_repo_root(self) -> None:
-        command = "python .codex/hooks/pre_tool_use_policy.py"
+        command = next(command for command in self.load_commands() if "pre_tool_use_policy.py" in command)
 
         result = subprocess.run(
             command,

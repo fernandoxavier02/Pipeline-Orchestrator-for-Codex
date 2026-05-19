@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { resolveValidatedRoot } from "../../../src/state/path-validation.js";
@@ -18,6 +18,6 @@ describe("resolveValidatedRoot", () => {
   it("accepts absolute paths that do not traverse", () => {
     const tmp = mkdtempSync(join(tmpdir(), "path-validation-"));
     const root = resolveValidatedRoot(tmp);
-    expect(root).toBe(resolve(tmp));
+    expect(root).toBe(realpathSync(resolve(tmp)));
   });
 });

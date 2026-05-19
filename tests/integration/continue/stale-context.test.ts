@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -298,7 +298,7 @@ describe("stale context continue routing", () => {
     expect(second.resumeBlocked).toBe(true);
     expect(second.revalidationRequired).toBe(true);
     expect(second.resumeFrom).toBeUndefined();
-    expect(second.latestRun).toBe(runDir);
+    expect(second.latestRun).toBe(realpathSync(runDir));
   });
 
   it("routes continue using the latest gate rollback metadata before resuming", async () => {

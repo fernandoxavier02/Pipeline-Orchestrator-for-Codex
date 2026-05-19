@@ -161,20 +161,44 @@ function readExecWindow(cwd, sessionId) {
   }
 }
 
+function realpathWithExistingAncestor(targetPath) {
+  try {
+    return fs.realpathSync(targetPath);
+  } catch {
+    // The write target often does not exist yet. Canonicalize the nearest
+    // existing parent so macOS /var -> /private/var does not look like escape.
+  }
+
+  const pendingParts = [];
+  let cursor = targetPath;
+  while (!fs.existsSync(cursor)) {
+    const parent = path.dirname(cursor);
+    if (parent === cursor) return targetPath;
+    pendingParts.unshift(path.basename(cursor));
+    cursor = parent;
+  }
+
+  try {
+    return path.join(fs.realpathSync(cursor), ...pendingParts);
+  } catch {
+    return targetPath;
+  }
+}
+
 function isAllowedPath(cwd, filePath) {
   // Resolve relative paths (e.g., from Bash command parsing)
   let resolved = path.resolve(cwd, filePath);
+  let workspaceRoot = path.resolve(cwd);
 
   // Follow symlinks to prevent symlink-escape attacks (.codex/escape -> ../../outside)
+  resolved = realpathWithExistingAncestor(resolved);
   try {
-    resolved = fs.realpathSync(resolved);
+    workspaceRoot = fs.realpathSync(workspaceRoot);
   } catch {
-    // If realpath fails (target doesn't exist), fall back to resolved path
-    // and continue with normal checks — the write tool itself will fail if
-    // the target is truly invalid.
+    // Keep the resolved cwd fallback if the temporary workspace disappeared.
   }
 
-  const relative = path.relative(cwd, resolved);
+  const relative = path.relative(workspaceRoot, resolved);
   // Reject paths that escape the workspace (path traversal)
   if (relative.startsWith('..')) return false;
   // Always allow paths inside .codex/ or pipeline-runs/

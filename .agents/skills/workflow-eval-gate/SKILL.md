@@ -24,10 +24,10 @@ or agent/runtime contracts.
    or globally active unless the active Codex hook/plugin configuration proves
    that.
 5. Let the Codex hooks capture telemetry when they are trusted and enabled.
-   When hooks are not active, run `.codex/hooks/post_tool_use_telemetry.py`
+   When hooks are not active, run `python3 .codex/hooks/post_tool_use_telemetry.py`
    manually before claiming eval evidence.
 6. Save the final report to `evals/outputs/latest_output.md`.
-7. Run `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` after
+7. Run `python3 .agents/skills/workflow-eval-gate/scripts/run_eval.py` after
    changes. Never claim success unless it prints `EVAL RESULT: PASS` and exits
    with code 0.
 8. Hook activation is an explicit Codex trust step. Open `/hooks`, review

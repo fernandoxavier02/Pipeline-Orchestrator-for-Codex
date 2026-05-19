@@ -37,13 +37,13 @@ Codex hook activation is a manual trust step. Open `/hooks`, inspect `.codex/hoo
 If the session cannot prove the hooks are trusted and active, treat telemetry as manual evidence. In that case, run:
 
 ```powershell
-python .codex/hooks/post_tool_use_telemetry.py
+python3 .codex/hooks/post_tool_use_telemetry.py
 ```
 
 Then run the eval runner directly:
 
 ```powershell
-python .agents/skills/workflow-eval-gate/scripts/run_eval.py
+python3 .agents/skills/workflow-eval-gate/scripts/run_eval.py
 ```
 
 Do not report the Eval Gate as automatic, packaged, global, or trusted unless `/hooks`, `.codex/config.toml`, `.codex/hooks.json`, and the active Codex runtime state prove it.
@@ -56,8 +56,8 @@ Use these commands from the repository root when the Eval Gate surface changes:
 npm run lint:types
 npm run build
 npm test
-python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs
-python .agents/skills/workflow-eval-gate/scripts/run_eval.py
+python3 -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs
+python3 .agents/skills/workflow-eval-gate/scripts/run_eval.py
 git diff --check
 ```
 
@@ -74,7 +74,7 @@ The Eval Gate can only be treated as passing when:
 - `evals/telemetry/git_diff.patch` exists.
 - telemetry contains a `scope_review` block whose unexpected files match the changed-file inventory and have explicit justifications.
 - telemetry contains `validation_evidence.commands` entries for lint, build, tests, Python eval tests, eval runner, and `git diff --check`.
-- `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` passes.
+- `python3 .agents/skills/workflow-eval-gate/scripts/run_eval.py` passes.
 - prohibited directories such as `node_modules/**`, `.git/**`, `build/**`, and manually edited `dist/**` are not part of the work.
 - remaining risks are reported plainly.
 
