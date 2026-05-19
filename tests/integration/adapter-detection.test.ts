@@ -27,7 +27,7 @@ function makeAgentRequest(overrides: Partial<AgentDispatchRequest> = {}): AgentD
       workflow_id: "wf-x",
       event_id: "ev-x",
       plugin_name: "pipeline-orchestrator-for-codex",
-      plugin_version: "0.4.1",
+      plugin_version: "0.5.0",
       runtime: "codex",
       surface: "test",
       cwd: process.cwd(),

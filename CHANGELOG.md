@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-19
+
+### Trust restoration release
+
+Implements `.kiro/specs/pipeline-trust-restoration/` (14 requirements, 4 checkpoints) to eliminate the "Emulation Theatre" — where `Review_Orchestrator` and `Final_Adversarial_Orchestrator` silently ran in local emulation when `strictAgents` was undefined and the fabricated verdicts were indistinguishable from real-agent reviews in `gate-decisions.jsonl`.
+
+### Added
+
+- **R1** — Central `recordGateDecision()` / `inferDecidedBy()` API in `src/state/gate-log.ts`. The writer is now the single authority for `decided_by` provenance. CI lint (`tests/unit/lint/decided-by-centralization.test.ts`) forbids new hardcoded literals outside the writer (Theme D defense).
+- **R2** — `Confidence_Model` scans gate entries for `decided_by="system"` and caps `final_score` at `0.5` when any emulation is present. `confidence-score.yaml` now persists `confidenceSource: real | emulated | unknown` and `emulated_entry_count` so Pa de Cal output is post-mortem auditable.
+- **R3** — Shared `resolveRequireRealAgent` in new `src/runtime/strict-resolution.ts` (DI-3 cascade SSOT). `Review_Orchestrator` and `Final_Adversarial_Orchestrator` now use the lazy `requireRealAgentForRequest` resolver — operational pipeline dispatches honour the safe cascade even when `strictAgents` is undefined.
+- **R4** — `tests/integration/strict-agents-undefined.test.ts` with deterministic property loop (P2 Cascade Equivalence, 200 iterations).
+- **R5** — `protocolEventSchema` accepts optional `dispatchMode: real | emulated | unknown`. `persistProtocolBlocksFromDispatch` and `processProtocolBlocksForParent` tag every `DISPATCH_REQUEST` event. Backward-compatible with legacy logs.
+- **R6** — `sessionStateSchema` persists optional `strictAgents`. `createSessionStore(root, { strictAgents })` auto-injects defaults on every save. New `loadPersistedStrictAgents` helper; CLI `--continue` peeks the latest session before constructing the runtime so the flag survives resume.
+- **R7** — New `src/adapters/codex-agent-runtime.ts`. `createCodexAgentRuntimeAdapter` bridges injected `spawn_agent` callables to the `AgentRuntimeAdapter` contract; `detectCodexAgentRuntime` probes `globalThis.spawn_agent`. `createPipelineRuntime` auto-detects and defaults `strictAgents = true` (R7 AC 7.2) with a console warning if the caller opts out (R7 AC 7.5).
+- **R11** — `dispatch-guard.cjs` and `sentinel-hook.cjs` now emit canonical sanitized deny reasons (`hook internal error — failing closed` / `sentinel internal error — failing closed`). Raw exception messages, paths, and payloads stay in `stderr` only (AC 11.4). New outer try/catch in `sentinel-hook` covers non-object stdin. Integration suite covers 8 deterministic malformed inputs (Property P4 Hook Fail-Closed Universality).
+- **R12** — `hooks.json` matcher now includes `Bash`. Hook logic was already Bash-aware; this PR wires the matcher and adds the end-to-end integration test.
+- **R13** — `rejectSymlink` in `scripts/exec-window/open.cjs` throws `SymlinkRefusedError` with structured `err.code` and audited stderr line.
+
+### Changed
+
+- `agents/core/pipeline-controller.md` gains an `AUTHORITY_NOTE` header declaring `src/controller/pipeline-controller.ts` as operational SSOT and removes the stale "37 N2 agents" claim from frontmatter (R8).
+- `src/gates/hardness-policy.ts` is documented as DEMOTED — `gate-registry.ts` is the static SSOT, hardness-policy is a dynamic classifier for `information-gate.ts` plus CI cross-check (R9).
+- `references/openai-codex-kb/*` drift consolidated: `plugins.md`, `skills.md`, `agents-and-subagents.md`, `rules-hooks-agents-md.md` lose their bottom-appended Drift Notes (moved to new `CHANGELOG.kb.md`). Uniform `last_verified=2026-05-19` across the 4 drift-noted files and the SSOT (R10).
+
+### Tests
+
+- 56 new tests across 8 new files plus 4 extended files (gate-log centralization, confidence cap + P3 monotonicity, hook fail-closed + P4, strict-agents-undefined + P2 cascade, resume-strict-agents + P5 idempotence, protocol-events dispatchMode, gate-hardness consistency, adapter detection + AgentRuntimeUnavailable propagation, openai-codex-kb consolidation, agents-inventory AUTHORITY_NOTE).
+- `npm run build`, `npm run lint:types`, full unit (509) and integration closeout/validation/review/execution/sentinel/hooks (88) pass.
+
+### Out of scope (tracked separately)
+
+- Refactor of `src/controller/pipeline-controller.ts` (1885 lines, works).
+- Rewrite of `src/dispatcher/single-agent-runner.ts` (emulation runner is still the test foundation; remove after R7 adapter stabilises).
+
 ## [0.4.1] — 2026-05-07
 
 ### Added

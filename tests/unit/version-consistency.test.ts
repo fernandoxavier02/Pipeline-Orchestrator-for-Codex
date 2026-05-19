@@ -15,16 +15,16 @@ describe("version consistency across manifests", () => {
   const hooksJson = readFileSync(join(ROOT, "hooks", "hooks.json"), "utf8");
   const changelog = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
 
-  it("plugin.json version is 0.4.1", () => {
-    expect(pluginJson.version).toBe("0.4.1");
+  it("plugin.json version is 0.5.0", () => {
+    expect(pluginJson.version).toBe("0.5.0");
   });
 
   it("package.json version matches plugin.json", () => {
     expect(pkgJson.version).toBe(pluginJson.version);
   });
 
-  it("SessionStart banner mentions v0.4.1", () => {
-    expect(hooksJson).toContain("v0.4.1");
+  it("SessionStart banner mentions v0.5.0", () => {
+    expect(hooksJson).toContain("v0.5.0");
   });
 
   it("registers PreToolUse guards for Codex spawn_agent, not only legacy Agent", () => {
@@ -43,7 +43,8 @@ describe("version consistency across manifests", () => {
     expect(spawnAgentHook?.hooks?.some((entry) => entry.command?.includes("sentinel-hook.cjs"))).toBe(true);
   });
 
-  it("CHANGELOG has entries for 0.4.1, 0.4.0, and 0.3.0", () => {
+  it("CHANGELOG has entries for 0.5.0, 0.4.1, 0.4.0, and 0.3.0", () => {
+    expect(changelog).toMatch(/##\s+\[?0\.5\.0\]?/);
     expect(changelog).toMatch(/##\s+\[?0\.4\.1\]?/);
     expect(changelog).toMatch(/##\s+\[?0\.4\.0\]?/);
     expect(changelog).toMatch(/##\s+\[?0\.3\.0\]?/);

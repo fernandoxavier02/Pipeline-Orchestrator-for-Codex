@@ -11,6 +11,7 @@
 import { createPipelineRuntime } from "../index.js";
 import type { RuntimeOptions } from "../domain/pipeline-types.js";
 import { pathToFileURL } from "node:url";
+import { join } from "node:path";
 import { loadAgentRuntimeAdapter } from "./agent-runtime-loader.js";
 
 export function resolveCliExitCode(result: unknown) {
@@ -78,7 +79,7 @@ export async function runPipelineCli(options: PipelineCliOptions) {
     try {
       const { findLatestRun } = await import("../continue/find-latest-run.js");
       const { loadPersistedStrictAgents } = await import("../state/session-store.js");
-      const stateDir = `${options.cwd}/.codex/pipeline`;
+      const stateDir = join(options.cwd ?? process.cwd(), ".codex", "pipeline");
       const latestRun = await findLatestRun(stateDir);
       if (latestRun?.runDir) {
         effectiveStrictAgents = await loadPersistedStrictAgents(latestRun.runDir);
