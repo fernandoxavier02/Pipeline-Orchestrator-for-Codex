@@ -1,5 +1,5 @@
 import type { DispatchResult, RunRoleResult } from "../dispatcher/dispatcher-types.js";
-import { createGateLog } from "../state/gate-log.js";
+import { createGateLog, inferDecidedBy } from "../state/gate-log.js";
 import { createProtocolEventLog, parseProtocolBlocks, type ProtocolBlock } from "./protocol-events.js";
 
 type DispatchLike = DispatchResult | RunRoleResult;
@@ -268,7 +268,7 @@ export async function recordProtocolGateResponse(input: {
   await createGateLog(input.stateRoot).append({
     ...canonical,
     decision: decisionFromSelectedLabel(input.selectedLabel),
-    decided_by: "user",
+    decided_by: inferDecidedBy({ source: "user" }),
     timestamp,
     detail: `via protocol-events GATE_REQUEST gate_id=${input.gateId}`,
     confidence_impact: 0,

@@ -232,4 +232,9 @@ export const confidenceScoreSchema = z.object({
   gate_penalty: z.number(),
   dimensions: z.record(z.union([z.number(), z.null()])),
   updated_at: z.string(),
+  // Spec: pipeline-trust-restoration / R2 AC 2.3/2.4. Optional to preserve
+  // backward-compat with legacy confidence-score.yaml files (NFR-1).
+  confidenceSource: z.enum(["real", "emulated", "unknown"]).optional(),
+  // R2 AC 2.5 — observable count of emulated entries that triggered the cap.
+  emulated_entry_count: z.number().int().nonnegative().optional(),
 });

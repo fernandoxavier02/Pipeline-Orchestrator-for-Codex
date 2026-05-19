@@ -21,7 +21,7 @@ import { createFinalAdversarialOrchestrator } from "./review/final-adversarial-o
 import { createReviewOrchestrator } from "./review/review-orchestrator.js";
 import { createCheckpointStore } from "./state/checkpoint-store.js";
 import { createConfidenceScoreStore } from "./state/confidence-score.js";
-import { createGateLog } from "./state/gate-log.js";
+import { createGateLog, inferDecidedBy } from "./state/gate-log.js";
 import { createSessionStore } from "./state/session-store.js";
 import { createSentinelStateStore } from "./sentinel/sentinel-state.js";
 import { writeTrace } from "./trace/trace.js";
@@ -624,7 +624,7 @@ export function createPipelineRuntime(options) {
                         hardness: gateRegistry.get("CLOSEOUT_CONFIRM").hardness,
                         phase: "phase-3",
                         decision: input.confirmed ? "pass" : "skip",
-                        decided_by: "controller",
+                        decided_by: inferDecidedBy({ source: "controller" }),
                         timestamp: new Date().toISOString(),
                         detail: input.confirmed
                             ? "Operator explicitly confirmed closeout."
@@ -638,7 +638,7 @@ export function createPipelineRuntime(options) {
                         hardness: gateRegistry.get("REDUCED_VALIDATION_USAGE").hardness,
                         phase: "phase-3",
                         decision: "pass",
-                        decided_by: "controller",
+                        decided_by: inferDecidedBy({ source: "controller" }),
                         timestamp: new Date().toISOString(),
                         detail: "Hotfix closeout used reduced final validation (build plus tests).",
                         confidence_impact: 0,
@@ -667,7 +667,7 @@ export function createPipelineRuntime(options) {
                         hardness: entry.hardness,
                         phase: entry.phase ?? "phase-3",
                         decision: entry.decision,
-                        decided_by: entry.decided_by ?? "controller",
+                        decided_by: entry.decided_by ?? inferDecidedBy({ source: "controller" }),
                         timestamp: entry.timestamp ?? new Date().toISOString(),
                         detail: entry.detail ?? "",
                         confidence_impact: entry.confidence_impact ?? 0,

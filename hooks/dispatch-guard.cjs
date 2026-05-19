@@ -431,26 +431,45 @@ let buffer = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { buffer += chunk; });
 process.stdin.on('end', () => {
+  // Spec: pipeline-trust-restoration / R11 AC 11.1, 11.4 — fail-closed deny
+  // with a sanitized canonical reason. Raw exception messages, paths, and
+  // payloads MUST stay out of the user-visible reason (avoid secret leak).
+  // The detailed error is forwarded to stderr (operator log) and to the
+  // structured hook-event record only.
+  const SANITIZED_REASON = 'hook internal error — failing closed';
+
   let parsed = {};
   const raw = (buffer || '').trim();
   if (raw) {
-    try { parsed = JSON.parse(raw); } catch { parsed = {}; }
+    try {
+      parsed = JSON.parse(raw);
+    } catch (parseErr) {
+      // R11 — malformed stdin payload is treated as an internal-error path.
+      process.stderr.write(
+        `[dispatch-guard] malformed stdin JSON: ${parseErr && parseErr.message ? parseErr.message : String(parseErr)}\n`,
+      );
+      recordHookEvent({
+        hook: 'dispatch-guard',
+        event: 'PreToolUse',
+        decision: 'deny',
+        reason: 'malformed stdin JSON',
+      });
+      deny(SANITIZED_REASON);
+      return;
+    }
   }
   try {
     handle(parsed);
   } catch (err) {
-    // Fail-closed: any internal error in dispatch guard denies the operation.
-    // The comment previously claimed fail-open was intentional, but the adversarial
-    // security review determined that a crash in the last line of defense against
-    // unauthorized agent spawning MUST deny. Non-pipeline tool calls are not affected
-    // because this hook only fires for Agent/Skill PreToolUse events.
-    const reason = `hook crash: ${err && err.message ? err.message : String(err)}`;
+    process.stderr.write(
+      `[dispatch-guard] internal error: ${err && err.message ? err.message : String(err)}\n`,
+    );
     recordHookEvent({
       hook: 'dispatch-guard',
       event: 'PreToolUse',
       decision: 'deny',
-      reason,
+      reason: 'hook crash',
     });
-    deny(`DISPATCH_GUARD crashed internally: ${reason}. Denying as a security precaution.`);
+    deny(SANITIZED_REASON);
   }
 });

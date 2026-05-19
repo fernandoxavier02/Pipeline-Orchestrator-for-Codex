@@ -62,7 +62,8 @@ function runSentinelHookRaw(cwd: string, rawInput: string) {
 }
 
 describe("sentinel hook", () => {
-  it("denies on malformed stdin JSON (fail-closed)", () => {
+  // R11 AC 11.2, 11.4 — sanitized canonical reason; details stay in stderr.
+  it("denies on malformed stdin JSON with sanitized reason (fail-closed)", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
     writeRuntimeSentinelState(cwd, ["information-gate"]);
 
@@ -71,10 +72,12 @@ describe("sentinel hook", () => {
     expect(result.status).toBe(0);
     const output = JSON.parse(result.stdout);
     expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
-    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("Unparseable");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toBe(
+      "sentinel internal error — failing closed",
+    );
   });
 
-  it("denies on corrupted sentinel-state.json (fail-closed)", () => {
+  it("denies on corrupted sentinel-state.json with sanitized reason (fail-closed)", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
     const stateDir = join(cwd, ".codex", "pipeline");
     mkdirSync(stateDir, { recursive: true });
@@ -85,7 +88,12 @@ describe("sentinel hook", () => {
     expect(result.status).toBe(0);
     const output = JSON.parse(result.stdout);
     expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
-    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("corrupted");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toBe(
+      "sentinel internal error — failing closed",
+    );
+    // R11 AC 11.4 — the state file path MUST NOT leak into the user-facing reason.
+    expect(output.hookSpecificOutput.permissionDecisionReason).not.toContain(stateDir);
+    expect(output.hookSpecificOutput.permissionDecisionReason).not.toContain("sentinel-state.json");
   });
 
   it("allows bootstrap task-orchestrator even with corrupted state", () => {

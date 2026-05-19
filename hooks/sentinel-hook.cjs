@@ -117,19 +117,28 @@ function extractPipelineAgentType(input) {
 
 // ── Main Handler ────────────────────────────────────────────────────────────
 
+// Spec: pipeline-trust-restoration / R11 AC 11.2, 11.4 — fail-closed deny
+// with a sanitized canonical reason. State file paths, exception messages,
+// and payloads MUST stay out of the user-visible reason (avoid secret leak).
+// Operator log goes to stderr and the structured hook-event record only.
+const SENTINEL_SANITIZED_REASON = 'sentinel internal error — failing closed';
+
 function handleInput(raw) {
   // 1. Parse stdin (tool_input from Codex CLI)
   let input;
   try {
     if (!raw || !raw.trim()) return process.exit(0); // empty stdin → allow
     input = JSON.parse(raw.trim());
-  } catch {
-    // Fail-closed: unparseable stdin → deny
+  } catch (parseErr) {
+    // R11 AC 11.2 — fail-closed deny with sanitized reason.
+    process.stderr.write(
+      `[sentinel-hook] malformed stdin JSON: ${parseErr && parseErr.message ? parseErr.message : String(parseErr)}\n`,
+    );
     const output = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: 'SENTINEL: Unparseable stdin JSON. Denying as a security precaution.',
+        permissionDecisionReason: SENTINEL_SANITIZED_REASON,
       }
     };
     console.log(JSON.stringify(output));
@@ -202,8 +211,8 @@ function handleInput(raw) {
   let state;
   try {
     state = JSON.parse(fs.readFileSync(stateFilePath, 'utf8'));
-  } catch {
-    // Fail-closed: corrupted state file → deny (except bootstrap agents)
+  } catch (stateErr) {
+    // Fail-closed: corrupted state file → deny (except bootstrap agents).
     const BOOTSTRAP_AGENTS_ON_CORRUPTION = ['task-orchestrator', 'sentinel'];
     if (BOOTSTRAP_AGENTS_ON_CORRUPTION.includes(agentName)) {
       recordHookEvent({
@@ -215,13 +224,16 @@ function handleInput(raw) {
       });
       return process.exit(0);
     }
+    // R11 AC 11.2, 11.4 — sanitized reason; the state file path stays in
+    // stderr (operator-only).
+    process.stderr.write(
+      `[sentinel-hook] corrupted state at ${stateFilePath}: ${stateErr && stateErr.message ? stateErr.message : String(stateErr)}\n`,
+    );
     const output = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason:
-          `SENTINEL: sentinel-state.json at ${stateFilePath} is corrupted or unreadable. ` +
-          `Agent "${agentName}" denied. Spawn sentinel agent with mode SEQUENCE_VALIDATION to recover.`,
+        permissionDecisionReason: SENTINEL_SANITIZED_REASON,
       }
     };
     recordHookEvent({
@@ -347,4 +359,35 @@ function handleInput(raw) {
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => input += chunk);
-process.stdin.on('end', () => handleInput(input));
+process.stdin.on('end', () => {
+  // Spec: pipeline-trust-restoration / R11 AC 11.2, 11.4 — outer fail-closed
+  // guard. Any uncaught exception inside handleInput (e.g. a non-object stdin
+  // payload that bypasses the early JSON.parse, a filesystem error during
+  // discovery, a normalization crash on malformed state) MUST surface as a
+  // deny with the sanitized canonical reason, not a non-zero exit that the
+  // Codex host could treat as "allow on crash".
+  try {
+    handleInput(input);
+  } catch (err) {
+    process.stderr.write(
+      `[sentinel-hook] internal error: ${err && err.message ? err.message : String(err)}\n`,
+    );
+    const output = {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: SENTINEL_SANITIZED_REASON,
+      }
+    };
+    try {
+      recordHookEvent({
+        hook: 'sentinel',
+        event: 'PreToolUse',
+        decision: 'deny',
+        reason: 'hook crash',
+      });
+    } catch { /* recording the deny is best-effort; never block the deny itself */ }
+    console.log(JSON.stringify(output));
+    process.exit(0);
+  }
+});

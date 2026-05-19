@@ -25,7 +25,7 @@ import { createGateRegistry } from "../gates/gate-registry.js";
 import { createCheckpointStore } from "../state/checkpoint-store.js";
 import { createControllerLockStore } from "../state/controller-lock.js";
 import { createConfidenceScoreStore } from "../state/confidence-score.js";
-import { createGateLog } from "../state/gate-log.js";
+import { createGateLog, inferDecidedBy } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
 import { createSentinelStateStore } from "../sentinel/sentinel-state.js";
 import { createStateAdapter, type StateAdapter } from "./state-adapter.js";
@@ -964,7 +964,7 @@ function toGateLogEntry(input: {
     hardness: input.hardness ?? definition.hardness,
     phase: input.phase,
     decision: input.decision,
-    decided_by: "controller" as const,
+    decided_by: inferDecidedBy({ source: "controller" }),
     timestamp: new Date().toISOString(),
     detail: input.detail,
     confidence_impact: input.confidence_impact ?? (input.decision === "skip" ? definition.confidenceImpactOnSkip : 0),

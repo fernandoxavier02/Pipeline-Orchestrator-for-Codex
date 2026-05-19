@@ -1,4 +1,4 @@
-import { createGateLog } from "../state/gate-log.js";
+import { createGateLog, inferDecidedBy } from "../state/gate-log.js";
 import { createProtocolEventLog, parseProtocolBlocks } from "./protocol-events.js";
 function blockIdentifier(block) {
     if (block.kind === "GATE_REQUEST")
@@ -193,7 +193,7 @@ export async function recordProtocolGateResponse(input) {
     await createGateLog(input.stateRoot).append({
         ...canonical,
         decision: decisionFromSelectedLabel(input.selectedLabel),
-        decided_by: "user",
+        decided_by: inferDecidedBy({ source: "user" }),
         timestamp,
         detail: `via protocol-events GATE_REQUEST gate_id=${input.gateId}`,
         confidence_impact: 0,

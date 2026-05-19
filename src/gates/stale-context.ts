@@ -1,5 +1,6 @@
 import { createGateRegistry } from "./gate-registry.js";
 import type { ConfidenceGateEntry } from "./confidence-model.js";
+import { inferDecidedBy } from "../state/gate-log.js";
 
 const SENSITIVE_PATH_PATTERN = /(auth|crypto|security|payment|sensitive|session|token|credential)/i;
 const STALE_CONTEXT_WINDOW_MS = 1000 * 60 * 60 * 24 * 7;
@@ -52,7 +53,7 @@ export function assessStaleContext(input: {
     hardness: sensitiveComplexDomain ? "HARD" : gate.hardness,
     phase: gate.phase,
     decision: sensitiveComplexDomain ? "block" : "skip",
-    decided_by: "controller",
+    decided_by: inferDecidedBy({ source: "controller" }),
     timestamp: now.toISOString(),
     detail: sensitiveComplexDomain
       ? "Stale context touches a sensitive complex domain and requires revalidation before resume"
