@@ -45,7 +45,7 @@ describe("agents/ vs prompts/agents/ — intentional split", () => {
 
     for (const agent of specAgents) {
       const content = readFileSync(join(AGENTS_QUALITY, agent), "utf8");
-      expect(content).toMatch(/^---\n[\s\S]+?\n---/);
+      expect(content).toMatch(/^---\r?\n[\s\S]+?\r?\n---/);
       expect(content).toMatch(/agent_type:/);
       expect(content).toMatch(/gates_at:/);
       expect(content).toMatch(/sentinel_checkpoints:/);

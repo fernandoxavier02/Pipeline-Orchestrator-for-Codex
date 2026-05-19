@@ -14,6 +14,8 @@ Independencia de revisao e requisito de produto. Revisao adversarial nao deve co
 
 Promessas publicas precisam corresponder ao runtime. README, plugin manifest, docs e comandos nao devem anunciar garantias que `skills/**`, `src/**`, `hooks/**` e testes nao executem ou validem.
 
+Eval Gate local e evidencia, nao promessa global. Mudancas em workflow, plugin, skill, hook, command, script, telemetry, gate, trace, batch ou review devem passar pelo runner local antes de qualquer declaracao de PASS. Hooks locais so contam como automaticos quando a confianca em `/hooks` estiver verificada; sem isso, registre telemetry manual.
+
 ## Limites de Seguranca
 
 Nunca commitar secrets, tokens, chaves de API ou configuracoes privadas.

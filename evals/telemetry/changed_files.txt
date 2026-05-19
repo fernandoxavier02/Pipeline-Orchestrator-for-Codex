@@ -1,0 +1,14 @@
+.kiro/CONSTITUTION.md
+.kiro/steering/product.md
+.kiro/steering/structure.md
+.kiro/steering/tech.md
+.pipeline/sessions/b7a9c366-4f74-4f2c-b277-df49a66921c8.lock
+AGENTS.md
+PROJECT_CONTEXT.md
+README.md
+docs/pipeline-orchestrator-codex/README.md
+tests/unit/agents-inventory.test.ts
+.agents/skills/workflow-eval-gate/
+.codex/
+.pipeline/docs/Pre-Complex-action/
+evals/

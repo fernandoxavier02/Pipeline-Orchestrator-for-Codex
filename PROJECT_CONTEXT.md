@@ -1,9 +1,9 @@
 # PROJECT CONTEXT — Pipeline Orchestrator for Codex
 
 > Arquivo de contexto persistente para consulta do agente em sessões futuras.
-> Última atualização: 2026-05-18
+> Última atualização: 2026-05-19
 > Versão do projeto: 0.4.1
-> Branch: main
+> Branch: codex/eval-gate
 
 ---
 
@@ -29,12 +29,14 @@
 | Validação | Zod v3.24.2 |
 | YAML Parsing | `yaml` v2.8.1 |
 | Hooks | CommonJS `.cjs` (apenas `fs`, `path`) |
+| Eval Gate Local | Python stdlib (`unittest`, `json`, `subprocess`, `pathlib`) |
 | Build | `tsc -p tsconfig.json` (output em `dist/`) |
 
 **Scripts principais:**
 - `npm run lint:types` — checagem de tipos
 - `npm run build` — compilação
 - `npm test` — testes com Vitest
+- `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` — eval local determinístico
 
 **Convenção de imports:** Sempre com extensão `.js` mesmo para arquivos `.ts` (ESM + NodeNext).
 
@@ -185,6 +187,35 @@ Registrados em `hooks/hooks.json`:
 
 ---
 
+## 8.1. EVAL GATE LOCAL
+
+O repositório tem uma camada local de Eval Gate instalada ao redor do orquestrador. Ela não reescreve o runtime TypeScript e não substitui o contrato principal de `skills/pipeline/SKILL.md`; ela valida evidência local antes de declarar que mudanças em workflow, skill, hook, command, script, telemetry, gate, trace, batch ou review passaram.
+
+**Superfícies principais:**
+
+- `.codex/config.toml` — configuração local do projeto Codex.
+- `.codex/hooks.json` — registro dos hooks locais do Eval Gate.
+- `.codex/hooks/pre_tool_use_policy.py` — política conservadora para comandos arriscados.
+- `.codex/hooks/post_tool_use_telemetry.py` — captura `changed_files.txt`, `git_diff.patch` e `latest_trace.json`.
+- `.codex/hooks/stop_eval_gate.py` — executa o eval no evento Stop quando hooks estiverem confiados.
+- `.agents/skills/workflow-eval-gate/SKILL.md` — contrato operacional do workflow de eval.
+- `.agents/skills/workflow-eval-gate/scripts/run_eval.py` — runner determinístico.
+- `evals/cases/orchestrator_behavior.yaml` — casos de comportamento avaliados.
+- `evals/outputs/latest_output.md` — última resposta/alegação avaliada.
+- `evals/telemetry/**` — evidência operacional capturada.
+- `evals/tests/**` — testes Python do runner, hooks, política, telemetry e documentação.
+- `evals/README.md` — guia operacional de uso, limites, trust e validação.
+
+**Regra de confiança dos hooks:**
+
+A ativação dos hooks no Codex exige confiança manual. Abrir `/hooks`, revisar `.codex/hooks.json` e confiar somente nesta raiz do repositório é parte do procedimento. Se a sessão não provar que os hooks locais estão confiados/ativos, trate a telemetry como manual e rode `.codex/hooks/post_tool_use_telemetry.py` antes do runner.
+
+**Critério prático:**
+
+Não declarar PASS do Eval Gate sem `evals/outputs/latest_output.md`, `evals/cases/orchestrator_behavior.yaml`, `evals/telemetry/latest_trace.json`, `evals/telemetry/changed_files.txt`, `evals/telemetry/git_diff.patch`, `scope_review`, `validation_evidence.commands` e `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` passando.
+
+---
+
 ## 9. SKILLS E AGENTES
 
 ### Skills Governadas (28)
@@ -192,8 +223,8 @@ Registrados em `hooks/hooks.json`:
 - **Spec:** `spec-init`, `spec-requirements`, `spec-design`, `spec-tasks`, `spec-light`, `spec-heavy`, `spec-audit-only`
 - **Validação:** `validate-design`, `validate-gap`, `verify-completion`
 
-### Agentes (45 prompts em `agents/`)
-- **`agents/core/`** (10): task-orchestrator, information-gate, checkpoint-validator, sanity-checker, final-validator, finishing-branch, adversarial-batch, sentinel, brainstorm-controller, pipeline-controller
+### Agentes (44 prompts em `agents/`)
+- **`agents/core/`** (8): task-orchestrator, information-gate, checkpoint-validator, sanity-checker, final-validator, finishing-branch, adversarial-batch, sentinel, brainstorm-controller, pipeline-controller
 - **`agents/executor/`** (21): executor-controller, implementer, spec-reviewer, quality-reviewer, fix, + domínios (bugfix-*, feature-*, audit-*, ux-*, adversarial-*)
 - **`agents/quality/`** (12): quality-gate-router, pre-tester, plan-architect, design-interrogator, review-orchestrator, architecture-reviewer, final-adversarial-orchestrator, spec gates, adversarial-quality-reviewer
 - **`agents/brainstorm/`** (2): step-00-intake, step-01-explore
@@ -204,13 +235,21 @@ Registrados em `hooks/hooks.json`:
 
 ## 10. TESTES
 
-**110 arquivos de teste** em 3 camadas:
+**112 arquivos de teste Vitest** em 3 camadas:
 
 - **`tests/unit/` (62):** Controller, gates, state, security, hooks, modes, primitives, observability, spec lifecycle, closeout, dispatcher
 - **`tests/integration/` (28):** Bootstrap, controller parity, execution flows, modes, planning, plugin surface, review, scenarios, sentinel, validation, protocol hoisting
 - **`tests/bdd/` (6):** Dispatch protection, edit authorization, hotfix, real-agent pipeline, sentinel checkpoints, session lifecycle
 
 **Config:** `vitest.config.ts` → ambiente `node`, include `tests/**/*.test.ts`, reporters `text` + `html`
+
+**Testes Python locais do Eval Gate:**
+
+- `evals/tests/test_eval_gate.py`
+- `evals/tests/test_hooks_config.py`
+- `evals/tests/test_policy_hook.py`
+- `evals/tests/test_telemetry_hook.py`
+- `evals/tests/test_hook_trust_docs.py`
 
 ---
 
@@ -237,7 +276,8 @@ Registrados em `hooks/hooks.json`:
 
 ## 13. DOCUMENTAÇÃO EXISTENTE
 
-- `docs/pipeline-orchestrator-codex/` (11 arquivos): Runtime architecture, phase flow, gates, agents catalog, prompts, references, Codex translation matrix, implementation blueprint, gap analysis, source inventory
+- `docs/pipeline-orchestrator-codex/` (12 arquivos): Runtime architecture, phase flow, gates, agents catalog, prompts, references, Codex translation matrix, implementation blueprint, gap analysis, source inventory e plano Eval Gate
+- `evals/README.md`: Guia operacional do Eval Gate local, incluindo hooks, trust manual, telemetry, runner e critérios de passagem
 - `docs/openai-codex-kb.md`: Guia humano da base de conhecimento OpenAI/Codex
 - `docs/superpowers/` (5 arquivos): Planos e specs históricos
 - `docs/audits/`: Audit findings
@@ -257,20 +297,25 @@ Registrados em `hooks/hooks.json`:
 
 ## 14. ESTADO ATUAL DO REPO
 
-- **Branch:** `main`
+- **Branch:** `codex/eval-gate`
 - **Versão:** 0.4.1
 - **Dirty files observados nesta sessão:**
-  - `.pipeline/sessions/audit.log` (estado operacional/local; já estava modificado antes da KB)
-  - `AGENTS.md` (ponteiro para a KB OpenAI/Codex)
-  - `PROJECT_CONTEXT.md` (este contexto)
-  - `docs/openai-codex-kb.md` (novo guia)
-  - `references/openai-codex-kb/**` (nova KB)
-  - `tests/unit/openai-codex-kb.test.ts` (novo teste de validação)
+  - `AGENTS.md` (regras locais do Eval Gate)
+  - `.agents/skills/workflow-eval-gate/**` (skill e runner determinístico)
+  - `.codex/**` (configuração e hooks locais)
+  - `docs/pipeline-orchestrator-codex/11-eval-gate-plan.md` (contrato do plano)
+  - `evals/**` (casos, README, outputs, telemetry e testes)
+  - `PROJECT_CONTEXT.md` e `.kiro/**` (contexto atualizado)
+  - `README.md` e `docs/pipeline-orchestrator-codex/README.md` (documentação pública/índice)
+  - `tests/unit/agents-inventory.test.ts` (inventário de agentes atualizado)
 - **Validação mais recente:**
-  - `npx vitest run tests/unit/openai-codex-kb.test.ts` → 3 passed
   - `npm run lint:types` → passou
-  - `npm test` → 110 arquivos / 771 testes passed
   - `npm run build` → passou
+  - `npm test` → 779/781 testes passed; 2 timeouts de 5000ms no Windows
+  - `npx vitest run tests/integration/config/pipeline-config.test.ts` → passou, 6 testes
+  - `npx vitest run tests/integration/runtime/reference-runtime.test.ts` → passou, 3 testes
+  - `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs` → passou, 42 testes
+  - `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` → passou
   - `git diff --check` → passou
 - **Commits recentes:**
   - `73fc792` docs: add IFRS16 pipeline meta audit spec
@@ -295,6 +340,8 @@ Registrados em `hooks/hooks.json`:
 12. **Pipeline antes de improviso:** Para trabalho não trivial, usar pipeline.
 13. **Independência de revisão adversarial:** Revisores têm contexto fresco (zero contexto de implementação).
 14. **Promessas públicas = runtime:** Não prometer comportamento que runtime não sustenta.
+15. **Eval Gate local:** Para mudanças em workflow, plugin, skill, hook, command, script, telemetry, gate, trace, batch ou review, atualizar evidência local e rodar o runner antes de declarar PASS.
+16. **Hooks confiados ≠ hooks descritos:** Só trate hooks locais como automáticos quando `/hooks` e `.codex/hooks.json` provarem confiança ativa; caso contrário, registre telemetry manual.
 
 ---
 
@@ -353,4 +400,4 @@ Para variantes `spec-*` e `*-heavy` (exceto `audit-heavy`):
 
 ---
 
-*Este arquivo foi gerado automaticamente e deve ser atualizado sempre que houver mudanças significativas no projeto.*
+*Este arquivo deve ser atualizado sempre que houver mudanças significativas no projeto.*

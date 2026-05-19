@@ -25,3 +25,5 @@ The package is intentionally split into two layers:
 - Codex-oriented translation and implementation guidance
 
 This makes it suitable both for audit work and for future port implementation.
+
+The local Eval Gate implementation is documented operationally in [`../../evals/README.md`](../../evals/README.md). Treat `.codex/**`, `.agents/skills/workflow-eval-gate/**`, and `evals/**` as the runtime evidence for that layer, not this historical plan alone.

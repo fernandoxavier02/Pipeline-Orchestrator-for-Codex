@@ -12,6 +12,8 @@ O usuario-alvo e alguem que usa Codex para trabalho real de engenharia e precisa
 
 O valor do plugin e confiabilidade operacional: cada etapa deve deixar claro o que foi decidido, o que foi executado, quais evidencias existem e se a entrega e Go, Conditional ou No-Go.
 
+O Eval Gate local reforca esse valor dentro deste repositorio: ele valida evidencias de mudancas em workflows, skills, hooks, commands, telemetry, gates, traces, batches e reviews antes de aceitar uma declaracao de PASS. Ele e uma camada local de garantia, nao uma nova promessa publica do plugin sem verificacao de runtime.
+
 ## Experiencia Esperada
 
 O comando `/pipeline-orchestrator-for-codex:pipeline` deve ser previsivel:
@@ -22,6 +24,7 @@ O comando `/pipeline-orchestrator-for-codex:pipeline` deve ser previsivel:
 - executar em batches proporcionais ao risco;
 - aplicar revisao adversarial em pontos de controle;
 - persistir estado, gates e closeout quando aplicavel.
+- quando a mudanca tocar superficies governadas, deixar evidencias em `evals/**` e passar pelo runner local do Eval Gate.
 
 ## Nao Objetivos
 

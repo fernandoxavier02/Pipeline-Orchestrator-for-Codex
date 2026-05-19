@@ -33,6 +33,20 @@ Nao prometa "multi-agent real" se a sessao ou runtime nao tiver suporte efetivo 
 
 Preserve SSOT: `commands/pipeline.md` deve continuar curto e discoverable; comportamento detalhado deve ficar no skill, runtime TypeScript, hooks, prompts, agentes e referencias adequadas.
 
+## Eval Gate Local
+
+Este repositório tem uma camada local de Eval Gate em `.codex/**`, `.agents/skills/workflow-eval-gate/**` e `evals/**`. Ela avalia mudanças no orquestrador, workflows, plugin, skills, hooks, commands, scripts, telemetry, gates, traces, batches e reviews sem reescrever o runtime.
+
+Use `evals/README.md` como guia operacional do Eval Gate local. Use `docs/pipeline-orchestrator-codex/11-eval-gate-plan.md` como contrato historico da instalacao desta camada.
+
+Antes de mudar esses arquivos, inspecione a estrutura real, identifique entrypoints e preserve a fonte de verdade do plugin. Nao adicione features, abstracoes, dependencias ou alteracoes fora de escopo sem pedido explicito.
+
+Depois de qualquer mudanca em orquestrador, workflow, plugin, skill, hook, command ou script, atualize `evals/outputs/latest_output.md`, deixe os hooks capturarem telemetry quando estiverem confiados/ativos, ou rode `.codex/hooks/post_tool_use_telemetry.py` manualmente. Nao declare sucesso sem `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` passando.
+
+A habilitacao dos hooks e manual no Codex: abra `/hooks`, revise os comandos de `.codex/hooks.json` e confie somente nesta raiz do repositorio. Se a sessao nao provar que os hooks locais estao confiados/ativos, trate a telemetry como manual e registre isso no relatorio final.
+
+A resposta final de trabalhos cobertos pelo Eval Gate deve informar: o que foi inspecionado, o que mudou, o que nao mudou, resultado do eval, riscos restantes e proximo passo mais seguro. Esta camada e local do projeto; nao trate como hook empacotado do plugin ou como runtime global sem verificar `/hooks`, `.codex/config.toml`, marketplace/cache e configuracao ativa do Codex.
+
 ## Comandos de Verificacao
 
 Use estes comandos a partir da raiz do repo:
