@@ -71,6 +71,8 @@ def run_git(repo_root: Path, args: list[str]) -> str:
             ["git", *args],
             cwd=repo_root,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
@@ -154,6 +156,10 @@ def omission_reason(file_name: str, path: Path) -> str | None:
     return None
 
 
+def trim_trailing_whitespace(text: str) -> str:
+    return "\n".join(line.rstrip() for line in text.splitlines())
+
+
 def main() -> int:
     payload = load_payload()
     repo_root = resolve_repo_root(Path(payload.get("cwd") if isinstance(payload.get("cwd"), str) else Path.cwd()))
@@ -161,8 +167,21 @@ def main() -> int:
     telemetry_dir.mkdir(parents=True, exist_ok=True)
 
     files = changed_files(repo_root)
-    diff_text = run_git(repo_root, ["diff", "--no-ext-diff", "--binary"])
     untracked = untracked_files(repo_root)
+    if not files and not untracked:
+        return 0
+
+    diff_text = run_git(
+        repo_root,
+        [
+            "diff",
+            "--no-ext-diff",
+            "--binary",
+            "--",
+            ".",
+            ":(exclude)evals/telemetry/git_diff.patch",
+        ],
+    )
     omitted_untracked: list[dict[str, str]] = []
     if untracked:
         sections = [diff_text.rstrip()]
@@ -185,6 +204,7 @@ def main() -> int:
             else:
                 sections.append(f"# untracked directory: {file_name}")
         diff_text = "\n".join(section for section in sections if section)
+    diff_text = trim_trailing_whitespace(diff_text)
 
     (telemetry_dir / "changed_files.txt").write_text(
         "\n".join(files) + ("\n" if files else ""),

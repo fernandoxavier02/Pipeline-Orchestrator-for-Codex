@@ -1,0 +1,15 @@
+classification_clarity: 0.95
+info_completeness: 0.95
+design_clarity: 0.90
+plan_coverage: 0.90
+tdd_coverage: NA   # audit pipeline — TDD skipped
+implementation_quality: NA   # audit pipeline — no code written
+gate_penalty: -0.15   # FINAL_ADVERSARIAL_GATE skipped (N/A for audit)
+sanity: NA
+final_score: 0.90
+notes: |
+  Audit pipeline — non-applicable dimensions (TDD, implementation, sanity) excluded.
+  High confidence in findings: 35 [VERIFIED] file:line evidence; corroborated by
+  4 pre-existing audit reports + 3 independent scanner passes (intake, domain-analyzer,
+  compliance-checker) + final consolidation by risk-matrix-generator.
+  Confidence on findings ≠ confidence on the audited system, which is CRITICAL severity.

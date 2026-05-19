@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "pipeline_active": false,
+  "pipeline_id": "2026-05-19T19:30:00Z_audit-heavy",
+  "variant": "audit-heavy",
+  "last_updated": "2026-05-19T22:45:00Z",
+  "sequence_counter": 11,
+  "current_phase": "3-complete",
+  "current_agent": null,
+  "expected_next": null,
+  "completed_phases": ["0a", "sentinel-#1", "0b", "0c", "1-proposal", "1.5-plan-APPROVED", "2-batch1-intake", "2-batch2-domain-analyzer", "2-batch3-compliance-checker", "2-batch4-risk-matrix-CONSOLIDATED", "3-closure"],
+  "batch_state": { "current_batch": 4, "total_batches": 4, "batches_completed": 4 },
+  "final_verdict": "CRITICAL — NOT safe-to-run-as-is (42 findings: 9 critical, 14 high, 12 medium, 7 low; root cause = Emulation Theatre / Pattern C confirmed across 12 findings)",
+  "gate_summary": {
+    "mandatory_completed": ["ORCHESTRATOR_VALIDATION", "SSOT_CONFLICT", "INFO_GATE"],
+    "hard_completed": ["PLAN_APPROVED"],
+    "soft_skipped": ["FINAL_ADVERSARIAL_GATE (N/A audit pipeline)", "SANITY_CHECKER (N/A audit pipeline)"],
+    "soft_completed": ["DESIGN_INTERROGATION", "PROPOSAL_CONFIRM"]
+  }
+}

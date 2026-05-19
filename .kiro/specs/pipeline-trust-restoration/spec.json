@@ -1,0 +1,73 @@
+{
+  "feature_name": "pipeline-trust-restoration",
+  "version": "0.1.0",
+  "created_at": "2026-05-19T23:00:00Z",
+  "status": "tasks-generated",
+  "phase": "tasks",
+  "next_phase": "implementation",
+  "tasks_generated_at": "2026-05-20T01:00:00Z",
+  "tasks_count": 14,
+  "subtasks_count_approx": 30,
+  "checkpoints_count": 4,
+  "open_questions_resolved": 5,
+  "open_questions_remaining": 0,
+  "requirements_generated_at": "2026-05-19T23:30:00Z",
+  "requirements_count": 14,
+  "coverage_matrix": "14/14 goals covered (P0:3, P1:7, P2:4) — 0 gaps",
+  "data_availability": "22/22 file:line references VERIFIED",
+  "design_generated_at": "2026-05-20T00:15:00Z",
+  "design_components": 14,
+  "correctness_properties": 5,
+  "domain_invariants": 5,
+  "component_invariants": 5,
+  "implementation_phases": 3,
+  "new_files_to_create": ["src/state/gate-log.ts (extend)", "src/adapters/codex-agent-runtime.ts", "references/openai-codex-kb/CHANGELOG.kb.md", "tests/integration/strict-agents-undefined.test.ts", "tests/integration/resume-strict-agents.test.ts", "tests/integration/adapter-detection.test.ts", "tests/integration/hook-fail-closed.test.ts", "tests/integration/bash-edit-guard.test.ts", "tests/integration/exec-window-symlink.test.ts", "tests/unit/state/gate-log.test.ts", "tests/unit/gates/gate-hardness-consistency.test.ts"],
+  "estimated_effort_days": "10-14",
+  "type": "feature",
+  "complexity": "COMPLEXA",
+  "variant": "spec-heavy",
+  "language": "pt-BR",
+  "title": "Pipeline Trust Restoration",
+  "summary": "Restaurar confiabilidade do plugin pipeline-orchestrator-for-codex, eliminando o Emulation Theatre (Padrão C) onde review-orchestrator e final-adversarial-orchestrator silenciosamente rodam em emulação quando strictAgents é undefined, e cujos veredictos fabricados ficam indistinguíveis dos reais em gate-decisions.jsonl.",
+  "scope": {
+    "P0": 3,
+    "P1": 7,
+    "P2": 4,
+    "total_goals": 14
+  },
+  "sources": {
+    "pre_spec_input": ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/10-pre-spec-input.md",
+    "consolidated_findings": ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/09-findings-consolidated.md",
+    "final_audit_report": ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/08-final-audit-report.md",
+    "prior_audit_corpus": [
+      "AUDIT_CODEX_VS_CANONICAL.md",
+      "CODEX_HARNESS_ADEQUACY_REPORT.md",
+      "CONSOLIDATED_ADVERSARIAL_REVIEW.md",
+      "ARCHITECTURE_REVIEW_ROUND2.md"
+    ]
+  },
+  "steering": [
+    ".kiro/CONSTITUTION.md",
+    ".kiro/steering/product.md",
+    ".kiro/steering/tech.md",
+    ".kiro/steering/structure.md",
+    "AGENTS.md"
+  ],
+  "findings_inventory": {
+    "total": 42,
+    "critical": 9,
+    "high": 14,
+    "medium": 12,
+    "low": 7,
+    "id_namespaces": ["CAR-*", "CHAR-*", "CANON-*", "ADV-*", "AUDIT-*"]
+  },
+  "systemic_patterns": ["A: Doc-Promise/Runtime-Silence Gap", "B: Authority Fragmentation", "C: Emulation Theatre", "D: Fix-then-Regress Cycle"],
+  "critical_path_minimum": ["G-P0-1", "G-P0-2", "G-P1-1", "G-P1-2"],
+  "open_questions_count": 5,
+  "approvals": {
+    "init": true,
+    "requirements": true,
+    "design": true,
+    "tasks": true
+  }
+}
