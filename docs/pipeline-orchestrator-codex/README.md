@@ -15,6 +15,7 @@ This documentation package maps the original Claude-oriented `Pipeline-Orchestra
 9. [08-implementation-blueprint-for-codex.md](./08-implementation-blueprint-for-codex.md)
 10. [09-gap-analysis.md](./09-gap-analysis.md)
 11. [10-source-inventory.md](./10-source-inventory.md)
+12. [11-eval-gate-plan.md](./11-eval-gate-plan.md)
 
 ## Package Intent
 

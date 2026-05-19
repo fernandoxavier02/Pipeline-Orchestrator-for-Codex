@@ -20,3 +20,7 @@
 {"event":"exec-window-closed","session_id":"test-session-1779146661400","timestamp":1779146662677,"purpose":"test batch execution"}
 {"event":"exec-window-opened","session_id":"test-session-1779207305133","timestamp":1779207305333,"purpose":"test batch execution","ttl_minutes":5}
 {"event":"exec-window-closed","session_id":"test-session-1779207305133","timestamp":1779207306943,"purpose":"test batch execution"}
+{"event":"exec-window-opened","session_id":"test-session-1779207807229","timestamp":1779207807616,"purpose":"test batch execution","ttl_minutes":5}
+{"event":"exec-window-closed","session_id":"test-session-1779207807229","timestamp":1779207809523,"purpose":"test batch execution"}
+{"event":"exec-window-opened","session_id":"test-session-1779209245354","timestamp":1779209245580,"purpose":"test batch execution","ttl_minutes":5}
+{"event":"exec-window-closed","session_id":"test-session-1779209245354","timestamp":1779209247925,"purpose":"test batch execution"}

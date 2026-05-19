@@ -1,0 +1,127 @@
+---
+name: spec-light
+description: |
+  Prescriptive 6-step workflow for the Spec Lifecycle in Light mode (small-to-medium scope,
+  controlled risk, prefer speed with discipline; trusts the spec content and skips the deep
+  content-review phase, focusing instead on a 25-check Format Gate, ATDD seed, TDD
+  implementation with adversarial loop, 6-axis post-impl congruence, simplified confidence
+  dashboard, and formal closure). Sequence is locked (1→6, no skip, no reorder). 4 mandatory
+  GATE_REQUEST gates at steps 1 (format-gate-approval), 2 (tdd-scenarios-approval),
+  3 (adversarial-loop-checkpoint), 4 (post-impl-validation). 3 reused executor agents:
+  spec-format-gate (1), spec-post-impl-validator (4), spec-closer (6); step 2 and 5 inline.
+  Manual-only invocation via /pipeline-orchestrator-for-codex:spec-light.
+disable-model-invocation: true
+allowed-tools: spawn_agent
+argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"
+sequence: [1, 2, 3, 4, 5, 6]
+sequence_lock: true
+gates_at: [1, 2, 3, 4]
+sentinel_checkpoints: [pre_1, pre_3, pre_6]
+stop_rule_max_failures: 2
+---
+
+# Spec Lifecycle Skill (Light) — 6 prescriptive steps
+
+## VISIBLE_PLAN Contract
+
+As the first assistant action for this workflow, call `update_plan` so the Codex UI opens the visible planning panel before any workflow/method gate, execution, file edit, dispatch, report generation, validation claim, terminal response, or phase transition. This is mandatory for this workflow and uses `references/visible-plan-contract.md` as the SSOT.
+
+The visible plan must name the selected workflow/mode, declare the planned batches, and track PDD, DDD, ATDD, and TDD or the report-only evidence-first equivalent. Every batch must be followed by checkpoint validation, adversarial review, and a fix loop capped at 3 attempts before continuing. Keep exactly one item `in_progress` and update the plan after every gate, batch, review, correction, and final validation. If the visible plan cannot be opened or updated, stop and surface the blocker instead of proceeding invisibly.
+
+## WORKFLOW_METHOD_GATE Contract
+
+Before any execution, dispatch, file edit, report generation, validation claim, terminal response, or phase transition, show the workflow/method gate defined in `references/workflow-method-gate.md` and wait for the user's answer. State the selected workflow/mode, give the practical reason, and allow switching to `audit`, `bugfix`, `feature`, `ux`, `spec`, `brainstorm`, `review`, or `verify-completion` before continuing.
+
+If the user switches workflow, rebuild the gate and ask again. If the gate cannot be shown or the user does not approve, stop before starting the workflow.
+
+## NEXT_STEP Contract
+
+When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
+
+
+
+## Codex Real-Agent Runtime Contract
+
+Any operational path in this workflow that dispatches pipeline work MUST use real Codex `spawn_agent` with a `PIPELINE_AGENT_FQN` marker. If `spawn_agent` is unavailable, fails, or cannot return an isolated agent result, stop with `blocked-no-agent-runtime`. Do not continue inline, do not simulate subagents, and do not report the run as real multi-agent execution.
+
+For informational-only workflows, do not launch the recommended workflow from the help/router context. Recommend the command and stop unless the user explicitly invokes an executable workflow with real agent support.
+
+## Codex Parent Protocol Contract
+
+Codex does not execute Claude `Task` or direct `GATE_REQUEST` calls as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
+
+6 prescriptive steps for the Spec Lifecycle in Light mode. Each step file declares its execution contract (sequence, ownership, gates) via frontmatter consumed by the orchestrator. Project-neutral wording — designed to work in any codebase that follows the spec layout under `pipeline-runs/<run_id>/01-spec/`.
+
+## Quando usar
+
+Use **spec-light** quando voce ja tem uma spec escrita em `pipeline-runs/<run_id>/01-spec/` (com `requirements.md`, `design.md`, `tasks.md`, `spec.json`) de risco pequeno-a-medio e quer velocidade com disciplina: confia no conteudo da spec (sem content-review profundo), valida formato em 25 checks, deriva cenarios ATDD a partir dos AC, executa TDD em Vertical Slices com loop adversarial, e fecha com auditoria de congruencia em 6 eixos.
+
+Se durante a analise surgirem indicios de domain/contratos complexos, integracoes criticas, persistencia sensivel ou impacto amplo em UX, sinalize e escale para `spec-heavy` (que adiciona content-review, architecture audit e security review).
+
+**Precondition (v5.1.0+):** este skill consome `pipeline-runs/<run_id>/01-spec/`. Para tarefas MEDIA/COMPLEXA/Spec, o `pipeline-controller` STEP 1.7 dispara `/pipeline-orchestrator-for-codex:brainstorm` automaticamente para gerar a spec; este skill é então invocado pelo `pipeline-variant` dispatch com `<run_id>` resolvido. Invocação direta (`/pipeline-orchestrator-for-codex:spec-light <feature>`) requer um run-dir já existente — caso contrário o skill aborta no primeiro Read com erro contextualizado.
+
+## Sequencia canonica
+
+1. **[GATE]** Format Gate (`steps/01-format-gate.md`)
+2. **[GATE]** TDD Scenarios (ATDD seed) (`steps/02-tdd-scenarios.md`)
+3. **[GATE]** Implementation (TDD + Vertical Slices + adversarial loop) (`steps/03-implementation.md`)
+4. **[GATE]** Post-Impl Validation (6-axis congruence) (`steps/04-post-impl-validation.md`)
+5. Confidence Dashboard (`steps/05-confidence-dashboard.md`)
+6. Closure (`steps/06-closure.md`)
+
+## Ownership por step
+
+| Step | execution_mode | agent_type |
+|---|---|---|
+| 01 | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:spec-format-gate` |
+| 02 | inline | — (orchestrator inline, ATDD seed) |
+| 03 | inline | — (orchestrator inline, drives executor batches) |
+| 04 | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:spec-post-impl-validator` |
+| 05 | inline | — (orchestrator inline, scoring math) |
+| 06 | subagent | `pipeline-orchestrator-for-codex:executor:spec-closer` |
+
+## Gates (4 mandatory GATE_REQUEST checkpoints)
+
+| Step | gate_name | What the user approves |
+|---|---|---|
+| 1 | `format-gate-approval` | Format Gate decision (GO / GO-WARN / NO-GO) before proceeding |
+| 2 | `tdd-scenarios-approval` | ATDD scenario set + AC traceability matrix before implementation |
+| 3 | `adversarial-loop-checkpoint` | Adversarial loop verdict (continue / escalate / accept-warnings / abort) — escalation prompt every 3 attempts |
+| 4 | `post-impl-validation` | Post-impl decision (PASS / PASS_WITH_WARNINGS / FAIL) and remediation plan |
+
+`GATE_REQUEST` is non-negotiable at these gates — prose substitution is forbidden by the global rule "Decisoes do Usuario — GATE_REQUEST sempre".
+
+## Sentinel checkpoints
+
+`sentinel-hook` validates state coherence before steps 1, 3, and 6 (`sentinel_checkpoints: [pre_1, pre_3, pre_6]`):
+- `pre_1` — verify spec path exists and the 5 spec artifacts (spec.json + requirements.md + design.md + tasks.md + research.md if applicable) are reachable before format validation begins.
+- `pre_3` — verify Format Gate decision (GO/GO-WARN) and ATDD scenarios approval are present before implementation starts.
+- `pre_6` — verify post-impl decision (PASS/PASS_WITH_WARNINGS) and confidence dashboard are present before formal closure.
+
+## spec-context.yaml schema
+
+The orchestrator pipes a single artifact `spec-context.yaml` into every step. The canonical schema (fields, semantics, ownership) is declared in a single location to prevent drift across the 3 spec lifecycle skills:
+
+→ See [`references/spec-context-schema.md`](../../references/spec-context-schema.md) for the full schema, field-by-field semantics, and the sub-field reference convention.
+
+In `spec-light`, `spec-context.yaml` is created by the task-orchestrator (Phase 0a) and populated by steps 01-02 as they progress. Step 02 reads `acceptance_criteria` as a SUB-FIELD of `spec_context`, NOT as a separate input (i.e. `spec_context.acceptance_criteria`).
+
+## Execution rules
+
+The 8 enforcement rules inherited from v4.7.0+ contract apply:
+1. Sequence lock (1→6, no skip).
+2. Execution-mode lock per step.
+3. Agent-type whitelist when `execution_mode: subagent`.
+4. Output schema verified before next step proceeds.
+5. GATE_REQUEST mandatory at the 4 gates.
+6. STOP RULE: 2 consecutive failures halt the pipeline (`stop_rule_max_failures: 2`).
+7. Audit log append-only to `.pipeline/gate-decisions.jsonl`.
+8. Sentinel checkpoints (`pre_1`, `pre_3`, `pre_6`).
+
+**Note:** hooks (`sentinel-hook`, `dispatch-guard`, `force-pipeline-agents`) enforce SKILL.md frontmatter via the shared parser at `.claude/hooks/skill-frontmatter-parser.cjs`. Roll-out per `designs/pipeline-orchestrator-v5-consolidated.md` §17.4 #8 (warn mode → deny mode 2026-05-17).
+
+## Reference docs
+
+- Heavy counterpart: `skills/spec-heavy/SKILL.md` (9 steps, adds content-review + architecture-audit + security-review)
+- Audit-only counterpart: `skills/spec-audit-only/SKILL.md` (5 steps, no implementation)
+- Wave 1 agents: `agents/executor/type-specific/spec-format-gate.md`, `agents/executor/type-specific/spec-post-impl-validator.md`, `agents/executor/spec-closer.md`
