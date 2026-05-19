@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { describe, expect, it } from "vitest";
 
@@ -45,6 +45,20 @@ function tools(value: unknown) {
     .filter(Boolean);
 }
 
+function walkMarkdown(dir: string): string[] {
+  return readdirSync(dir).flatMap((entry) => {
+    const fullPath = join(dir, entry);
+    if (statSync(fullPath).isDirectory()) {
+      return walkMarkdown(fullPath);
+    }
+    return entry.endsWith(".md") ? [fullPath] : [];
+  });
+}
+
+function relativeToRoot(path: string) {
+  return relative(ROOT, path).replaceAll("\\", "/");
+}
+
 describe("Codex-native public workflow surface", () => {
   it("keeps public workflow skill frontmatter on Codex-native dispatch primitives", () => {
     for (const skill of PUBLIC_WORKFLOW_SKILLS) {
@@ -66,6 +80,60 @@ describe("Codex-native public workflow surface", () => {
       expect(content, `${skill} must document protocol gate handling`).toContain("GATE_REQUEST");
       expect(content, `${skill} must not instruct Codex to invoke Claude AskUserQuestion directly`)
         .not.toMatch(/invoke AskUserQuestion|call AskUserQuestion|AskUserQuestion\(/i);
+    }
+  });
+
+  it("ATDD: every spawn-capable governed skill fails closed when real agents are unavailable", () => {
+    const skillFiles = walkMarkdown(join(ROOT, "skills")).filter((file) => file.endsWith("SKILL.md"));
+
+    for (const file of skillFiles) {
+      const content = readFileSync(file, "utf8");
+      const fm = frontmatter(content);
+      const allowedTools = tools(fm["allowed-tools"]);
+      if (!allowedTools.includes("spawn_agent")) continue;
+
+      const label = relativeToRoot(file);
+      expect(content, `${label} must expose the real-agent blocker`).toContain("blocked-no-agent-runtime");
+      expect(content, `${label} must forbid inline subagent emulation`).toMatch(/Do not continue inline/i);
+      expect(content, `${label} must require pipeline FQN markers`).toContain("PIPELINE_AGENT_FQN");
+    }
+  });
+
+  it("BDD: subagent step frontmatter declares a concrete dispatch target", () => {
+    const stepFiles = walkMarkdown(join(ROOT, "skills")).filter((file) =>
+      relative(ROOT, file).split(sep).includes("steps"),
+    );
+
+    expect(stepFiles.length, "test setup should find skill step files").toBeGreaterThan(0);
+
+    for (const file of stepFiles) {
+      const content = readFileSync(file, "utf8");
+      const fm = frontmatter(content);
+      if (fm.execution_mode !== "subagent") continue;
+
+      expect(String(fm.agent_type ?? "").trim(), `${relativeToRoot(file)} must declare agent_type`).not.toBe("");
+    }
+  });
+
+  it("TDD regression: workflow docs do not fall back to inline adversarial review when agents are missing", () => {
+    const files = [...walkMarkdown(join(ROOT, "skills")), ...walkMarkdown(join(ROOT, "agents"))];
+
+    for (const file of files) {
+      const content = readFileSync(file, "utf8");
+      const label = relativeToRoot(file);
+
+      expect(content, `${label} must not permit inline fallback when adversarial agents are missing`).not.toMatch(
+        /inline se n(?:a|ã)o houver agentes/i,
+      );
+      expect(content, `${label} must not teach direct legacy Agent({ subagent_type }) invocations`).not.toMatch(
+        /Agent\(\s*\{\s*subagent_type/i,
+      );
+      expect(content, `${label} must not instruct use of the legacy Agent tool`).not.toMatch(
+        /Use Agent tool with|Spawning tool:\s*Agent only/i,
+      );
+      expect(content, `${label} must not describe legacy capital-A Agent calls`).not.toMatch(
+        /(?:^|[^_])Agent calls/,
+      );
     }
   });
 });

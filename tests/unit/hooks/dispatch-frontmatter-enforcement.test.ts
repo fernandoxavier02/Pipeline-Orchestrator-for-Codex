@@ -265,6 +265,26 @@ describe("dispatch-guard frontmatter enforcement", () => {
     }
   });
 
+  it("denies Codex spawn_agent payloads that use direct pipeline identity fields without PIPELINE_AGENT_FQN", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    try {
+      const result = runHook(cwd, {
+        tool_name: "spawn_agent",
+        tool_input: {
+          agent_type: "worker",
+          subagent_type: "pipeline-orchestrator-for-codex:core:information-gate",
+          message: "Ask one question at a time.",
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("PIPELINE_AGENT_FQN");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("allows imported v5.2 governed skills with manual-only frontmatter and step gates", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
     try {

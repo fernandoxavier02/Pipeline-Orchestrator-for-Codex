@@ -276,16 +276,8 @@ function validateSkillFrontmatter(toolInput) {
   return { kind: 'allow' };
 }
 
-function extractPipelineAgentType(toolInput) {
+function extractPipelineAgentType(toolInput, options = {}) {
   if (!toolInput || typeof toolInput !== 'object') return '';
-
-  const direct = toolInput.subagent_type || toolInput.subagentType || toolInput.target_name || toolInput.targetName;
-  if (direct !== undefined && direct !== null) {
-    if (typeof direct !== 'string') {
-      return { invalid: true, value: direct };
-    }
-    return direct;
-  }
 
   const message = toolInput.message || toolInput.prompt || toolInput.description;
   if (typeof message === 'string') {
@@ -293,17 +285,46 @@ function extractPipelineAgentType(toolInput) {
     if (marker?.[1]) return marker[1].trim();
   }
 
+  const direct = toolInput.subagent_type || toolInput.subagentType || toolInput.target_name || toolInput.targetName;
+  if (direct !== undefined && direct !== null) {
+    if (typeof direct !== 'string') {
+      return { invalid: true, value: direct };
+    }
+    if (options.requireMarker) {
+      const leaf = direct.includes(':') ? direct.split(':').pop() : direct;
+      if (
+        direct.startsWith(`${PIPELINE_NAMESPACE}:`) ||
+        direct.startsWith(`${LEGACY_PIPELINE_NAMESPACE}:`) ||
+        isPipelineAgentLeaf(leaf)
+      ) {
+        return { markerMissing: true, value: direct };
+      }
+      return '';
+    }
+    return direct;
+  }
+
   return '';
 }
 
-function evaluateAgent(toolInput) {
-  const subagentType = extractPipelineAgentType(toolInput);
+function evaluateAgent(toolInput, options = {}) {
+  const subagentType = extractPipelineAgentType(toolInput, options);
   if (subagentType && typeof subagentType === 'object' && subagentType.invalid) {
     return {
       kind: 'deny',
       reason: "DISPATCH_GUARD: pipeline agent identity must be a string.",
       attempted: String(subagentType.value),
       expected: "string agent identity",
+    };
+  }
+  if (subagentType && typeof subagentType === 'object' && subagentType.markerMissing) {
+    return {
+      kind: 'deny',
+      reason:
+        `DISPATCH_GUARD: Codex spawn_agent pipeline dispatch must put the canonical FQN in ` +
+        `the message as "PIPELINE_AGENT_FQN: <fqn>". Direct pipeline identity fields are not enough.`,
+      attempted: String(subagentType.value),
+      expected: "PIPELINE_AGENT_FQN marker in message",
     };
   }
   if (!subagentType) return { kind: 'allow' };
@@ -387,7 +408,7 @@ function handle(input) {
   let verdict = { kind: 'allow' };
 
   if (toolName === 'Agent' || toolName === 'spawn_agent') {
-    verdict = evaluateAgent(toolInput);
+    verdict = evaluateAgent(toolInput, { requireMarker: toolName === 'spawn_agent' });
   } else if (toolName === 'Skill') {
     verdict = evaluateSkill(toolInput);
   } else {

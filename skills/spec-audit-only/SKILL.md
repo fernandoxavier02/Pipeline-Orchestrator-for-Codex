@@ -32,6 +32,13 @@ When this workflow reaches any terminal state, emit the `NEXT_STEP` block define
 5 prescriptive steps for re-auditing a spec that is already implemented (or whose implementation has been observed in the working tree). Each step file declares its execution contract (sequence, ownership, gates) via frontmatter consumed by the orchestrator. Project-neutral wording — designed to work in any codebase that follows the spec layout under `pipeline-runs/<run_id>/01-spec/`.
 
 
+
+## Codex Real-Agent Runtime Contract
+
+Any operational path in this workflow that dispatches pipeline work MUST use real Codex `spawn_agent` with a `PIPELINE_AGENT_FQN` marker. If `spawn_agent` is unavailable, fails, or cannot return an isolated agent result, stop with `blocked-no-agent-runtime`. Do not continue inline, do not simulate subagents, and do not report the run as real multi-agent execution.
+
+For informational-only workflows, do not launch the recommended workflow from the help/router context. Recommend the command and stop unless the user explicitly invokes an executable workflow with real agent support.
+
 ## Codex Parent Protocol Contract
 
 Codex does not execute Claude `Task` or direct `GATE_REQUEST` calls as the operational contract. Subagent work is dispatched with real `spawn_agent`. User decisions are emitted as `GATE_REQUEST` protocol blocks, answered in the parent context, persisted to `protocol-events.jsonl`, and mirrored to `gate-decisions.jsonl` when the gate is canonical. Malformed or unanswered protocol blocks block the workflow; they are never silently defaulted.
@@ -80,7 +87,7 @@ Consequencia: o adversarial-loop (step 03) substitui a fase de implementacao do 
 
 ## Step 03 dispatcha 3 subagents em paralelo (per design)
 
-O step 03 (audit-loop) e `execution_mode: inline` mas o orchestrator inline despacha em paralelo tres subagents independentes em uma unica mensagem (3 Agent calls):
+O step 03 (audit-loop) e `execution_mode: inline` mas o orchestrator inline despacha em paralelo tres subagents independentes em uma unica mensagem com 3 chamadas Codex `spawn_agent`:
 - `pipeline-orchestrator-for-codex:executor:type-specific:adversarial-architecture-critic`
 - `pipeline-orchestrator-for-codex:executor:type-specific:adversarial-security-scanner`
 - `pipeline-orchestrator-for-codex:executor:type-specific:spec-post-impl-validator`

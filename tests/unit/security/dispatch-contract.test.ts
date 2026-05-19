@@ -65,7 +65,7 @@ describe("evaluateAgentDispatch", () => {
     expect(verdict.kind).toBe("allow");
     if (verdict.kind === "allow") {
       expect(verdict.contract?.agentLeaf).toBe("task-orchestrator");
-      expect(verdict.contract?.tool).toBe("Agent");
+      expect(verdict.contract?.tool).toBe("spawn_agent");
     }
   });
 
@@ -122,7 +122,7 @@ describe("evaluateSkillDispatch", () => {
     const verdict = evaluateSkillDispatch({ skillName: "task-orchestrator" });
     expect(verdict.kind).toBe("block");
     if (verdict.kind === "block") {
-      expect(verdict.reason).toContain("Agent tool");
+      expect(verdict.reason).toContain("spawn_agent");
       expect(verdict.reason).toContain(`${PIPELINE_NAMESPACE}:core:task-orchestrator`);
     }
   });

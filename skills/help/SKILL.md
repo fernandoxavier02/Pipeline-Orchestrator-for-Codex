@@ -29,6 +29,13 @@ This skill has two modes:
 
 Do not execute the recommended workflow from help. Do not edit files, run audits, start implementation, or spawn workflow agents from this help command. Return the recommendation and wait for the user to invoke the chosen workflow.
 
+
+## Codex Real-Agent Runtime Contract
+
+Any operational path in this workflow that dispatches pipeline work MUST use real Codex `spawn_agent` with a `PIPELINE_AGENT_FQN` marker. If `spawn_agent` is unavailable, fails, or cannot return an isolated agent result, stop with `blocked-no-agent-runtime`. Do not continue inline, do not simulate subagents, and do not report the run as real multi-agent execution.
+
+For informational-only workflows, do not launch the recommended workflow from the help/router context. Recommend the command and stop unless the user explicitly invokes an executable workflow with real agent support.
+
 ## Output Contract
 
 Keep the answer short and practical.

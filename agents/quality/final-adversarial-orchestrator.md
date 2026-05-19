@@ -114,7 +114,7 @@ QUALITY_INPUT:
 
 ### Step 1: Spawn All 3 Reviewers in Parallel
 
-Use Agent tool with 3 concurrent calls. Each reviewer has independent context.
+Emit 3 concurrent `DISPATCH_REQUEST` blocks. The parent context converts each request into a real Codex `spawn_agent` call, so each reviewer has independent context.
 
 ### Step 2: Wait for All Results
 

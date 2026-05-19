@@ -32,7 +32,7 @@ Use apos o Content Review (step 02) ter retornado `GO` ou `GO-WARN`. Este step e
 
 ## Regras
 
-- Step `execution_mode: inline` — orchestrator inline coordena, mas dispatcha tres SUBAGENTS em paralelo (uma unica mensagem com 3 Agent calls).
+- Step `execution_mode: inline` — orchestrator inline coordena, mas dispatcha tres SUBAGENTS em paralelo (uma unica mensagem com 3 chamadas Codex `spawn_agent`).
 - NAO escrever feature nova. Findings que exigem codigo novo viram **escalation** (sair do audit-only e abrir spec-light/spec-heavy em ciclo separado).
 - Correcoes permitidas: atualizar `spec.json`, `requirements.md`, `design.md`, `tasks.md`, `closure-report.md` (rascunho), arquivos de documentacao do projeto, marcar `[x]` em tasks que ja estao TRACED no codigo. Tudo o que nao for codigo de feature.
 - Cada finding deve carregar tag de severidade: `BLOCKER | HIGH | MEDIUM | LOW` e tag de evidencia: `[VERIFICADO] | [HIPOTESE] | [DESIGN]`.

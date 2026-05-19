@@ -2,16 +2,16 @@
  * DispatchContract — DDD value object that ties an agent leaf name to its
  * pipeline-orchestrator-for-codex namespaced fully-qualified name.
  *
- * Rationale: callers must spawn pipeline agents through the Agent tool with
- * the FQN prefix `pipeline-orchestrator-for-codex:`. Calling a pipeline agent
- * via the Skill tool (or via Agent without the prefix) breaks dispatch
+ * Rationale: callers must spawn pipeline agents through Codex spawn_agent with
+ * the FQN marker `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:...`.
+ * Calling a pipeline agent via the Skill tool (or via spawn_agent without the marker) breaks dispatch
  * provenance and bypasses sentinel/edit-guard governance.
  */
 
 export const PIPELINE_NAMESPACE = "pipeline-orchestrator-for-codex";
 export const LEGACY_PIPELINE_NAMESPACE = "pipeline-orchestrator";
 
-export type DispatchTool = "Agent" | "Skill";
+export type DispatchTool = "spawn_agent" | "Skill";
 
 export type DispatchContract = Readonly<{
   agentLeaf: string;
@@ -140,7 +140,7 @@ export function evaluateAgentDispatch(input: {
       contract: Object.freeze({
         agentLeaf: leaf,
         fullyQualified: value,
-        tool: "Agent",
+        tool: "spawn_agent",
       }),
     };
   }
@@ -151,7 +151,7 @@ export function evaluateAgentDispatch(input: {
       kind: "block",
       reason:
         `DISPATCH_GUARD: subagent_type="${value}" is missing the namespace. ` +
-        `Use Agent with subagent_type="${fqnFor(value)}" instead.`,
+        `Use spawn_agent with PIPELINE_AGENT_FQN: ${fqnFor(value)} instead.`,
     };
   }
 
@@ -174,8 +174,8 @@ export function evaluateSkillDispatch(input: {
       kind: "block",
       reason:
         `DISPATCH_GUARD: Skill "${value}" maps to pipeline agent "${leaf}". ` +
-        `Pipeline agents must be spawned via the Agent tool with ` +
-        `subagent_type="${fqnFor(leaf)}", not via Skill.`,
+        `Pipeline agents must be spawned via spawn_agent with ` +
+        `PIPELINE_AGENT_FQN: ${fqnFor(leaf)}, not via Skill.`,
     };
   }
   return { kind: "allow" };

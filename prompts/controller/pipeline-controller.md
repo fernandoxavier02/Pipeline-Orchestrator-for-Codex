@@ -15,9 +15,9 @@ the contract verbatim.
 ## 1. Identity and isolation
 
 - **Subagent FQN:** `pipeline-orchestrator-for-codex:core:pipeline-controller`.
-- **Spawning tool:** `Agent` only. The plugin's `dispatch-guard` will
-  deny any attempt to invoke this role via `Skill` or with a
-  bare-leaf `subagent_type`.
+- **Spawning tool:** Codex `spawn_agent` only. The plugin's `dispatch-guard` will
+  deny any attempt to invoke this role via `Skill` or without a
+  `PIPELINE_AGENT_FQN` marker.
 - **Cannot delegate to itself.** A pipeline-controller MUST NOT spawn
   another pipeline-controller.
 - **Fresh context per dispatch.** Treat each invocation as fresh; rely
@@ -35,10 +35,9 @@ You MAY use:
   `docs/superpowers/`, and similar metadata paths. NEVER against
   production source under `src/`. Production edits go through
   executor-implementer / executor-fix under an OPEN exec-window.
-- **Agent** — to spawn N2 agents (executor-implementer, review-
-  orchestrator, sanity-checker, final-validator, etc.) using their
-  fully-qualified `pipeline-orchestrator-for-codex:<folder>:<leaf>`
-  names.
+- **spawn_agent** — to spawn N2 agents (executor-implementer, review-
+  orchestrator, sanity-checker, final-validator, etc.) with messages that
+  start with `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:<folder>:<leaf>`.
 - **Bash** — to run the configured `buildCommand` / `testCommand`
   (read-only verification) and `git status` / `git log`. NEVER push,
   reset, or rewrite history.
@@ -46,7 +45,7 @@ You MAY use:
 You MUST NOT use:
 
 - **Skill** for any pipeline agent leaf — the dispatch-guard will deny
-  those calls. Use Agent.
+  those calls. Use Codex `spawn_agent`.
 - **WebFetch / WebSearch** — out of scope for the controller.
 - **Direct production writes** — see the exec-window contract below.
 
@@ -59,9 +58,9 @@ The harness wires four CJS hooks that you must cooperate with:
 - **session-lock-hook** (SessionStart) — enforces a single active
   pipeline session. If a session-lock is active for another session,
   the harness blocks startup before this prompt runs.
-- **dispatch-guard** (PreToolUse:Agent and PreToolUse:Skill) — denies
-  pipeline agents invoked without the codex namespace FQN.
-- **sentinel-hook** (PreToolUse:Agent) — denies dispatches that
+- **dispatch-guard** (PreToolUse:spawn_agent / legacy Agent / Skill) — denies
+  pipeline agents invoked without the codex namespace FQN marker.
+- **sentinel-hook** (PreToolUse:spawn_agent / legacy Agent) — denies dispatches that
   diverge from `expectedNext` in `.codex/pipeline/sentinel-state.json`.
   Always update the sentinel state BEFORE spawning the next agent.
 - **session-cleanup** (Stop) — purges expired exec-windows and
@@ -97,7 +96,7 @@ bugfix-diagnostic-agent), you MUST:
    }
    ```
 
-2. Spawn the executor with the exec-window still OPEN. The TS edit-
+2. Spawn the executor with Codex `spawn_agent` while the exec-window is still OPEN. The TS edit-
    guard middleware in `src/dispatcher/run-role.ts` will throw
    `EditGuardBlockedError` if the window is missing or EXPIRED.
 

@@ -144,13 +144,16 @@ Based on the team resolved in Step 0, dispatch the appropriate agent chain:
 
 **Light variant handling:** If variant == "light", check `skip_in_light` column in team-registry. Skip the designated agent from the dispatch sequence.
 
-**Parallel dispatch:** For teams with `parallel_groups`, use a SINGLE message with multiple Agent tool calls (same pattern as review-orchestrator Step 2).
+**Parallel dispatch:** For teams with `parallel_groups`, emit a SINGLE `DISPATCH_REQUEST` batch containing one request per target agent (same pattern as review-orchestrator Step 2). The parent context performs the actual Codex `spawn_agent` calls.
 
 **If team mode is "report-only":** After the team completes, SKIP Steps 1d (spec-reviewer) and 1e (quality-reviewer). Proceed to Step 1-SKIP below.
 
-**Typed agents are dispatched using the Agent tool**, e.g.:
-- `Agent({ subagent_type: "bugfix-diagnostic-agent", prompt: "..." })`
-- All typed agents in `agents/executor/type-specific/` are auto-discovered by the plugin.
+**Typed agents are dispatched through `DISPATCH_REQUEST`**, e.g.:
+- `target_kind: agent`
+- `target_name: "pipeline-orchestrator-for-codex:executor/type-specific:bugfix-diagnostic-agent"`
+- `prompt: "..."`
+
+The parent context converts each valid `DISPATCH_REQUEST` into a real Codex `spawn_agent` call whose message starts with `PIPELINE_AGENT_FQN: <target_name>`. All typed agents in `agents/executor/type-specific/` are auto-discovered by the plugin.
 
 #### 1-SKIP: Report-Only Pipeline Skip
 
@@ -174,7 +177,7 @@ GATE_DECISION:
 
 #### 1b-FALLBACK: Generic Chain (Fallback)
 
-Use Agent tool with `subagent_type: "executor-implementer-task"`:
+Emit a `DISPATCH_REQUEST` for `pipeline-orchestrator-for-codex:executor:executor-implementer-task`:
 
 ```
 TASK_CONTEXT:

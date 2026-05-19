@@ -94,7 +94,7 @@ Para cada slice (grupo de tasks ate o proximo CHECKPOINT):
 
 ## Etapa 3 — Loop adversarial (per batch)
 
-Apos cada CHECKPOINT verde, dispatchar revisao adversarial paralela (agentes `adversarial-security-scanner` + `adversarial-architecture-critic` se disponiveis no repo, ou inline se nao houver agentes adversariais configurados).
+Apos cada CHECKPOINT verde, dispatchar revisao adversarial paralela via Codex `spawn_agent` (agentes `adversarial-security-scanner` + `adversarial-architecture-critic`). Se `spawn_agent` ou os agentes adversariais exigidos nao estiverem disponiveis, parar com `blocked-no-agent-runtime`; nao executar a revisao inline nem apresentar a rodada como multiagente real.
 
 ### Loop com escalation a cada 3 tentativas + hard cap
 
