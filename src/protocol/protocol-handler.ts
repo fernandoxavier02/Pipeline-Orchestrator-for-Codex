@@ -1,6 +1,11 @@
 import type { DispatchResult, RunRoleResult } from "../dispatcher/dispatcher-types.js";
 import { createGateLog, inferDecidedBy } from "../state/gate-log.js";
-import { createProtocolEventLog, parseProtocolBlocks, type ProtocolBlock } from "./protocol-events.js";
+import {
+  createProtocolEventLog,
+  parseProtocolBlocks,
+  type ProtocolBlock,
+  type ProtocolDispatchMode,
+} from "./protocol-events.js";
 
 type DispatchLike = DispatchResult | RunRoleResult;
 
@@ -59,6 +64,10 @@ export async function persistProtocolBlocksFromDispatch(input: {
   stateRoot: string;
   dispatch: DispatchLike;
   source?: string;
+  // R5 — Caller passes dispatchMode so the persisted DISPATCH_REQUEST events
+  // record whether the producing dispatch was real or emulated. Other event
+  // kinds (GATE_REQUEST, PLAN_MODE_REQUEST) do not require this tag.
+  dispatchMode?: ProtocolDispatchMode;
 }) {
   const blocks = parseProtocolBlocks(outputText(input.dispatch.output));
   if (blocks.length === 0) {
@@ -79,6 +88,9 @@ export async function persistProtocolBlocksFromDispatch(input: {
       timestamp,
       payload: block,
       execution_identity: input.dispatch.executionIdentity,
+      ...(block.kind === "DISPATCH_REQUEST" && input.dispatchMode
+        ? { dispatchMode: input.dispatchMode }
+        : {}),
     });
   }
 
@@ -90,6 +102,9 @@ export async function processProtocolBlocksForParent(input: {
   blocks: ProtocolBlock[];
   adapters: ParentProtocolAdapters;
   source?: string;
+  // R5 — Caller passes dispatchMode so child DISPATCH_REQUEST events are
+  // tagged with the runtime mode of the parent re-dispatch.
+  dispatchMode?: ProtocolDispatchMode;
 }) {
   const log = createProtocolEventLog(input.stateRoot);
   const timestamp = new Date().toISOString();
@@ -115,6 +130,7 @@ export async function processProtocolBlocksForParent(input: {
         source: input.source ?? "protocol-parent-handler",
         timestamp,
         payload: request,
+        ...(input.dispatchMode ? { dispatchMode: input.dispatchMode } : {}),
       });
       const output = block.target_kind === "skill"
         ? await input.adapters.dispatchSkill?.(request)
@@ -139,6 +155,7 @@ export async function processProtocolBlocksForParent(input: {
         source: input.source ?? "protocol-parent-handler",
         timestamp: new Date().toISOString(),
         payload: result,
+        ...(input.dispatchMode ? { dispatchMode: input.dispatchMode } : {}),
       });
       continue;
     }

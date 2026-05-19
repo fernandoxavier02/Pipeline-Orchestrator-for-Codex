@@ -930,9 +930,11 @@ type PersistedGateLogEntry = {
   confidence_impact: number;
 };
 
-function createRunStores(runDir: string) {
+function createRunStores(runDir: string, defaults: { strictAgents?: boolean } = {}) {
   const stores = {
-    session: createSessionStore(runDir),
+    // R6 — propagate strictAgents into the session store so every save carries
+    // the value (preserves it across the resume boundary).
+    session: createSessionStore(runDir, { strictAgents: defaults.strictAgents }),
     checkpoints: createCheckpointStore(runDir),
     gateLog: createGateLog(runDir),
     confidence: createConfidenceScoreStore(runDir),
@@ -1408,7 +1410,7 @@ export function createPipelineController(runtime?: {
 
         const latestRun = await findLatestRun(stateRoot);
         const runDir = latestRun?.runDir ?? stateRoot;
-        const runStores = createRunStores(runDir);
+        const runStores = createRunStores(runDir, { strictAgents: runtime?.strictAgents });
         const session = (await runStores.session.load()) as PipelineSessionState;
         const controllerLockStore = createControllerLockStore(stateRoot);
         const controllerLock = await controllerLockStore.load();
@@ -1426,7 +1428,7 @@ export function createPipelineController(runtime?: {
         }
 
         if (controllerLock) {
-          const lockedRunStores = createRunStores(controllerLock.runDir);
+          const lockedRunStores = createRunStores(controllerLock.runDir, { strictAgents: runtime?.strictAgents });
           const lockedSession = (await lockedRunStores.session.load()) as PipelineSessionState;
 
           if (lockedSession.pendingDecision === "revalidate") {

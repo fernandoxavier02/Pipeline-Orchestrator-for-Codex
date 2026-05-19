@@ -268,3 +268,100 @@ expected_deliverables:
     expect(rawEvents).toContain("\"status\":\"answered\"");
   });
 });
+
+// Spec: pipeline-trust-restoration / R5 — Post-Mortem Distinguishability in Protocol Events
+describe("R5: protocol event dispatchMode field", () => {
+  it("R5 AC 5.2: schema accepts dispatchMode='real'", () => {
+    const parsed = protocolEventSchema.parse({
+      event_id: "dispatch-request-x-emitted",
+      kind: "DISPATCH_REQUEST",
+      protocol_version: 1,
+      status: "emitted",
+      source: "test",
+      timestamp: new Date().toISOString(),
+      payload: {},
+      dispatchMode: "real",
+    });
+    expect(parsed.dispatchMode).toBe("real");
+  });
+
+  it("R5 AC 5.2: schema accepts dispatchMode='emulated'", () => {
+    const parsed = protocolEventSchema.parse({
+      event_id: "dispatch-request-x-emitted",
+      kind: "DISPATCH_REQUEST",
+      protocol_version: 1,
+      status: "emitted",
+      source: "test",
+      timestamp: new Date().toISOString(),
+      payload: {},
+      dispatchMode: "emulated",
+    });
+    expect(parsed.dispatchMode).toBe("emulated");
+  });
+
+  it("R5 AC 5.5: schema accepts legacy entries without dispatchMode (backward-compat)", () => {
+    const parsed = protocolEventSchema.parse({
+      event_id: "dispatch-request-legacy",
+      kind: "DISPATCH_REQUEST",
+      protocol_version: 1,
+      status: "emitted",
+      source: "test",
+      timestamp: new Date().toISOString(),
+      payload: {},
+    });
+    expect(parsed.dispatchMode).toBeUndefined();
+  });
+
+  it("schema rejects invalid dispatchMode value", () => {
+    expect(() =>
+      protocolEventSchema.parse({
+        event_id: "x",
+        kind: "DISPATCH_REQUEST",
+        protocol_version: 1,
+        status: "emitted",
+        source: "test",
+        timestamp: new Date().toISOString(),
+        payload: {},
+        dispatchMode: "magic",
+      }),
+    ).toThrow();
+  });
+
+  it("R5 AC 5.5: parser allows reading legacy entries (no dispatchMode) and the consumer can tag them as 'unknown'", async () => {
+    const root = await mkdtemp(join(tmpdir(), "protocol-events-r5-"));
+    const log = createProtocolEventLog(root);
+    await log.append({
+      event_id: "legacy-dispatch",
+      kind: "DISPATCH_REQUEST",
+      protocol_version: 1,
+      status: "emitted",
+      source: "test",
+      timestamp: new Date().toISOString(),
+      payload: { dispatch_id: "abc" },
+    });
+
+    const events = await log.list();
+    const tagged = events.map((event) => ({
+      ...event,
+      dispatchMode: event.dispatchMode ?? "unknown",
+    }));
+    expect(tagged[0].dispatchMode).toBe("unknown");
+  });
+
+  it("dispatchMode persists through the writer when supplied", async () => {
+    const root = await mkdtemp(join(tmpdir(), "protocol-events-r5-"));
+    const log = createProtocolEventLog(root);
+    await log.append({
+      event_id: "real-dispatch",
+      kind: "DISPATCH_REQUEST",
+      protocol_version: 1,
+      status: "emitted",
+      source: "test",
+      timestamp: new Date().toISOString(),
+      payload: { dispatch_id: "xyz" },
+      dispatchMode: "real",
+    });
+    const raw = await readFile(join(root, "protocol-events.jsonl"), "utf8");
+    expect(raw).toContain('"dispatchMode":"real"');
+  });
+});

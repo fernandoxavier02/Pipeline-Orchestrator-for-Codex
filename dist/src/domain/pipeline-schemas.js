@@ -143,6 +143,10 @@ export const sessionStateSchema = z.object({
     mode: z.string(),
     variant: z.string(),
     confidenceScore: z.number(),
+    // Spec: pipeline-trust-restoration / R6 — Resume Preserves strictAgents.
+    // Optional for backward-compat (legacy sessions without this field are
+    // treated as undefined and the cascade default applies — R6 AC 6.3).
+    strictAgents: z.boolean().optional(),
     proposal: proposalSchema.optional(),
     approvalProof: controllerManagedTransitionSchema.optional(),
     executionProof: executionProofSchema.optional(),

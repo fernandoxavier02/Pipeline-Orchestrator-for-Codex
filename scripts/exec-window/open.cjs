@@ -40,15 +40,29 @@ function readWindow(windowPath) {
   }
 }
 
+// Spec: pipeline-trust-restoration / R13 — Exec Window Resists Symlink Attack.
+// lstat the target before any rename/write. If the target is a symbolic link,
+// throw `SymlinkRefusedError` with a structured `err.code` and emit an audit
+// entry to stderr. Callers (writeWindowAtomic) MUST invoke this before
+// rename/write so a pre-created symlink at the target path cannot be exploited
+// to overwrite arbitrary files outside .codex/pipeline/sessions/.
 function rejectSymlink(targetPath) {
   try {
     const stat = fs.lstatSync(targetPath);
     if (stat.isSymbolicLink()) {
-      throw new Error(`SECURITY: ${targetPath} is a symbolic link. Refusing to write.`);
+      const err = new Error(
+        `SymlinkRefusedError: refusing to write over symbolic link at ${targetPath}`,
+      );
+      err.code = 'SYMLINK_REFUSED';
+      // R13 AC 13.3 — audit the abort (stderr is the operator log channel).
+      process.stderr.write(
+        `[exec-window/open] symlink-refused target=${targetPath}\n`,
+      );
+      throw err;
     }
   } catch (err) {
-    if (err && err.message && err.message.startsWith('SECURITY:')) throw err;
-    // File doesn't exist — that's fine
+    if (err && err.code === 'SYMLINK_REFUSED') throw err;
+    // File doesn't exist (ENOENT) → harmless, fall through.
   }
 }
 

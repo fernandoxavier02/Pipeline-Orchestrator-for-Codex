@@ -93,4 +93,25 @@ describe("agents/ vs prompts/agents/ — intentional split", () => {
     const ghostRoles = registeredRoles.filter((r) => !stubFiles.includes(r));
     expect(ghostRoles).toEqual([]);
   });
+
+  // Spec: pipeline-trust-restoration / R8 AC 8.3 / CI-4
+  it("R8 AC 8.3 / CI-4: pipeline-controller.md has AUTHORITY_NOTE in the first 25 lines", () => {
+    const controller = readFileSync(
+      join(ROOT, "agents", "core", "pipeline-controller.md"),
+      "utf8",
+    );
+    const firstLines = controller.split("\n").slice(0, 25).join("\n");
+    expect(firstLines).toMatch(/AUTHORITY_NOTE/);
+    expect(firstLines).toMatch(/src\/controller\/pipeline-controller\.ts/);
+  });
+
+  // R8 AC 8.5 — frontmatter description no longer claims the stale "37 N2 agents".
+  it("R8 AC 8.5: pipeline-controller.md frontmatter description does not contain stale '37 N2 agents' claim", () => {
+    const controller = readFileSync(
+      join(ROOT, "agents", "core", "pipeline-controller.md"),
+      "utf8",
+    );
+    const frontmatter = controller.split("\n").slice(0, 10).join("\n");
+    expect(frontmatter).not.toMatch(/37 N2 agents/);
+  });
 });

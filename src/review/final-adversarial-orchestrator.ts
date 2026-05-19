@@ -108,11 +108,22 @@ function normalizeReviewerResult(input: {
   } satisfies FinalReview;
 }
 
+// Spec: pipeline-trust-restoration / R3 — Final_Adversarial inherits the same
+// cascade as runtimeRunRole. `requireRealAgentForRequest` is the new path;
+// `requireRealAgent` is kept as legacy backward-compat for fixtures.
 export function createFinalAdversarialOrchestrator(dependencies: {
   runRole?: FinalReviewDispatcher;
   requireRealAgent?: boolean;
+  requireRealAgentForRequest?: (request: DispatchRequest) => boolean;
 } = {}) {
   const runRole = dependencies.runRole ?? dispatchRole;
+
+  function resolveRequireRealAgentForFinal(request: DispatchRequest): boolean {
+    if (dependencies.requireRealAgentForRequest) {
+      return dependencies.requireRealAgentForRequest(request);
+    }
+    return dependencies.requireRealAgent === true;
+  }
 
   return {
     async reviewFinal(input: {
@@ -142,9 +153,24 @@ export function createFinalAdversarialOrchestrator(dependencies: {
         },
       ];
 
+      // R3 — resolve requireRealAgent per dispatch.
+      const requireRealAgentProbe: DispatchRequest = {
+        mode: "parallel-emulation",
+        requireRealAgent: false,
+        role: "final-adversarial-orchestrator",
+        prompt: "final-adversarial-orchestrator strict-resolution probe",
+        input: { files: [...files], changedDomains: [...changedDomains] },
+        filesInScope: [...files],
+        authorityLevel: "controller",
+        freshContext: true,
+        reviewOnly: true,
+        team: [],
+      };
+      const requireRealAgent = resolveRequireRealAgentForFinal(requireRealAgentProbe);
+
       const dispatch = await runRole({
         mode: "parallel-emulation",
-        requireRealAgent: dependencies.requireRealAgent === true,
+        requireRealAgent,
         role: "final-adversarial-orchestrator",
         prompt: "Coordinate the independent final adversarial review team.",
         input: {

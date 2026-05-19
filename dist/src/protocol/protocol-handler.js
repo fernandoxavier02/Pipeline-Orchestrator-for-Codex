@@ -1,5 +1,5 @@
 import { createGateLog, inferDecidedBy } from "../state/gate-log.js";
-import { createProtocolEventLog, parseProtocolBlocks } from "./protocol-events.js";
+import { createProtocolEventLog, parseProtocolBlocks, } from "./protocol-events.js";
 function blockIdentifier(block) {
     if (block.kind === "GATE_REQUEST")
         return block.gate_id;
@@ -30,6 +30,9 @@ export async function persistProtocolBlocksFromDispatch(input) {
             timestamp,
             payload: block,
             execution_identity: input.dispatch.executionIdentity,
+            ...(block.kind === "DISPATCH_REQUEST" && input.dispatchMode
+                ? { dispatchMode: input.dispatchMode }
+                : {}),
         });
     }
     return blocks;
@@ -58,6 +61,7 @@ export async function processProtocolBlocksForParent(input) {
                 source: input.source ?? "protocol-parent-handler",
                 timestamp,
                 payload: request,
+                ...(input.dispatchMode ? { dispatchMode: input.dispatchMode } : {}),
             });
             const output = block.target_kind === "skill"
                 ? await input.adapters.dispatchSkill?.(request)
@@ -80,6 +84,7 @@ export async function processProtocolBlocksForParent(input) {
                 source: input.source ?? "protocol-parent-handler",
                 timestamp: new Date().toISOString(),
                 payload: result,
+                ...(input.dispatchMode ? { dispatchMode: input.dispatchMode } : {}),
             });
             continue;
         }

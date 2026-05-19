@@ -17,6 +17,7 @@ const requiredFields = [
 ] as const;
 const expectedArticles = [
   "INDEX.md",
+  "CHANGELOG.kb.md",
   "api-platform.md",
   "codex-runtime.md",
   "skills.md",
@@ -29,10 +30,20 @@ const expectedArticles = [
   "learn-cookbook-patterns.md",
   "source-map.md",
 ];
+// Spec: pipeline-trust-restoration / R10 — the 4 drift-noted files plus the
+// SSOT and INDEX share a uniform last_verified (2026-05-19) after the
+// consolidation. Other articles keep their own dates.
 const expectedLastVerified = new Map([
   ["INDEX.md", "2026-05-19"],
   ["plugin-build-guide.md", "2026-05-19"],
+  ["plugins.md", "2026-05-19"],
+  ["skills.md", "2026-05-19"],
+  ["agents-and-subagents.md", "2026-05-19"],
+  ["rules-hooks-agents-md.md", "2026-05-19"],
 ]);
+// CHANGELOG.kb.md uses a minimal schema (no kind/topics/source_urls/etc.) — it
+// is editorial history, not a topic page. The other-files tests skip it.
+const SKIP_SCHEMA_VALIDATION = new Set(["CHANGELOG.kb.md"]);
 const requiredSourceSets = ["API Docs", "Codex", "ChatGPT/Apps SDK", "Learn"];
 const allowedHosts = new Set([
   "developers.openai.com",
@@ -85,8 +96,19 @@ describe("OpenAI Codex knowledge base", () => {
     );
 
     for (const file of files) {
+      const articleName = relative(kbRoot, file).split(sep).join("/");
       const content = await readFile(file, "utf8");
       const fm = extractFrontmatter(content, file);
+
+      if (SKIP_SCHEMA_VALIDATION.has(articleName)) {
+        // CHANGELOG.kb.md uses a minimal schema (title + last_verified) — it is
+        // editorial history, not a topic page. Only verify last_verified stays
+        // consistent with the spec consolidation.
+        expect(fm.last_verified, `${file} verification date`).toBe(
+          expectedLastVerified.get(articleName) ?? "2026-05-19",
+        );
+        continue;
+      }
 
       for (const field of requiredFields) {
         expect(fm, `${relative(repoRoot, file)} missing ${field}`).toHaveProperty(field);
@@ -94,7 +116,6 @@ describe("OpenAI Codex knowledge base", () => {
 
       expect(typeof fm.title, `${file} title must be a string`).toBe("string");
       expect(typeof fm.kind, `${file} kind must be a string`).toBe("string");
-      const articleName = relative(kbRoot, file).split(sep).join("/");
       expect(fm.last_verified, `${file} verification date`).toBe(
         expectedLastVerified.get(articleName) ?? "2026-05-18",
       );
@@ -114,10 +135,60 @@ describe("OpenAI Codex knowledge base", () => {
     }
   });
 
+  // Spec: pipeline-trust-restoration / R10 AC 10.2 / CI-5 — the 4 drift-noted
+  // files plus the SSOT share a uniform last_verified after consolidation.
+  it("R10 AC 10.2 / CI-5: drift-consolidated KB files share last_verified=2026-05-19", async () => {
+    const consolidatedFiles = [
+      "plugins.md",
+      "skills.md",
+      "agents-and-subagents.md",
+      "rules-hooks-agents-md.md",
+      "plugin-build-guide.md",
+      "INDEX.md",
+      "CHANGELOG.kb.md",
+    ];
+    const dates = new Set<string>();
+    for (const name of consolidatedFiles) {
+      const content = await readFile(join(kbRoot, name), "utf8");
+      const fm = extractFrontmatter(content, name);
+      dates.add(String(fm.last_verified));
+    }
+    expect(dates.size, `consolidated files have inconsistent last_verified: ${[...dates].join(", ")}`).toBe(1);
+    expect([...dates][0]).toBe("2026-05-19");
+  });
+
+  // R10 AC 10.5 — grep on any of the 4 old files for a corrected schema fact
+  // lands on the forward-pointer to CHANGELOG/plugin-build-guide, not on the
+  // pre-correction stale text.
+  it("R10 AC 10.5: 4 drift-consolidated KB files no longer contain 'Drift Notes' sections", async () => {
+    const driftSensitive = [
+      "plugins.md",
+      "skills.md",
+      "agents-and-subagents.md",
+      "rules-hooks-agents-md.md",
+    ];
+    for (const name of driftSensitive) {
+      const content = await readFile(join(kbRoot, name), "utf8");
+      expect(content, `${name} still contains '## Drift Notes' section`).not.toMatch(
+        /^##\s+Drift Notes/m,
+      );
+      // Forward-pointer to the changelog must be present.
+      expect(content, `${name} missing CHANGELOG.kb.md forward-pointer`).toMatch(
+        /CHANGELOG\.kb\.md/,
+      );
+    }
+  });
+
   it("indexes every article from INDEX.md", async () => {
     const index = await readFile(join(kbRoot, "INDEX.md"), "utf8");
 
-    for (const article of expectedArticles.filter((name) => name !== "INDEX.md")) {
+    // CHANGELOG.kb.md is editorial history surfaced via forward-pointers on
+    // the topic pages; it does not need to live in the INDEX table of topic
+    // articles. Skip it from the indexability check.
+    const indexable = expectedArticles.filter(
+      (name) => name !== "INDEX.md" && name !== "CHANGELOG.kb.md",
+    );
+    for (const article of indexable) {
       expect(index, `INDEX.md must reference ${article}`).toContain(article);
     }
   });

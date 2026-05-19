@@ -56,11 +56,26 @@ function parseDispatchedReviews(dispatch: DispatchResult): ParsedReviewerOutput[
     });
 }
 
+// Spec: pipeline-trust-restoration / R3 — Review Orchestrators Inherit Cascade.
+// `requireRealAgent` (boolean) is preserved for backward-compat with existing
+// fixtures; new callers should pass `requireRealAgentForRequest`, a lazy
+// resolver evaluated per dispatch. When both are absent the orchestrator
+// defaults to emulation (legacy behavior). When both are present the lazy
+// resolver wins (it can observe the actual request, which is the SSOT for
+// the cascade — see src/runtime/strict-resolution.ts).
 export function createReviewOrchestrator(dependencies: {
   runRole?: ReviewDispatcher;
   requireRealAgent?: boolean;
+  requireRealAgentForRequest?: (request: DispatchRequest) => boolean;
 } = {}) {
   const runRole = dependencies.runRole ?? dispatchRole;
+
+  function resolveRequireRealAgentForReview(request: DispatchRequest): boolean {
+    if (dependencies.requireRealAgentForRequest) {
+      return dependencies.requireRealAgentForRequest(request);
+    }
+    return dependencies.requireRealAgent === true;
+  }
 
   return {
     async reviewBatch(input: ReviewBatchInput) {
@@ -70,9 +85,33 @@ export function createReviewOrchestrator(dependencies: {
         maxIterations: 3,
         afterFix: false,
       };
+      // R3 — resolve requireRealAgent per dispatch using the lazy resolver
+      // (or fall back to the legacy boolean). The resolver observes the
+      // request so it can apply the same cascade as runtimeRunRole.
+      const requireRealAgentProbe: DispatchRequest = {
+        mode: "parallel-emulation",
+        requireRealAgent: false,
+        role: "review-orchestrator",
+        prompt: "review-orchestrator strict-resolution probe",
+        input: {
+          batch: { name: input.batch.name, files: [...files] },
+          files: [...files],
+          changedDomains: [...(input.changedDomains ?? [])],
+          mode: input.mode,
+          reviewLoop,
+          reviewOnly: true,
+        },
+        filesInScope: [...files],
+        authorityLevel: "controller",
+        freshContext: true,
+        reviewOnly: true,
+        team: [],
+      };
+      const requireRealAgent = resolveRequireRealAgentForReview(requireRealAgentProbe);
+
       const dispatch = await runRole({
         mode: "parallel-emulation",
-        requireRealAgent: dependencies.requireRealAgent === true,
+        requireRealAgent,
         role: "review-orchestrator",
         prompt: "Coordinate an independent batch review team from fresh context.",
         input: {

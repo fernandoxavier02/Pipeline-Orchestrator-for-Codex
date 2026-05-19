@@ -24,7 +24,7 @@ globs:
   - "tests/**/*skill*.ts"
   - "hooks/**/*frontmatter*.cjs"
   - "references/**/*.md"
-last_verified: "2026-05-18"
+last_verified: "2026-05-19"
 status: "active"
 ---
 
@@ -104,6 +104,7 @@ When editing skills:
 4. Update `references/openai-codex-kb/**` only when the change affects general Codex/OpenAI knowledge.
 5. Run focused tests first, then broader tests if runtime-facing behavior changed.
 
-## Drift Notes (2026-05-19)
-
-See [plugin-build-guide.md](plugin-build-guide.md) for the schema-accurate consolidated version. Corrections relevant here: standalone skills live in `.agents/skills/` (not `skills/`); plugin-bundled skills stay under `<plugin>/skills/` and are discovered via `plugin.json:skills`. Required frontmatter is `name` + `description` only — extension fields like `agent_type`, `gates_at`, `allowed-tools`, and `argument-hint` are plugin-private and not parsed by Codex itself. Initial skills list is capped at ~2% of context window (~8k chars unknown). Same-name collisions surface both skills in the picker — they do not merge.
+> **Migration (2026-05-19):** Older editorial notes that previously lived in this
+> section were consolidated into [`CHANGELOG.kb.md`](CHANGELOG.kb.md#skillsmd)
+> per spec `pipeline-trust-restoration / R10`. The schema-accurate SSOT is
+> [`plugin-build-guide.md`](plugin-build-guide.md).

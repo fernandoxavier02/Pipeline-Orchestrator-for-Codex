@@ -1,0 +1,168 @@
+// Spec: pipeline-trust-restoration / R7 — Native Codex agentRuntime Adapter.
+//
+// A thin bridge between the pipeline runtime contract (AgentRuntimeAdapter) and
+// a Codex-host-exposed `spawn_agent` callable. The adapter is opt-in:
+//
+//   - `createCodexAgentRuntimeAdapter({ spawnAgent })` — factory; the caller
+//     supplies the real spawn_agent reference (no implicit imports of host
+//     internals from the plain-Node CLI process).
+//   - `detectCodexAgentRuntime()` — runtime detection that returns a
+//     constructable handle if the current process exposes spawn_agent on
+//     `globalThis` or via an explicit env-var hint. Returns null in plain
+//     Node sessions; the caller falls back to the existing CLI loader
+//     (--agent-runtime-adapter / CODEX_AGENT_RUNTIME_ADAPTER).
+//
+// The adapter never falls back to the local emulation path. When invoked in a
+// context where `spawn_agent` is unavailable it throws `AgentRuntimeUnavailableError`
+// (R7 AC 7.4) so `runtimeRunRole` surfaces `blocked-no-agent-runtime` rather
+// than silently emulating.
+
+import type {
+  AgentDispatchRequest,
+  AgentRuntimeAdapter,
+  DispatchResult,
+} from "../dispatcher/dispatcher-types.js";
+import { AgentRuntimeUnavailableError } from "../dispatcher/run-role.js";
+
+export interface SpawnAgentInput {
+  fqn: string;
+  message: string;
+}
+
+export interface SpawnAgentResult {
+  output: unknown;
+}
+
+export type SpawnAgentCallable = (input: SpawnAgentInput) => Promise<SpawnAgentResult>;
+
+export interface CodexAgentRuntimeOptions {
+  /** Real spawn_agent function exposed by the Codex host. */
+  spawnAgent: SpawnAgentCallable;
+  /**
+   * Pipeline plugin namespace used when assembling FQN markers
+   * (`<pluginNamespace>:<folder>:<leaf>`). Defaults to
+   * `pipeline-orchestrator-for-codex`.
+   */
+  pluginNamespace?: string;
+  /**
+   * Marker that identifies how the adapter was wired. Surfaced in audit logs
+   * but not consumed by the dispatcher.
+   */
+  detectionMode?: "auto" | "manual";
+}
+
+const DEFAULT_NAMESPACE = "pipeline-orchestrator-for-codex";
+
+function buildFqn(namespace: string, role: string): string {
+  // If the caller already provided a fully-qualified marker we honor it.
+  if (role.startsWith(`${namespace}:`)) {
+    return role;
+  }
+  // Roles flow through the runtime as "<folder>:<leaf>" or bare "<leaf>".
+  // The Codex host expects "<namespace>:<folder>:<leaf>" or a plain leaf — we
+  // always emit the namespaced form so dispatch-guard.cjs can validate it.
+  const path = role.includes(":") ? role : `core:${role}`;
+  return `${namespace}:${path}`;
+}
+
+function serializeRequest(request: AgentDispatchRequest): string {
+  // Keep the on-wire payload deterministic so the host can replay it.
+  return JSON.stringify({
+    role: request.role,
+    phase: request.phase,
+    prompt: request.prompt,
+    input: request.input,
+    expectedOutput: request.expectedOutput,
+    freshContext: request.freshContext,
+    ownership: request.ownership,
+    reviewOnly: request.reviewOnly,
+    filesInScope: request.filesInScope,
+    authorityLevel: request.authorityLevel,
+  });
+}
+
+function isDispatchResult(value: unknown): value is DispatchResult {
+  return (
+    !!value
+    && typeof value === "object"
+    && "role" in value
+    && "mode" in value
+    && "output" in value
+  );
+}
+
+export function createCodexAgentRuntimeAdapter(
+  options: CodexAgentRuntimeOptions,
+): AgentRuntimeAdapter {
+  if (typeof options.spawnAgent !== "function") {
+    throw new Error(
+      "createCodexAgentRuntimeAdapter: options.spawnAgent must be a function",
+    );
+  }
+  const namespace = options.pluginNamespace ?? DEFAULT_NAMESPACE;
+
+  return {
+    async spawnAgent(request: AgentDispatchRequest): Promise<DispatchResult> {
+      try {
+        const response = await options.spawnAgent({
+          fqn: buildFqn(namespace, request.role),
+          message: serializeRequest(request),
+        });
+
+        if (isDispatchResult(response.output)) {
+          return response.output;
+        }
+
+        // Common Codex shape: { output: <agent JSON> }. Wrap into the
+        // DispatchResult contract that run-role expects.
+        return {
+          mode: "single-agent",
+          role: request.role,
+          output:
+            response.output && typeof response.output === "object"
+              ? (response.output as Record<string, unknown>)
+              : { output: response.output },
+        };
+      } catch (err) {
+        // R7 AC 7.4 — never silently fall back to emulation. Translate every
+        // failure into AgentRuntimeUnavailableError so run-role surfaces
+        // blocked-no-agent-runtime to the caller.
+        const reason = err instanceof Error ? err.message : String(err);
+        throw new AgentRuntimeUnavailableError(request.role, reason);
+      }
+    },
+  };
+}
+
+/**
+ * Runtime detection — returns a constructable handle when the current process
+ * exposes a usable spawn_agent reference. The cascade:
+ *
+ *   1. `globalThis.spawn_agent` (Codex host injection, future-facing).
+ *   2. `globalThis.codex?.spawn_agent` (alternative namespace).
+ *
+ * Returns null in plain Node sessions; the CLI falls back to its existing
+ * loader (--agent-runtime-adapter / CODEX_AGENT_RUNTIME_ADAPTER).
+ */
+export function detectCodexAgentRuntime(
+  globalScope: Record<string, unknown> = globalThis as Record<string, unknown>,
+): CodexAgentRuntimeOptions | null {
+  const directCandidate = globalScope.spawn_agent;
+  if (typeof directCandidate === "function") {
+    return {
+      spawnAgent: directCandidate as SpawnAgentCallable,
+      detectionMode: "auto",
+    };
+  }
+  const codexScope = globalScope.codex;
+  if (codexScope && typeof codexScope === "object") {
+    const nested = (codexScope as Record<string, unknown>).spawn_agent;
+    if (typeof nested === "function") {
+      return {
+        spawnAgent: nested as SpawnAgentCallable,
+        detectionMode: "auto",
+      };
+    }
+  }
+  return null;
+}

@@ -610,9 +610,11 @@ function approveExecutionScenarios(input) {
         fixAttempts: input.executionProof?.fixAttempts ?? [],
     };
 }
-function createRunStores(runDir) {
+function createRunStores(runDir, defaults = {}) {
     const stores = {
-        session: createSessionStore(runDir),
+        // R6 — propagate strictAgents into the session store so every save carries
+        // the value (preserves it across the resume boundary).
+        session: createSessionStore(runDir, { strictAgents: defaults.strictAgents }),
         checkpoints: createCheckpointStore(runDir),
         gateLog: createGateLog(runDir),
         confidence: createConfidenceScoreStore(runDir),
@@ -999,7 +1001,7 @@ export function createPipelineController(runtime) {
                 }
                 const latestRun = await findLatestRun(stateRoot);
                 const runDir = latestRun?.runDir ?? stateRoot;
-                const runStores = createRunStores(runDir);
+                const runStores = createRunStores(runDir, { strictAgents: runtime?.strictAgents });
                 const session = (await runStores.session.load());
                 const controllerLockStore = createControllerLockStore(stateRoot);
                 const controllerLock = await controllerLockStore.load();
@@ -1013,7 +1015,7 @@ export function createPipelineController(runtime) {
                     throw new Error("phase-1.5 session is missing controller-managed transition proof");
                 }
                 if (controllerLock) {
-                    const lockedRunStores = createRunStores(controllerLock.runDir);
+                    const lockedRunStores = createRunStores(controllerLock.runDir, { strictAgents: runtime?.strictAgents });
                     const lockedSession = (await lockedRunStores.session.load());
                     if (lockedSession.pendingDecision === "revalidate") {
                         const gateLogEntries = await lockedRunStores.gateLog.list();

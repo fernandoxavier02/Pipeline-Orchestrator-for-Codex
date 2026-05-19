@@ -28,6 +28,11 @@ import { createReviewOrchestrator } from "./review/review-orchestrator.js";
 import { createCheckpointStore } from "./state/checkpoint-store.js";
 import { createConfidenceScoreStore } from "./state/confidence-score.js";
 import { createGateLog, inferDecidedBy } from "./state/gate-log.js";
+import { resolveRequireRealAgent } from "./runtime/strict-resolution.js";
+import {
+  createCodexAgentRuntimeAdapter,
+  detectCodexAgentRuntime,
+} from "./adapters/codex-agent-runtime.js";
 import { createSessionStore } from "./state/session-store.js";
 import { createSentinelStateStore } from "./sentinel/sentinel-state.js";
 import { writeTrace } from "./trace/trace.js";
@@ -319,14 +324,10 @@ function containsPipelineCompletion(text: string) {
   return /\bPIPELINE COMPLETE\b/u.test(text);
 }
 
-function isOperationalPipelineDispatch(request: DispatchRequest) {
-  const requestText = typeof request.input?.request === "string" ? request.input.request.trim() : "";
-  if (!requestText.startsWith("/pipeline-orchestrator-for-codex:pipeline")) {
-    return false;
-  }
-
-  return !requestText.startsWith("/pipeline-orchestrator-for-codex:pipeline diagnostic");
-}
+// R3 — `isOperationalPipelineDispatch` is now exported from src/runtime/strict-resolution.ts
+// (single authority for the requireRealAgent cascade — DI-3). Re-import here to
+// preserve the existing call sites without renaming.
+import { isOperationalPipelineDispatch } from "./runtime/strict-resolution.js";
 
 function isBrainstormInteractiveRole(role: string) {
   return role === "brainstorm-controller"
@@ -472,6 +473,30 @@ async function loadCloseoutSession(input: {
 }
 
 export function createPipelineRuntime(options: RuntimeOptions) {
+  // R7 — auto-detect a Codex spawn_agent bridge on the global scope. When an
+  // explicit options.agentRuntime is passed it wins; otherwise we try the
+  // native adapter detector. When a detected adapter exists AND the caller did
+  // NOT pin strictAgents, default it to true (R7 AC 7.2). When the caller
+  // explicitly opts out (strictAgents=false) with a detected adapter we emit a
+  // one-time warning so the operator knows they have opted into emulation
+  // (R7 AC 7.5).
+  if (!options.agentRuntime) {
+    const detected = detectCodexAgentRuntime();
+    if (detected) {
+      options = {
+        ...options,
+        agentRuntime: createCodexAgentRuntimeAdapter(detected),
+        strictAgents: options.strictAgents ?? true,
+      };
+      if (options.strictAgents === false) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[trust-restoration] Codex adapter detected but strictAgents=false; emulation path active.",
+        );
+      }
+    }
+  }
+
   const config = loadPipelineConfig(options.cwd);
   const bundledPromptRoot = fileURLToPath(new URL("../", import.meta.url));
   const sourcePromptRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -489,7 +514,8 @@ export function createPipelineRuntime(options: RuntimeOptions) {
     sourcePromptRoot,
   ]);
   const stateDir = `${options.cwd}/.codex/pipeline`;
-  const sessionStore = createSessionStore(stateDir);
+  // R6 — propagate strictAgents into the session store so it persists.
+  const sessionStore = createSessionStore(stateDir, { strictAgents: options.strictAgents });
   const checkpointStore = createCheckpointStore(stateDir);
   const gateLogStore = createGateLog(stateDir);
   const confidenceStore = createConfidenceScoreStore(stateDir);
@@ -545,15 +571,20 @@ export function createPipelineRuntime(options: RuntimeOptions) {
 
     const result = await runRole({
       ...request,
-      requireRealAgent: request.requireRealAgent ?? options.strictAgents ?? isOperationalPipelineDispatch(request),
+      requireRealAgent: resolveRequireRealAgent(options, request),
       agentRuntime: request.agentRuntime ?? options.agentRuntime,
       prompt,
       team,
     });
+    // R5 AC 5.3/5.4 — tag persisted DISPATCH_REQUEST events with the actual
+    // runtime mode. agentRuntime presence is the canonical signal (matches
+    // gate-log provenance — see src/state/gate-log.ts).
+    const runtimeDispatchMode: "real" | "emulated" = options.agentRuntime ? "real" : "emulated";
     const protocolBlocks = await persistProtocolBlocksFromDispatch({
       stateRoot: stateDir,
       dispatch: result,
       source: request.role,
+      dispatchMode: runtimeDispatchMode,
     });
     let pendingProtocolBlocks = protocolBlocks;
     let parentDispatchResults: Array<Record<string, unknown>> = [];
@@ -587,6 +618,7 @@ export function createPipelineRuntime(options: RuntimeOptions) {
         stateRoot: stateDir,
         blocks: protocolBlocks.filter((block) => block.kind === "DISPATCH_REQUEST"),
         source: "runtime-parent-handler",
+        dispatchMode: runtimeDispatchMode,
         adapters: {
           dispatchAgent: dispatchViaRuntime,
           dispatchSkill: dispatchViaRuntime,
@@ -686,9 +718,11 @@ export function createPipelineRuntime(options: RuntimeOptions) {
       },
     };
   };
+  // R3 AC 3.1 — Review_Orchestrator inherits the safe cascade.
+  // Passes the lazy resolver instead of a stale `=== true` boolean.
   const runtimeReviewOrchestrator = createReviewOrchestrator({
     runRole: runtimeRunRole,
-    requireRealAgent: options.strictAgents === true,
+    requireRealAgentForRequest: (request) => resolveRequireRealAgent(options, request),
   });
   const runtimeExecutionController = createExecutorController({
     runRole: runtimeRunRole,
@@ -696,9 +730,10 @@ export function createPipelineRuntime(options: RuntimeOptions) {
       ...input,
       reviewOrchestrator: runtimeReviewOrchestrator,
     }),
+    // R3 AC 3.2 — Final_Adversarial_Orchestrator inherits the same cascade.
     finalAdversarialOrchestrator: (input) => createFinalAdversarialOrchestrator({
       runRole: runtimeRunRole,
-      requireRealAgent: options.strictAgents === true,
+      requireRealAgentForRequest: (request) => resolveRequireRealAgent(options, request),
     }).reviewFinal({
       scope: input.scope,
       changedDomains: input.changedDomains,
@@ -756,7 +791,8 @@ export function createPipelineRuntime(options: RuntimeOptions) {
 
     return {
       runDir,
-      session: createSessionStore(runDir),
+      // R6 — closeout stores also preserve strictAgents in saves.
+      session: createSessionStore(runDir, { strictAgents: options.strictAgents }),
       checkpoints: createCheckpointStore(runDir),
       gateLog: createGateLog(runDir),
       confidence: createConfidenceScoreStore(runDir),

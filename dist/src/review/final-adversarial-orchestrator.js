@@ -70,8 +70,17 @@ function normalizeReviewerResult(input) {
         findings,
     };
 }
+// Spec: pipeline-trust-restoration / R3 — Final_Adversarial inherits the same
+// cascade as runtimeRunRole. `requireRealAgentForRequest` is the new path;
+// `requireRealAgent` is kept as legacy backward-compat for fixtures.
 export function createFinalAdversarialOrchestrator(dependencies = {}) {
     const runRole = dependencies.runRole ?? dispatchRole;
+    function resolveRequireRealAgentForFinal(request) {
+        if (dependencies.requireRealAgentForRequest) {
+            return dependencies.requireRealAgentForRequest(request);
+        }
+        return dependencies.requireRealAgent === true;
+    }
     return {
         async reviewFinal(input) {
             const files = input.scope.files;
@@ -95,9 +104,23 @@ export function createFinalAdversarialOrchestrator(dependencies = {}) {
                     prompt: "Perform a final adversarial quality review from fresh context using only the provided scope.",
                 },
             ];
+            // R3 — resolve requireRealAgent per dispatch.
+            const requireRealAgentProbe = {
+                mode: "parallel-emulation",
+                requireRealAgent: false,
+                role: "final-adversarial-orchestrator",
+                prompt: "final-adversarial-orchestrator strict-resolution probe",
+                input: { files: [...files], changedDomains: [...changedDomains] },
+                filesInScope: [...files],
+                authorityLevel: "controller",
+                freshContext: true,
+                reviewOnly: true,
+                team: [],
+            };
+            const requireRealAgent = resolveRequireRealAgentForFinal(requireRealAgentProbe);
             const dispatch = await runRole({
                 mode: "parallel-emulation",
-                requireRealAgent: dependencies.requireRealAgent === true,
+                requireRealAgent,
                 role: "final-adversarial-orchestrator",
                 prompt: "Coordinate the independent final adversarial review team.",
                 input: {

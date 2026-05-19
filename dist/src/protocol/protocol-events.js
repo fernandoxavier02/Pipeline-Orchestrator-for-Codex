@@ -46,6 +46,12 @@ export const protocolBlockSchema = z.discriminatedUnion("kind", [
     dispatchRequestBlockSchema,
     planModeRequestBlockSchema,
 ]);
+// Spec: pipeline-trust-restoration / R5 — Post-Mortem Distinguishability in
+// Protocol Events. DISPATCH_REQUEST events carry a dispatchMode tag so an
+// auditor reading protocol-events.jsonl can determine whether each dispatch
+// went through a real spawn_agent runtime or fell back to the local emulation
+// path. Optional for backward-compat with legacy logs (NFR-1).
+export const dispatchModeSchema = z.enum(["real", "emulated", "unknown"]);
 export const protocolEventSchema = z.object({
     event_id: z.string().min(1),
     kind: protocolKindSchema.optional(),
@@ -55,6 +61,7 @@ export const protocolEventSchema = z.object({
     source: z.string().min(1),
     timestamp: z.string().min(1),
     payload: z.record(z.unknown()),
+    dispatchMode: dispatchModeSchema.optional(),
     execution_identity: z.object({
         trace_id: z.string(),
         workflow_id: z.string(),
@@ -84,6 +91,7 @@ export const protocolEventSchema = z.object({
     source: z.string().min(1),
     timestamp: z.string().min(1),
     payload: z.record(z.unknown()),
+    dispatchMode: dispatchModeSchema.optional(),
     execution_identity: z.object({
         trace_id: z.string(),
         workflow_id: z.string(),

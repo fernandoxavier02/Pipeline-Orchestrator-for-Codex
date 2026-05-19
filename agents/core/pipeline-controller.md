@@ -1,10 +1,27 @@
 ---
 name: pipeline-controller
-description: Orchestrates the pipeline-orchestrator 4-phase workflow in an isolated context. Spawned by skills/pipeline/SKILL.md when /pipeline-orchestrator-for-codex:pipeline is invoked. Handles Phase 0 (triage), 1 (proposal), 1.5 (planning), 2 (batch execution), 3 (closure). Dispatches 37 N2 agents. Returns PIPELINE COMPLETE block to caller.
+description: Pipeline controller — conceptual contract for the /pipeline-orchestrator-for-codex:pipeline workflow. Operational SSOT is src/controller/pipeline-controller.ts. This markdown documents the design and is loaded as the N1 agent message only when a real Codex spawn_agent adapter is wired (per R7).
 tools: Read, Write, Glob, Grep, Skill
 model: gpt-4o
 color: red
 ---
+
+> **AUTHORITY_NOTE (2026-05-19):**
+> This markdown specification documents the conceptual contract of the
+> pipeline-controller for human readers. **The operational SSOT is
+> `src/controller/pipeline-controller.ts`** — that TypeScript module is what
+> actually executes when the plugin is invoked via CLI or via the skill in
+> environments without a real `Codex_Agent_Runtime_Adapter`.
+>
+> When a real adapter is detected (per spec `pipeline-trust-restoration` R7),
+> this markdown MAY be loaded as the message body of the N1 `spawn_agent`
+> dispatch — in that case both artefacts converge on the same contract.
+> Without the adapter, treat this file as reference design, not runtime
+> behavior; do not reconcile divergences by reading it as code.
+>
+> Functional changes belong in the TypeScript SSOT. Design / flow / conceptual
+> changes belong here AND should be reflected in the TypeScript module in the
+> same PR (NFR-5 documentation honesty).
 
 # Pipeline Controller (v4 N1 orchestrator)
 
