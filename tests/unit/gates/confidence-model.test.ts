@@ -112,6 +112,35 @@ describe("Confidence Model — emulation-aware cap (R2)", () => {
   });
 });
 
+// Post-review regression (C2): intermediate confidence snapshots must reflect
+// the UNION of previously-persisted entries AND the new batch slice — not
+// just the slice — so the R2 cap fires whenever the run as a whole contains
+// any decided_by="system" entry. The cap is implemented in the model and
+// triggered by the caller passing the full union; this test pins the model
+// behavior so a future regression in the caller stays observable.
+describe("C2 regression: cap fires when the UNION of gates contains system entries", () => {
+  it("controller-style call: existing emulated entry + new controller entry → cap applies", () => {
+    const model = createConfidenceModel();
+    const existing = [
+      makeEntry({ decided_by: "system", confidence_impact: 0 }),
+    ];
+    const newSlice = [
+      makeEntry({ decided_by: "controller", confidence_impact: 0 }),
+    ];
+
+    // SIMULATES PRE-C2 BUG: only the new slice is passed → cap does NOT fire.
+    const buggySnapshot = model.apply({ baseScore: 1, gates: newSlice });
+    expect(buggySnapshot.confidenceSource).toBe("real");
+    expect(buggySnapshot.score).toBe(1);
+
+    // POST-C2 BEHAVIOR: union is passed → cap fires.
+    const fixedSnapshot = model.apply({ baseScore: 1, gates: [...existing, ...newSlice] });
+    expect(fixedSnapshot.confidenceSource).toBe("emulated");
+    expect(fixedSnapshot.score).toBeLessThanOrEqual(CONFIDENCE_CAP_THRESHOLD);
+    expect(fixedSnapshot.emulated_entry_count).toBe(1);
+  });
+});
+
 // Property P3 — Confidence Monotonicity
 // For any gate-log G, adding a `decided_by: "system"` entry to G produces a
 // final_score that is ≤ the final_score computed over G alone (never higher).

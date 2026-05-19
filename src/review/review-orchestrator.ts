@@ -65,6 +65,12 @@ function parseDispatchedReviews(dispatch: DispatchResult): ParsedReviewerOutput[
 // the cascade — see src/runtime/strict-resolution.ts).
 export function createReviewOrchestrator(dependencies: {
   runRole?: ReviewDispatcher;
+  /**
+   * @deprecated Post-review (QUAL-002): use `requireRealAgentForRequest`
+   * (lazy resolver) instead. The boolean form is preserved only for legacy
+   * fixtures and will be removed in the next minor bump after callers
+   * migrate.
+   */
   requireRealAgent?: boolean;
   requireRealAgentForRequest?: (request: DispatchRequest) => boolean;
 } = {}) {
@@ -88,9 +94,16 @@ export function createReviewOrchestrator(dependencies: {
       // R3 — resolve requireRealAgent per dispatch using the lazy resolver
       // (or fall back to the legacy boolean). The resolver observes the
       // request so it can apply the same cascade as runtimeRunRole.
+      //
+      // Post-review fix (C1): the probe's `requireRealAgent` field MUST be
+      // undefined, NOT false. The resolver uses `??` (nullish-coalescing),
+      // which only short-circuits on null/undefined. Setting the probe to
+      // `false` here would override tier 1 of the cascade and silently
+      // collapse strictAgents=true to false at the review surface — recreating
+      // the exact Emulation Theatre R3 was supposed to eliminate.
       const requireRealAgentProbe: DispatchRequest = {
         mode: "parallel-emulation",
-        requireRealAgent: false,
+        requireRealAgent: undefined,
         role: "review-orchestrator",
         prompt: "review-orchestrator strict-resolution probe",
         input: {

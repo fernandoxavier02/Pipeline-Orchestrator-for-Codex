@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createGateLog,
   inferDecidedBy,
+  MAX_DETAIL_LENGTH,
   recordGateDecision,
   sanitizeDetail,
 } from "../../../src/state/gate-log.js";
@@ -90,17 +91,40 @@ describe("inferDecidedBy (R1 provenance mapping)", () => {
 });
 
 describe("sanitizeDetail", () => {
-  it("trims detail to 200 chars", () => {
+  it("trims detail to MAX_DETAIL_LENGTH", () => {
     const long = "x".repeat(500);
-    expect(sanitizeDetail(long)).toHaveLength(200);
+    expect(sanitizeDetail(long)).toHaveLength(MAX_DETAIL_LENGTH);
   });
 
   it("strips newlines and carriage returns", () => {
     expect(sanitizeDetail("line1\nline2\r\nline3")).toBe("line1 line2 line3");
   });
 
-  it("preserves short details verbatim (minus newlines)", () => {
+  it("preserves short details verbatim (minus control chars)", () => {
     expect(sanitizeDetail("short detail")).toBe("short detail");
+  });
+
+  // Post-review regression (C3): control chars beyond CR/LF must also be
+  // stripped so the JSONL is safe for line-readers and terminal viewers.
+  it("C3: strips NUL bytes (would otherwise corrupt JSONL line-readers)", () => {
+    expect(sanitizeDetail("before\x00after")).toBe("before after");
+  });
+
+  it("C3: strips tabs and vertical tabs", () => {
+    expect(sanitizeDetail("before\tmid\vafter")).toBe("before mid after");
+  });
+
+  it("C3: collapses runs of mixed control chars into a single space", () => {
+    expect(sanitizeDetail("a\t\n\rb")).toBe("a b");
+  });
+
+  it("C3: strips ANSI escape sequences (would otherwise inject terminal control)", () => {
+    // ESC = \x1B; the sequence \x1B[2J clears the screen in most terminals.
+    expect(sanitizeDetail("approved\x1B[2J")).toBe("approved [2J");
+  });
+
+  it("C3: strips C1 control range (\\x7F-\\x9F)", () => {
+    expect(sanitizeDetail("a\x7Fb\x9Fc")).toBe("a b c");
   });
 });
 
@@ -142,7 +166,7 @@ describe("gateLog.record (R1 provenance-driven write)", () => {
     expect(entry.decided_by).toBe("controller");
   });
 
-  it("sanitizes detail (trim + strip newlines) inside record", async () => {
+  it("sanitizes detail (truncate to MAX_DETAIL_LENGTH + strip control chars) inside record", async () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-gates-sanitize-"));
     const log = createGateLog(root);
 
@@ -157,7 +181,9 @@ describe("gateLog.record (R1 provenance-driven write)", () => {
 
     const raw = readFileSync(join(root, "gate-decisions.jsonl"), "utf8");
     const entry = JSON.parse(raw.trim());
-    expect(entry.detail.length).toBeLessThanOrEqual(200);
+    // Use the exported constant — strict equality pins the contract instead
+    // of the prior weak `<= 200` bound (QUAL-005).
+    expect(entry.detail).toHaveLength(MAX_DETAIL_LENGTH);
     expect(entry.detail).not.toContain("\n");
   });
 });

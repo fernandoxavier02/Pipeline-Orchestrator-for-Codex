@@ -16,8 +16,21 @@
 import type { DispatchRequest } from "../dispatcher/dispatcher-types.js";
 
 export function isOperationalPipelineDispatch(request: DispatchRequest): boolean {
-  const requestText = typeof request.input?.request === "string"
-    ? request.input.request.trim()
+  const rawRequestField = request.input?.request;
+  // Post-review fix (SEC-004): when `input.request` is present but NOT a
+  // string (a buggy caller, a deserialized object, or an adversarial agent
+  // response), the previous version silently treated it as empty and returned
+  // false — a confused-deputy downgrade that routed operational dispatches
+  // through emulation. Now we log a warning to stderr so the caller bug is
+  // observable. Behavior unchanged when the field is absent or a string.
+  if (rawRequestField !== undefined && typeof rawRequestField !== "string") {
+    process.stderr.write(
+      `[strict-resolution] isOperationalPipelineDispatch: request.input.request is ${typeof rawRequestField} (expected string) — treating as non-operational.\n`,
+    );
+    return false;
+  }
+  const requestText = typeof rawRequestField === "string"
+    ? rawRequestField.trim()
     : "";
   if (!requestText.startsWith("/pipeline-orchestrator-for-codex:pipeline")) {
     return false;

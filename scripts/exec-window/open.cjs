@@ -46,9 +46,14 @@ function readWindow(windowPath) {
 // entry to stderr. Callers (writeWindowAtomic) MUST invoke this before
 // rename/write so a pre-created symlink at the target path cannot be exploited
 // to overwrite arbitrary files outside .codex/pipeline/sessions/.
-function rejectSymlink(targetPath) {
+//
+// `lstatFn` parameter (post-review C4): the production caller does not pass
+// it (defaults to fs.lstatSync). Tests inject their own implementation to
+// exercise the symlink-refused branch cross-platform without needing OS-level
+// symlink creation primitives — see tests/unit/exec-window-symlink.test.ts.
+function rejectSymlink(targetPath, lstatFn = fs.lstatSync) {
   try {
-    const stat = fs.lstatSync(targetPath);
+    const stat = lstatFn(targetPath);
     if (stat.isSymbolicLink()) {
       const err = new Error(
         `SymlinkRefusedError: refusing to write over symbolic link at ${targetPath}`,
@@ -92,6 +97,10 @@ function handle(input) {
   const purpose = input && input.purpose;
   const spawningAgent = input && input.spawning_agent;
   const ttlInput = Number(input && input.ttl_seconds);
+  // Post-review fix (QUAL-004): single TTL boundary check. The previous
+  // version had a second `if (ttl > MAX_TTL)` after the bounds-bound
+  // assignment, which was unreachable (the first check exits the process if
+  // ttlInput > MAX_TTL, and ttl is bounded to ttlInput or DEFAULT_TTL).
   if (ttlInput > MAX_TTL) {
     emitError(`open.cjs: ttl_seconds ${ttlInput} exceeds MAX_TTL=${MAX_TTL}`);
   }
@@ -106,9 +115,6 @@ function handle(input) {
   }
   if (!spawningAgent || typeof spawningAgent !== 'string') {
     emitError('open.cjs: spawning_agent is required (string)');
-  }
-  if (ttl > MAX_TTL) {
-    emitError(`open.cjs: ttl_seconds ${ttl} exceeds MAX_TTL=${MAX_TTL}`);
   }
 
   const windowPath = execWindowPath(process.cwd(), sessionId);
@@ -136,16 +142,29 @@ function handle(input) {
   });
 }
 
-let buffer = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => { buffer += chunk; });
-process.stdin.on('end', () => {
-  let parsed = {};
-  const raw = (buffer || '').trim();
-  if (raw) {
-    try { parsed = JSON.parse(raw); } catch {
-      emitError('open.cjs: malformed JSON on stdin');
+// Only attach the stdin listener when invoked as a script (not when
+// require()'d by tests). Tests import { rejectSymlink } directly to exercise
+// the symlink guard cross-platform without needing the OS-level symlink
+// creation primitives (post-review fix C4).
+if (require.main === module) {
+  let buffer = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => { buffer += chunk; });
+  process.stdin.on('end', () => {
+    let parsed = {};
+    const raw = (buffer || '').trim();
+    if (raw) {
+      try { parsed = JSON.parse(raw); } catch {
+        emitError('open.cjs: malformed JSON on stdin');
+      }
     }
-  }
-  handle(parsed);
-});
+    handle(parsed);
+  });
+}
+
+module.exports = {
+  rejectSymlink,
+  writeWindowAtomic,
+  execWindowPath,
+  encodeSessionId,
+};

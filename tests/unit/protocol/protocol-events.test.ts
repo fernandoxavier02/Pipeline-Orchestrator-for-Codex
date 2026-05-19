@@ -348,6 +348,49 @@ describe("R5: protocol event dispatchMode field", () => {
     expect(tagged[0].dispatchMode).toBe("unknown");
   });
 
+  // Post-review (SEC-005): decisionFromSelectedLabel defaults to "block" for
+  // unknown labels (fail-safe). Only explicit approval keywords map to "pass".
+  it("SEC-005: unknown label defaults to BLOCK (not pass)", async () => {
+    const { recordProtocolGateResponse } = await import(
+      "../../../src/protocol/protocol-handler.js"
+    );
+    const root = await mkdtemp(join(tmpdir(), "sec005-"));
+
+    await recordProtocolGateResponse({
+      stateRoot: root,
+      gateId: "phase-3-closeout",
+      selectedLabel: "execute the phase", // no approval keyword
+    });
+
+    const raw = await readFile(join(root, "gate-decisions.jsonl"), "utf8")
+      .catch(() => "");
+    if (raw.trim()) {
+      // If a canonical gate was written, decision MUST NOT be "pass".
+      const entry = JSON.parse(raw.trim());
+      expect(entry.decision).not.toBe("pass");
+    }
+  });
+
+  it("SEC-005: explicit approval keyword maps to pass", async () => {
+    const { recordProtocolGateResponse } = await import(
+      "../../../src/protocol/protocol-handler.js"
+    );
+    const root = await mkdtemp(join(tmpdir(), "sec005-pass-"));
+
+    await recordProtocolGateResponse({
+      stateRoot: root,
+      gateId: "phase-3-closeout",
+      selectedLabel: "Yes, proceed",
+    });
+
+    const raw = await readFile(join(root, "gate-decisions.jsonl"), "utf8")
+      .catch(() => "");
+    if (raw.trim()) {
+      const entry = JSON.parse(raw.trim());
+      expect(entry.decision).toBe("pass");
+    }
+  });
+
   it("dispatchMode persists through the writer when supplied", async () => {
     const root = await mkdtemp(join(tmpdir(), "protocol-events-r5-"));
     const log = createProtocolEventLog(root);

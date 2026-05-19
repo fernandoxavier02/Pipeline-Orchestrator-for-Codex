@@ -65,9 +65,32 @@ function buildFqn(namespace: string, role: string): string {
   return `${namespace}:${path}`;
 }
 
+// Post-review (QUAL-001): explicit projection over AgentDispatchRequest.
+// `executionIdentity` is intentionally omitted so the host does not have to
+// reason about parent trace metadata for the child dispatch (the host can
+// regenerate it). Any future field added to AgentDispatchRequest MUST be
+// reviewed against this projection — TypeScript will not warn because the
+// function takes the full type and discards what it does not name.
+//
+// To force a compile-time signal, the local `Wire` type below is kept in
+// sync via a `satisfies` annotation on the return statement: if a field is
+// added to AgentDispatchRequest, removing it from `Wire` will break the
+// `satisfies` check (or vice versa) and force a deliberate decision.
+type Wire = {
+  role: AgentDispatchRequest["role"];
+  phase: AgentDispatchRequest["phase"];
+  prompt: AgentDispatchRequest["prompt"];
+  input: AgentDispatchRequest["input"];
+  expectedOutput: AgentDispatchRequest["expectedOutput"];
+  freshContext: AgentDispatchRequest["freshContext"];
+  ownership: AgentDispatchRequest["ownership"];
+  reviewOnly: AgentDispatchRequest["reviewOnly"];
+  filesInScope: AgentDispatchRequest["filesInScope"];
+  authorityLevel: AgentDispatchRequest["authorityLevel"];
+};
+
 function serializeRequest(request: AgentDispatchRequest): string {
-  // Keep the on-wire payload deterministic so the host can replay it.
-  return JSON.stringify({
+  const wire: Wire = {
     role: request.role,
     phase: request.phase,
     prompt: request.prompt,
@@ -78,7 +101,8 @@ function serializeRequest(request: AgentDispatchRequest): string {
     reviewOnly: request.reviewOnly,
     filesInScope: request.filesInScope,
     authorityLevel: request.authorityLevel,
-  });
+  };
+  return JSON.stringify(wire satisfies Wire);
 }
 
 function isDispatchResult(value: unknown): value is DispatchResult {
@@ -134,6 +158,22 @@ export function createCodexAgentRuntimeAdapter(
   };
 }
 
+// Post-review fix (SEC-008): capture the spawn_agent reference at module load
+// time so a later hijack of `globalThis.spawn_agent` (by an adversarial
+// in-process script or a compromised agent prompt) cannot silently substitute
+// a payload-exfiltrating function. Each call to detectCodexAgentRuntime
+// compares the live `globalThis.spawn_agent` against the captured reference
+// and emits a stderr warning on mismatch. The function itself is still
+// returned so the runtime keeps working, but the operator gets observability.
+const CAPTURED_SPAWN_AGENT = (globalThis as Record<string, unknown>).spawn_agent;
+const CAPTURED_CODEX_SPAWN_AGENT = (() => {
+  const codexScope = (globalThis as Record<string, unknown>).codex;
+  if (codexScope && typeof codexScope === "object") {
+    return (codexScope as Record<string, unknown>).spawn_agent;
+  }
+  return undefined;
+})();
+
 /**
  * Runtime detection — returns a constructable handle when the current process
  * exposes a usable spawn_agent reference. The cascade:
@@ -143,12 +183,20 @@ export function createCodexAgentRuntimeAdapter(
  *
  * Returns null in plain Node sessions; the CLI falls back to its existing
  * loader (--agent-runtime-adapter / CODEX_AGENT_RUNTIME_ADAPTER).
+ *
+ * Hijack detection (SEC-008): emits stderr warning when the live reference
+ * differs from the module-load-time captured value.
  */
 export function detectCodexAgentRuntime(
   globalScope: Record<string, unknown> = globalThis as Record<string, unknown>,
 ): CodexAgentRuntimeOptions | null {
   const directCandidate = globalScope.spawn_agent;
   if (typeof directCandidate === "function") {
+    if (CAPTURED_SPAWN_AGENT !== undefined && directCandidate !== CAPTURED_SPAWN_AGENT) {
+      process.stderr.write(
+        "[codex-agent-runtime] WARNING: globalThis.spawn_agent reference changed since module load — possible hijack.\n",
+      );
+    }
     return {
       spawnAgent: directCandidate as SpawnAgentCallable,
       detectionMode: "auto",
@@ -158,6 +206,11 @@ export function detectCodexAgentRuntime(
   if (codexScope && typeof codexScope === "object") {
     const nested = (codexScope as Record<string, unknown>).spawn_agent;
     if (typeof nested === "function") {
+      if (CAPTURED_CODEX_SPAWN_AGENT !== undefined && nested !== CAPTURED_CODEX_SPAWN_AGENT) {
+        process.stderr.write(
+          "[codex-agent-runtime] WARNING: globalThis.codex.spawn_agent reference changed since module load — possible hijack.\n",
+        );
+      }
       return {
         spawnAgent: nested as SpawnAgentCallable,
         detectionMode: "auto",

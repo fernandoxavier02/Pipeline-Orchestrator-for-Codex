@@ -113,6 +113,11 @@ function normalizeReviewerResult(input: {
 // `requireRealAgent` is kept as legacy backward-compat for fixtures.
 export function createFinalAdversarialOrchestrator(dependencies: {
   runRole?: FinalReviewDispatcher;
+  /**
+   * @deprecated Post-review (QUAL-002): use `requireRealAgentForRequest`
+   * instead. Boolean form is preserved only for legacy fixtures and will be
+   * removed after migration.
+   */
   requireRealAgent?: boolean;
   requireRealAgentForRequest?: (request: DispatchRequest) => boolean;
 } = {}) {
@@ -153,10 +158,13 @@ export function createFinalAdversarialOrchestrator(dependencies: {
         },
       ];
 
-      // R3 — resolve requireRealAgent per dispatch.
+      // R3 — resolve requireRealAgent per dispatch. Post-review fix (C1):
+      // probe's requireRealAgent MUST be undefined so the `??` cascade falls
+      // through to options.strictAgents + isOperationalPipelineDispatch. A
+      // hardcoded `false` here silently overrides tier 1 of the cascade.
       const requireRealAgentProbe: DispatchRequest = {
         mode: "parallel-emulation",
-        requireRealAgent: false,
+        requireRealAgent: undefined,
         role: "final-adversarial-orchestrator",
         prompt: "final-adversarial-orchestrator strict-resolution probe",
         input: { files: [...files], changedDomains: [...changedDomains] },

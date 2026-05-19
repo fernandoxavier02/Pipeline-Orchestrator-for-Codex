@@ -116,6 +116,31 @@ describe("R4: strictAgents=undefined production-default path", () => {
     });
     expect(resolveRequireRealAgent({ strictAgents: false }, request)).toBe(true);
   });
+
+  // Post-review regression (C1): the review/final-adversarial orchestrators
+  // build a synthetic "probe" request to feed the resolver. If the probe sets
+  // `requireRealAgent: false`, the `??` cascade short-circuits at tier 1 and
+  // silently collapses strictAgents=true to false at the review surface. The
+  // fix is to leave the probe's requireRealAgent as `undefined` so the cascade
+  // flows naturally.
+  it("C1 regression: probe with requireRealAgent=undefined honors strictAgents=true", () => {
+    const probe = makeDispatchRequest({
+      requireRealAgent: undefined as unknown as boolean,
+      input: { request: "review-orchestrator strict-resolution probe" },
+    });
+    expect(resolveRequireRealAgent({ strictAgents: true }, probe)).toBe(true);
+  });
+
+  it("C1 anti-regression: hardcoded requireRealAgent=false WOULD bypass strictAgents (tombstone)", () => {
+    // This test exists to document the pre-C1 bug so any future revert is
+    // caught immediately. If the cascade ever changes to treat `false` as
+    // nullish, this test will start failing — that is the intended signal.
+    const buggyProbe = makeDispatchRequest({
+      requireRealAgent: false,
+      input: { request: "/pipeline-orchestrator-for-codex:pipeline implement X" },
+    });
+    expect(resolveRequireRealAgent({ strictAgents: true }, buggyProbe)).toBe(false);
+  });
 });
 
 // Property P2: Cascade Equivalence (R3 AC 3.1, 3.2 + R7 AC 7.4)
@@ -135,7 +160,7 @@ describe("P2: Cascade Equivalence (R3)", () => {
     };
   }
 
-  it("cascade is total and pure (same inputs → same output) across 200 random cases", () => {
+  it("cascade is total, pure, and matches the documented precedence across 200 random cases", () => {
     const rng = pseudoRandom(0x1234abcd);
     const prompts = [
       "/pipeline-orchestrator-for-codex:pipeline build",
@@ -147,6 +172,7 @@ describe("P2: Cascade Equivalence (R3)", () => {
     ];
 
     let mismatches = 0;
+    let oracleViolations = 0;
     for (let iteration = 0; iteration < 200; iteration += 1) {
       const pick = prompts[Math.floor(rng() * prompts.length)];
       const strictPick = rng();
@@ -170,8 +196,19 @@ describe("P2: Cascade Equivalence (R3)", () => {
       const second = resolveRequireRealAgent(options, request);
       const third = resolveRequireRealAgent(options, request);
       if (first !== second || second !== third) mismatches += 1;
+
+      // QUAL-008 strengthening: oracle that recomputes the documented cascade
+      // locally and asserts the implementation matches. Pre-C1, this oracle
+      // would have flagged 0 mismatches because both implementations had the
+      // same bug; post-C1, the oracle pins the contract.
+      const expected =
+        request.requireRealAgent
+        ?? options.strictAgents
+        ?? isOperationalPipelineDispatch(request);
+      if (first !== expected) oracleViolations += 1;
     }
 
     expect(mismatches).toBe(0);
+    expect(oracleViolations).toBe(0);
   });
 });

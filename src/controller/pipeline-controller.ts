@@ -1059,9 +1059,34 @@ async function persistGateAndConfidence(
   baseScore: number,
 ) {
   const confidenceModel = createConfidenceModel();
+
+  // Post-review fix (C2 / R2 honesty): the confidence snapshot MUST be
+  // computed over the union of previously persisted entries AND the new
+  // entries about to be appended — not just the new slice. Otherwise the
+  // intermediate snapshot saved to confidence-score.yaml mid-run loses the
+  // R2 cap whenever prior emulated entries are not part of the current
+  // batch. The closeout path in src/index.ts already does the union (via
+  // resolveEffectiveGateLog); this brings the per-batch path in line.
+  let existingEntries: PersistedGateLogEntry[] = [];
+  try {
+    if (runtime?.stores?.stateAdapter) {
+      // StateAdapter exposes a loosely-typed hardness (string) but the
+      // persisted data is always written via the strict-enum writer, so the
+      // cast is sound for the cap calculation.
+      existingEntries = (await runtime.stores.stateAdapter.listGateDecisions()) as PersistedGateLogEntry[];
+    } else if (runtime?.stores?.gateLog?.list) {
+      existingEntries = (await runtime.stores.gateLog.list()) as PersistedGateLogEntry[];
+    }
+  } catch {
+    // Best-effort: if reading the log fails (e.g. first write of the run,
+    // no file yet), fall back to the slice. The cap can only under-estimate
+    // emulation, never over-estimate — never inflates the score.
+    existingEntries = [];
+  }
+
   const snapshot = confidenceModel.apply({
     baseScore,
-    gates: entries,
+    gates: [...existingEntries, ...entries],
   });
 
   // Use StateAdapter when available (preferred abstraction), fall back to raw stores

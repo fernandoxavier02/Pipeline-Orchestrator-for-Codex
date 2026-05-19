@@ -104,10 +104,13 @@ export function createFinalAdversarialOrchestrator(dependencies = {}) {
                     prompt: "Perform a final adversarial quality review from fresh context using only the provided scope.",
                 },
             ];
-            // R3 — resolve requireRealAgent per dispatch.
+            // R3 — resolve requireRealAgent per dispatch. Post-review fix (C1):
+            // probe's requireRealAgent MUST be undefined so the `??` cascade falls
+            // through to options.strictAgents + isOperationalPipelineDispatch. A
+            // hardcoded `false` here silently overrides tier 1 of the cascade.
             const requireRealAgentProbe = {
                 mode: "parallel-emulation",
-                requireRealAgent: false,
+                requireRealAgent: undefined,
                 role: "final-adversarial-orchestrator",
                 prompt: "final-adversarial-orchestrator strict-resolution probe",
                 input: { files: [...files], changedDomains: [...changedDomains] },

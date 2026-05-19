@@ -237,10 +237,17 @@ function canonicalGateForGateId(gateId: string) {
   return undefined;
 }
 
+// Post-review fix (SEC-005): the previous default was `"pass"` for any label
+// that did not match a block/skip/partial keyword. That inverts the fail-safe
+// principle for gate decisions — a compromised agent could craft a label
+// outside the known keyword set and silently forge a gate-pass entry. The
+// new default is `"block"`: only explicit approval keywords (yes / approve /
+// continue / etc.) map to `"pass"`. Unknown labels are treated as a block
+// so the gate stays closed until the user confirms.
 function decisionFromSelectedLabel(selectedLabel: string) {
   const normalized = selectedLabel.toLowerCase();
-  if (/\b(no|nao|não|reject|rejeitar|block|bloquear|abort|abortar|go no|no-go)\b/u.test(normalized)) {
-    return "block" as const;
+  if (/\b(yes|sim|approve|aprovar|approved|continue|continuar|go|proceed|prosseguir|ok|confirm|confirmar)\b/u.test(normalized)) {
+    return "pass" as const;
   }
   if (/\b(skip|pular)\b/u.test(normalized)) {
     return "skip" as const;
@@ -248,7 +255,9 @@ function decisionFromSelectedLabel(selectedLabel: string) {
   if (/\b(partial|conditional|condicional|ajust|revise|revisar)\b/u.test(normalized)) {
     return "partial" as const;
   }
-  return "pass" as const;
+  // Default block: includes the prior block keywords (no / reject / abort /
+  // no-go) and any unrecognised label (fail-safe).
+  return "block" as const;
 }
 
 export async function recordProtocolGateResponse(input: {

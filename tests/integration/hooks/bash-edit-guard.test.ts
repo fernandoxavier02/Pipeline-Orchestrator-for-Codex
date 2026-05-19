@@ -111,4 +111,32 @@ describe("R12 — Bash hook behavior", () => {
     const output = JSON.parse(result.stdout);
     expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
   });
+
+  // Post-review regression (SEC-007): additional Bash write primitives that
+  // the original matcher missed.
+  const SEC007_DENY_COMMANDS = [
+    "dd if=/dev/zero of=/etc/important bs=1 count=1",
+    'python3 -c "open(\'/etc/important\',\'w\').write(\'x\')"',
+    "truncate -s 0 /etc/important",
+    "install -m 755 src /etc/important",
+    "ln -sf /etc/passwd /etc/important",
+    "cat > /etc/important << EOF\\nx\\nEOF",
+    "rsync --delete src/ /etc/dest/",
+  ];
+
+  for (const command of SEC007_DENY_COMMANDS) {
+    it(`SEC-007: denies bash write primitive ${JSON.stringify(command).slice(0, 60)}`, () => {
+      const cwd = mkdtempSync(join(tmpdir(), "pipeline-bash-edit-guard-"));
+      withActiveSession(cwd);
+
+      const result = runHook(cwd, {
+        tool_name: "Bash",
+        tool_input: { command },
+      });
+
+      expect(result.status).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    });
+  }
 });

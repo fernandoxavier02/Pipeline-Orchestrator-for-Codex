@@ -31,8 +31,18 @@ export interface RecordGateInput {
   timestamp?: string;
 }
 
-const MAX_DETAIL_LENGTH = 200;
+// Exported so tests can pin the contract instead of duplicating the literal.
+// Post-review (QUAL-005): hardcoding 200 in tests let weak `<=` assertions
+// pass against the literal even if truncation produced an empty string.
+export const MAX_DETAIL_LENGTH = 200;
 
+// Post-review note (ARCH-003): `source: "controller"` and
+// `source: "dispatch" + dispatchMode: "real"` both collapse to
+// `decided_by: "controller"` in the persisted audit log. This is intentional
+// for v0.5.0 (the historical schema reserves `"controller"` for either case)
+// but it means a future "per-agent blame tracking" feature would need a
+// schema migration to add a distinct `"agent"` value. Document the collapse
+// here so the constraint is visible to future maintainers.
 export function inferDecidedBy(provenance: Provenance): DecidedBy {
   switch (provenance.source) {
     case "user":
@@ -53,8 +63,16 @@ export function inferDecidedBy(provenance: Provenance): DecidedBy {
   }
 }
 
+// Post-review fix (C3): strip ALL ASCII control characters, not just CR/LF.
+// Tabs (`\t`), NUL bytes (`\x00`), vertical tab (`\v`), and the C1 range
+// (`\x7F-\x9F`) plus ANSI escape sequences (which begin with `\x1B`) can
+// corrupt JSONL line parsing in downstream tooling and inject terminal
+// control sequences into operator log viewers. Replace any run of control
+// characters with a single space, then truncate to MAX_DETAIL_LENGTH.
+const CONTROL_CHAR_RUN = /[\x00-\x1F\x7F-\x9F]+/g;
+
 export function sanitizeDetail(detail: string): string {
-  return detail.replace(/[\r\n]+/g, " ").slice(0, MAX_DETAIL_LENGTH);
+  return detail.replace(CONTROL_CHAR_RUN, " ").slice(0, MAX_DETAIL_LENGTH);
 }
 
 // Simple process-level mutex for concurrent append operations.
@@ -91,8 +109,17 @@ export function createGateLog(root: string) {
       }),
     };
 
-    await mkdir(root, { recursive: true });
+    // Post-review fix (SEC-003): mkdir must run INSIDE the mutex. The previous
+    // ordering ran mkdir before acquiring the lock, which left a window where
+    // two concurrent in-process callers (or a single caller racing with the
+    // first write of a new run) could both observe an absent directory and
+    // attempt creation in parallel. Cross-process safety (multiple CLI
+    // invocations against the same state root) is still NOT covered by this
+    // mutex — that scenario is unsupported and would require an OS-level
+    // advisory lock. See AGENTS.md / pipeline.local.md for the documented
+    // single-process constraint.
     await withAppendLock(async () => {
+      await mkdir(root, { recursive: true });
       await appendFile(file, `${JSON.stringify(enriched)}\n`, "utf8");
     });
   }

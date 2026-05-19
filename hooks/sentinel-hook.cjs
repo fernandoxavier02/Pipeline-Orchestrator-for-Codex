@@ -312,8 +312,14 @@ function handleInput(raw) {
     return process.exit(0);
   }
 
-  // 12. Check if this is a known alias or partial match
-  if (expectedValues.some((expected) => expected && fullAgentType.toLowerCase().endsWith(expected))) {
+  // 12. Check if this is a known alias or partial match.
+  // Post-review fix (SEC-002): match against the leaf-only `target` (already
+  // case-folded) instead of `fullAgentType`. The previous version compared
+  // against the full FQN and allowed ANY FQN whose tail happened to end with
+  // an expected token — including cross-namespace bypasses like
+  // `attacker-plugin:core:information-gate`. Restricting to the leaf closes
+  // the bypass while preserving the legitimate use case of leaf-name aliases.
+  if (expectedValues.some((expected) => expected && target.endsWith(expected))) {
     recordHookEvent({
       hook: 'sentinel',
       event: 'PreToolUse',
@@ -325,7 +331,15 @@ function handleInput(raw) {
     return process.exit(0); // suffix match → allow
   }
 
-  // 13. DIVERGENCE — deny with reason
+  // 13. DIVERGENCE — deny with reason.
+  // Post-review fix (SEC-001): the `state_file_path` MUST NOT appear in the
+  // user-visible reason (the contract docstring on `SENTINEL_SANITIZED_REASON`
+  // says paths stay in stderr only). Operator visibility is preserved via
+  // stderr; the LLM-visible reason carries only the agent name + expected
+  // sequence + recovery instruction.
+  process.stderr.write(
+    `[sentinel-hook] divergence: attempted=${agentName} expected="${normalizedState.expectedNext.join(', ')}" state_file_path=${stateFilePath}\n`,
+  );
   const output = {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
@@ -338,7 +352,6 @@ function handleInput(raw) {
         `with mode SEQUENCE_VALIDATION to diagnose and auto-correct.\n` +
         `Pass these parameters in the prompt:\n` +
         `  - mode: SEQUENCE_VALIDATION\n` +
-        `  - state_file_path: ${stateFilePath}\n` +
         `  - trigger: hook_deny\n` +
         `  - deny_reason: Attempted "${agentName}" but expected "${normalizedState.expectedNext.join(', ')}"`
     }
@@ -366,6 +379,15 @@ process.stdin.on('end', () => {
   // discovery, a normalization crash on malformed state) MUST surface as a
   // deny with the sanitized canonical reason, not a non-zero exit that the
   // Codex host could treat as "allow on crash".
+  //
+  // Post-review note (ARCH-006): handleInput contains a circuit-breaker call
+  // `return process.exit(2)` (step 10). process.exit is non-throwing — it
+  // terminates the process before this catch can intercept it, so the
+  // circuit-breaker hard-block (exit 2) still fires correctly. If
+  // handleInput is ever refactored to *throw* a CircuitBreaker error instead
+  // of calling process.exit(2) directly, this outer catch would convert that
+  // throw into deny+exit(0) and silently downgrade the hard block. Any such
+  // refactor MUST also move the circuit-breaker check outside this catch.
   try {
     handleInput(input);
   } catch (err) {

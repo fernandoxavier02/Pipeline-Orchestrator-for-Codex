@@ -11,6 +11,17 @@ import { resolveValidatedRoot } from "./path-validation.js";
 // `strictAgents` so the persisted session.json carries the value across the
 // resume boundary. Legacy sessions (no field) parse fine and fall back to the
 // cascade — see resolveRequireRealAgent (src/runtime/strict-resolution.ts).
+//
+// Post-review note (ARCH-005): coupling the persistence layer to a runtime
+// concern is a known design trade-off. The cleaner alternative is a decorator
+// pattern (SessionStoreWithStrictAgents) or explicit merge at the save site.
+// The current shape is acceptable because (a) only ONE store per root is
+// active at a time in practice and (b) the store's save method preserves the
+// session's own `strictAgents` over the default (see merge logic below) so
+// caller-provided values are never overridden. If two stores ever target the
+// same root with conflicting defaults, the LAST save wins — document this as
+// an unsupported configuration in operational docs rather than fixing it
+// architecturally for v0.5.0.
 export interface SessionStoreDefaults {
   strictAgents?: boolean;
 }

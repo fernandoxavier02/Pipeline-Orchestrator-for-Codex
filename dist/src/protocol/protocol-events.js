@@ -51,6 +51,11 @@ export const protocolBlockSchema = z.discriminatedUnion("kind", [
 // auditor reading protocol-events.jsonl can determine whether each dispatch
 // went through a real spawn_agent runtime or fell back to the local emulation
 // path. Optional for backward-compat with legacy logs (NFR-1).
+//
+// Post-review note (QUAL-006): `"unknown"` is intentionally never produced
+// by the runtime — it exists as a downstream-reader sentinel for legacy
+// entries that pre-date this field. The R5 AC 5.5 spec text describes this
+// consumer-side tagging.
 export const dispatchModeSchema = z.enum(["real", "emulated", "unknown"]);
 export const protocolEventSchema = z.object({
     event_id: z.string().min(1),

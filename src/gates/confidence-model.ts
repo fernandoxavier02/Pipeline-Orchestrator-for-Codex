@@ -25,6 +25,11 @@ import type { GateHardness } from "./gate-types.js";
 // sliding formula: any emulation entry caps the run at 0.5.
 export const CONFIDENCE_CAP_THRESHOLD = 0.5;
 
+// Post-review note (QUAL-006): the `"unknown"` variant is intentionally never
+// produced by the runtime. It exists as a schema-forward sentinel for
+// downstream readers of legacy confidence-score.yaml files that pre-date the
+// R2 honesty field. Do NOT add a runtime code path that emits `"unknown"`;
+// doing so would corrupt the R2 cap invariant.
 export type ConfidenceSource = "real" | "emulated" | "unknown";
 
 export interface ConfidenceGateEntry {

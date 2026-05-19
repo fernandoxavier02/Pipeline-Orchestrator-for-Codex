@@ -472,30 +472,39 @@ async function loadCloseoutSession(input: {
   }
 }
 
-export function createPipelineRuntime(options: RuntimeOptions) {
-  // R7 — auto-detect a Codex spawn_agent bridge on the global scope. When an
-  // explicit options.agentRuntime is passed it wins; otherwise we try the
-  // native adapter detector. When a detected adapter exists AND the caller did
-  // NOT pin strictAgents, default it to true (R7 AC 7.2). When the caller
-  // explicitly opts out (strictAgents=false) with a detected adapter we emit a
-  // one-time warning so the operator knows they have opted into emulation
-  // (R7 AC 7.5).
-  if (!options.agentRuntime) {
-    const detected = detectCodexAgentRuntime();
-    if (detected) {
-      options = {
-        ...options,
-        agentRuntime: createCodexAgentRuntimeAdapter(detected),
-        strictAgents: options.strictAgents ?? true,
-      };
-      if (options.strictAgents === false) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          "[trust-restoration] Codex adapter detected but strictAgents=false; emulation path active.",
-        );
-      }
-    }
+// R7 + ARCH-004 — pure helper that resolves the effective RuntimeOptions
+// (adapter auto-detection + strictAgents defaulting). Exported so tests and
+// future callers can probe the bootstrap logic without instantiating the
+// full runtime. Never mutates its input.
+export function resolveRuntimeOptions(input: RuntimeOptions): RuntimeOptions {
+  if (input.agentRuntime) {
+    return input;
   }
+  const detected = detectCodexAgentRuntime();
+  if (!detected) {
+    return input;
+  }
+  const next: RuntimeOptions = {
+    ...input,
+    agentRuntime: createCodexAgentRuntimeAdapter(detected),
+    strictAgents: input.strictAgents ?? true,
+  };
+  if (input.strictAgents === false) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[trust-restoration] Codex adapter detected but strictAgents=false; emulation path active.",
+    );
+  }
+  return next;
+}
+
+export function createPipelineRuntime(options: RuntimeOptions) {
+  // Post-review fix (ARCH-004): adapter detection extracted to a pure
+  // resolveRuntimeOptions helper so the factory body does not mutate its
+  // parameter in-place. Same semantics, but the caller's reference is now
+  // guaranteed to be untouched and the bootstrap logic is testable in
+  // isolation.
+  options = resolveRuntimeOptions(options);
 
   const config = loadPipelineConfig(options.cwd);
   const bundledPromptRoot = fileURLToPath(new URL("../", import.meta.url));

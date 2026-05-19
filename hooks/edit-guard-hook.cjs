@@ -24,15 +24,29 @@ const { recordHookEvent } = require('./hook-events.cjs');
 const PROTECTED_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash']);
 const ALLOWED_PATHS = ['.codex', 'pipeline-runs'];
 
-// Bash command patterns that modify files outside allowed paths
+// Bash command patterns that modify files outside allowed paths.
+// Post-review (SEC-007): broadened to cover write primitives the original
+// list missed — dd, install, rsync, ln -s, truncate, heredoc, and language
+// runtimes that open files for write.
 const BASH_FILE_MODIFYING_PATTERNS = [
   // Redirections (zero or more whitespace after operator)
   />[>]?\s*/,
-  /\|[\s]*tee/,
+  /\|[\s]*tee\b/,
   // File-modifying commands
   /\b(rm|rmdir|mv|cp|chmod|chown|touch|mkdir)\b/,
   /\bsed\b.*\s-i/,
   /\bawk\b.*>/,
+  // SEC-007 additions
+  /\bdd\b.*\bof=/,                // dd of=<path>
+  /\binstall\b/,                  // install -m 755 src dest
+  /\brsync\b.*--delete/,          // rsync --delete dest/
+  /\btruncate\b/,                 // truncate -s 0 <path>
+  /\bln\b\s+(-[a-zA-Z]+\s+)*-[a-zA-Z]*s/, // ln -s, ln -sf, ln -fs
+  /<<\s*['"]?[A-Za-z_]/,          // heredoc start (`<< EOF`, `<<'EOF'`, etc.)
+  // Language runtimes opening files for write
+  /\bpython3?\b.*\bopen\s*\([^)]*['"]w/,
+  /\bperl\b.*\bopen\s*\(.*['"]>/,
+  /\bnode\b.*\bwriteFileSync/,
 ];
 
 function bashCommandModifiesFiles(command) {

@@ -77,6 +77,41 @@ describe("sentinel hook", () => {
     );
   });
 
+  // Post-review regression (SEC-001): divergence branch MUST NOT leak the
+  // state_file_path into the user-visible permissionDecisionReason. Path
+  // remains in stderr only.
+  it("SEC-001: divergence branch does not leak state_file_path into user-visible reason", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeRuntimeSentinelState(cwd, ["expected-next-agent"]);
+
+    const result = runSentinelHook(cwd, "pipeline-orchestrator-for-codex:core:diverging-agent");
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("SENTINEL DIVERGENCE");
+    // The path MUST NOT appear in the LLM-visible reason.
+    expect(output.hookSpecificOutput.permissionDecisionReason).not.toContain(".codex");
+    expect(output.hookSpecificOutput.permissionDecisionReason).not.toContain("sentinel-state.json");
+    expect(output.hookSpecificOutput.permissionDecisionReason).not.toContain(cwd);
+  });
+
+  // Post-review (SEC-002): the suffix-match check is now scoped to the leaf
+  // (`target`) instead of the full FQN (`fullAgentType`). For realistic input
+  // shapes the namespace prefix check (line 144) already shields against
+  // cross-namespace bypass, so this is a defense-in-depth tightening. This
+  // test pins the legitimate suffix-alias case to ensure the narrowing did
+  // not regress allowed dispatches.
+  it("SEC-002: leaf-scoped suffix matching still allows a legitimate alias", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    // Expected token is a suffix-substring of the actual leaf.
+    writeRuntimeSentinelState(cwd, ["gate"]);
+
+    const result = runSentinelHook(cwd, "pipeline-orchestrator-for-codex:core:information-gate");
+    expect(result.status).toBe(0);
+    // No JSON output means silent allow (default exit-0 with empty stdout).
+    expect(result.stdout.trim()).toBe("");
+  });
+
   it("denies on corrupted sentinel-state.json with sanitized reason (fail-closed)", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
     const stateDir = join(cwd, ".codex", "pipeline");
