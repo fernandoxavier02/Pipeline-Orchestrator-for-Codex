@@ -43,6 +43,11 @@ Keep monitoring.
 VALID_TELEMETRY = {
     "scope_respected": True,
     "added_unrequested_features": False,
+    "execution_observed": True,
+    "execution_event": "PostToolUse",
+    "execution_identity": {"hook_event": "PostToolUse"},
+    "plugin_execution": {"observed": False, "pipeline_agent_fqn": None},
+    "git_state": "dirty",
     "eval_result": "PASS",
     "scope_review": {
         "allowed_prefixes": ["evals/"],
@@ -163,10 +168,44 @@ class EvalGateRunnerTests(unittest.TestCase):
 
         self.assert_fails_with("missing evals/telemetry/changed_files.txt")
 
-    def test_empty_changed_files_fails(self) -> None:
+    def test_empty_changed_files_fails_without_execution_observed(self) -> None:
+        telemetry = {
+            key: value
+            for key, value in VALID_TELEMETRY.items()
+            if key not in ("execution_observed", "execution_identity")
+        }
         (self.root / "evals" / "telemetry" / "changed_files.txt").write_text("", encoding="utf-8")
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
 
-        self.assert_fails_with("evals/telemetry/changed_files.txt must not be empty")
+        result = self.run_eval()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("telemetry execution_observed must be true", result.stdout)
+        self.assertIn("evals/telemetry/changed_files.txt must not be empty without execution_observed=true", result.stdout)
+
+    def test_execution_observed_requires_execution_identity(self) -> None:
+        telemetry = {key: value for key, value in VALID_TELEMETRY.items() if key != "execution_identity"}
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("telemetry execution_identity must be an object when execution_observed=true")
+
+    def test_empty_changed_files_can_pass_for_clean_execution(self) -> None:
+        telemetry = {**VALID_TELEMETRY, "git_state": "clean", "changed_files": []}
+        (self.root / "evals" / "telemetry" / "changed_files.txt").write_text("", encoding="utf-8")
+        (self.root / "evals" / "telemetry" / "git_diff.patch").write_text("", encoding="utf-8")
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        result = self.run_eval()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_behavior_cases_fails(self) -> None:
         (self.root / "evals" / "cases" / "orchestrator_behavior.yaml").unlink()

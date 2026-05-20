@@ -64,6 +64,7 @@ DEFAULT_SCOPE_PREFIXES = (
     ".codex/",
     ".agents/skills/workflow-eval-gate/",
     "evals/",
+    ".pipeline/sessions/",
     "docs/pipeline-orchestrator-codex/11-eval-gate-plan.md",
     "docs/pipeline-orchestrator-codex/README.md",
     "AGENTS.md",
@@ -317,11 +318,21 @@ def validate(repo_root: Path) -> list[str]:
     elif telemetry is not None:
         errors.append("evals/telemetry/latest_trace.json must contain a JSON object")
 
+    execution_observed = isinstance(telemetry, dict) and telemetry.get("execution_observed") is True
+    if isinstance(telemetry, dict) and not execution_observed:
+        errors.append("telemetry execution_observed must be true")
+    if execution_observed:
+        execution_identity = telemetry.get("execution_identity")
+        if not isinstance(execution_identity, dict):
+            errors.append("telemetry execution_identity must be an object when execution_observed=true")
+        elif not str(execution_identity.get("hook_event", "")).strip():
+            errors.append("telemetry execution_identity.hook_event is required when execution_observed=true")
+
     if not changed_files_path.exists():
         errors.append("missing evals/telemetry/changed_files.txt")
     changed_files = load_changed_files(changed_files_path)
-    if changed_files_path.exists() and not changed_files:
-        errors.append("evals/telemetry/changed_files.txt must not be empty")
+    if changed_files_path.exists() and not changed_files and not execution_observed:
+        errors.append("evals/telemetry/changed_files.txt must not be empty without execution_observed=true")
     for changed_file in forbidden_changed_paths(changed_files):
         errors.append(f"forbidden changed path: {changed_file}")
 

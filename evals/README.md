@@ -26,9 +26,9 @@ The gate has three practical parts.
 
 First, the policy hook checks risky shell commands before execution. It is intentionally narrow: it catches common destructive or out-of-scope patterns, but it is not a full sandbox and does not replace engineering judgment.
 
-Second, the telemetry hook captures evidence from the working tree: changed files, current diff, and a JSON trace. This gives the eval runner something concrete to verify instead of relying on narrative claims.
+Second, the telemetry hook captures evidence from the current execution and working tree: an execution heartbeat, changed files, current diff, and a JSON trace. This gives the eval runner something concrete to verify instead of relying on narrative claims.
 
-Third, the eval runner reads the behavior cases file, latest output, and telemetry artifacts. It fails when required evidence is missing, when the changed-file inventory is absent or empty, when scope review is missing, when unexpected files lack justification, when validation command evidence is missing, when claims are unsupported, or when the final report says the work passed without the expected eval artifacts.
+Third, the eval runner reads the behavior cases file, latest output, and telemetry artifacts. It fails when required evidence is missing, when the changed-file inventory is absent, when an empty changed-file inventory has no execution heartbeat, when scope review is missing, when unexpected files lack justification, when validation command evidence is missing, when claims are unsupported, or when the final report says the work passed without the expected eval artifacts.
 
 ## Hook Trust
 
@@ -70,8 +70,10 @@ The Eval Gate can only be treated as passing when:
 - `evals/outputs/latest_output.md` exists and contains the real latest claim being evaluated.
 - `evals/cases/orchestrator_behavior.yaml` exists and contains at least one structured scenario.
 - `evals/telemetry/latest_trace.json` exists and is valid JSON.
-- `evals/telemetry/changed_files.txt` exists.
+- `evals/telemetry/changed_files.txt` exists. It may be empty only when telemetry explicitly records `execution_observed: true`, which means a clean execution heartbeat was captured even though Git had no changed files.
 - `evals/telemetry/git_diff.patch` exists.
+- telemetry contains `execution_observed: true`.
+- telemetry contains `execution_identity.hook_event`, so a clean execution heartbeat is distinguishable from stale file evidence.
 - telemetry contains a `scope_review` block whose unexpected files match the changed-file inventory and have explicit justifications.
 - telemetry contains `validation_evidence.commands` entries for lint, build, tests, Python eval tests, eval runner, and `git diff --check`.
 - `python3 .agents/skills/workflow-eval-gate/scripts/run_eval.py` passes.

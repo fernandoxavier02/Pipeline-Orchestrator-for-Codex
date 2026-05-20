@@ -2,26 +2,27 @@
 
 ## What was inspected
 
-- Repository: `D:\Pipeline Orchestrator for Codex`
-- Git state, branch tracking, remote status and pending changes.
-- Local plugin manifest: `.codex-plugin/plugin.json`.
-- Local marketplace registration: `C:\Users\win\.agents\plugins\marketplace.json`.
-- Codex global config: `C:\Users\win\.codex\config.toml`.
-- Marketplace checkout/junction: `C:\Users\win\plugins\pipeline-orchestrator-for-codex`.
-- Codex plugin cache: `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex`.
-- Local Eval Gate hook, telemetry, and report artifacts.
+- Local Eval Gate telemetry hook: `.codex/hooks/post_tool_use_telemetry.py`.
+- Deterministic eval runner: `.agents/skills/workflow-eval-gate/scripts/run_eval.py`.
+- Eval Gate documentation: `evals/README.md`.
+- Regression tests for telemetry and eval behavior under `evals/tests/**`.
+- Current repository validation commands and Git diff hygiene.
 
 ## What was changed
 
-Prepared the repository for publication by validating the existing `0.5.0` plugin state, keeping `dist/**` out of the Git package because the local Eval Gate forbids changed generated `dist` paths, and refreshing Eval Gate telemetry for this publish operation.
+Telemetry now records an execution heartbeat even when Git has no changed files. The hook no longer exits silently on a clean worktree. Instead, it writes the telemetry artifacts and marks the trace with `execution_observed: true`, `execution_identity`, `execution_event`, and `git_state` as `clean` or `dirty`.
 
-Included the pending Kiro spec under `.kiro/specs/pipeline-trust-restoration/`, the audit/governance evidence under `.pipeline/docs/Pre-Complex-action/`, tracked session evidence under `.pipeline/sessions/**`, and updated `evals/telemetry/**` plus this report so the publish claim is backed by current evidence.
+The eval runner now treats empty `changed_files.txt` as valid only when the trace explicitly proves an execution was observed. Without `execution_observed: true`, an empty changed-file inventory still fails.
 
-Also corrected `.codex/hooks/post_tool_use_telemetry.py` so the local telemetry hook reads Git output as UTF-8 on Windows, exits without rewriting files when the worktree is clean, excludes `evals/telemetry/git_diff.patch` from its captured diff, and trims trailing whitespace in generated patch evidence. This prevents the Eval Gate from failing on its own telemetry artifact or dirtying the tree immediately after commit.
+The hook also separates generic hook execution from plugin execution. `execution_observed` means the telemetry hook ran; `plugin_execution.observed` is only true when the hook payload contains a Pipeline Orchestrator command marker. This prevents the heartbeat from being overstated as proof that the plugin itself ran.
+
+Regression tests were added so a clean execution without Git changes still refreshes telemetry, so the eval runner rejects empty telemetry unless the execution heartbeat is present, and so a payload containing `/pipeline-orchestrator-for-codex:pipeline` is marked distinctly.
 
 ## What was not changed
 
-No runtime TypeScript source, plugin manifest, command entrypoint, skill contract, packaged plugin hook, dependency file, or global Codex config was changed during this publication pass. `dist/**` was not committed; the Codex global cache is validated separately because it is the runtime copy used by this machine.
+No runtime TypeScript orchestration code, plugin manifest, command entrypoint, skill contract, packaged cache, marketplace config, or global Codex config was changed in this fix.
+
+This change does not yet add the separate contract test for "operational pipeline review or bugfix without `spawn_agent` must fail." It fixes the telemetry heartbeat problem first.
 
 ## Eval result
 
@@ -31,17 +32,20 @@ behavior_cases: 4
 
 Validation evidence:
 
+- `python3 -m unittest evals.tests.test_telemetry_hook evals.tests.test_eval_gate`: PASS, 31 tests.
 - `npm run lint:types`: PASS.
+- `python3 -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 46 tests.
 - `npm run build`: PASS.
-- `npm test`: PASS, 122 files and 871 tests.
-- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 42 tests.
-- `git diff --check`: PASS after regenerating telemetry without trailing whitespace.
-- `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`: PASS.
+- `git diff --check`: PASS.
+- `npm test`: PASS, 123 files and 894 tests.
+- `python3 .agents/skills/workflow-eval-gate/scripts/run_eval.py`: PASS.
 
 ## Remaining risks
 
-This proves the local Windows Codex surfaces, not a public OpenAI marketplace listing for other machines. The current Codex session may still need restart to reload newly synced plugin cache state. `dist/**` is intentionally absent from the Git commit and must be rebuilt in the active cache/runtime copy.
+The hook is still a local Codex project hook. It proves local Eval Gate telemetry behavior for this repository, not that every installed/global plugin execution in every Codex session is already wired to the same telemetry path.
+
+The next missing safety check is an explicit eval case that fails when a Pipeline Orchestrator operational review or bugfix claims execution without real `spawn_agent`/`wait_agent` evidence. This fix adds the telemetry identity fields needed for that next gate, but it does not yet enforce the dispatch contract itself.
 
 ## Next safest step
 
-After commit and push, synchronize `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.0`, rebuild/install dependencies there if needed, compare source/cache hashes for critical files, and verify the command/skill surface from the global Codex cache.
+Add the `spawn_agent` contract eval: operational pipeline review or bugfix without real agent dispatch evidence must fail, even if the narrative report says the review passed.

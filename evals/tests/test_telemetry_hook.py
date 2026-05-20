@@ -112,6 +112,10 @@ class TelemetryHookTests(unittest.TestCase):
             check=False,
         )
 
+    def commit_all(self) -> None:
+        subprocess.run(["git", "add", "."], cwd=self.root, check=True)
+        subprocess.run(["git", "commit", "-m", "fixture"], cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+
     def test_telemetry_files_created_and_trace_preserves_fields(self) -> None:
         (self.root / "changed.txt").write_text("changed", encoding="utf-8")
 
@@ -129,8 +133,53 @@ class TelemetryHookTests(unittest.TestCase):
         self.assertEqual(trace["scope_respected"], True)
         self.assertEqual(trace["added_unrequested_features"], False)
         self.assertEqual(trace["git_diff_captured"], True)
+        self.assertEqual(trace["execution_observed"], True)
+        self.assertEqual(trace["execution_event"], "PostToolUse")
+        self.assertEqual(trace["execution_identity"]["hook_event"], "PostToolUse")
+        self.assertEqual(trace["plugin_execution"]["observed"], False)
+        self.assertEqual(trace["git_state"], "dirty")
+        self.assertIn("validation_evidence", trace)
         self.assertIn("changed.txt", trace["changed_files"])
         self.assertIn("changed.txt", trace["untracked_files_included"])
+
+    def test_telemetry_records_clean_execution_without_git_changes(self) -> None:
+        self.commit_all()
+
+        result = self.run_telemetry_hook()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        changed_files = (self.root / "evals" / "telemetry" / "changed_files.txt").read_text(encoding="utf-8")
+        patch_text = (self.root / "evals" / "telemetry" / "git_diff.patch").read_text(encoding="utf-8")
+        trace = json.loads((self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8"))
+        self.assertEqual(changed_files, "")
+        self.assertEqual(patch_text, "")
+        self.assertEqual(trace["execution_observed"], True)
+        self.assertEqual(trace["execution_event"], "PostToolUse")
+        self.assertEqual(trace["execution_identity"]["hook_event"], "PostToolUse")
+        self.assertEqual(trace["plugin_execution"]["observed"], False)
+        self.assertEqual(trace["git_state"], "clean")
+        self.assertEqual(trace["changed_files"], [])
+        self.assertEqual(trace["untracked_files_included"], [])
+        self.assertEqual(trace["git_diff_captured"], False)
+
+    def test_telemetry_marks_pipeline_command_when_payload_contains_command(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(TELEMETRY_HOOK)],
+            cwd=self.root,
+            input=json.dumps({
+                "hook_event_name": "PostToolUse",
+                "cwd": str(self.root),
+                "tool_input": {"command": "/pipeline-orchestrator-for-codex:pipeline review-only"},
+            }),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        trace = json.loads((self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8"))
+        self.assertEqual(trace["plugin_execution"]["observed"], True)
 
     def test_telemetry_diff_omits_self_generated_patch(self) -> None:
         git_diff = self.root / "evals" / "telemetry" / "git_diff.patch"

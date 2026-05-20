@@ -36,3 +36,7 @@
 {"event":"exec-window-closed","session_id":"test-session-1779225189392","timestamp":1779225191446,"purpose":"test batch execution"}
 {"event":"exec-window-opened","session_id":"test-session-1779227053895","timestamp":1779227054068,"purpose":"test batch execution","ttl_minutes":5}
 {"event":"exec-window-closed","session_id":"test-session-1779227053895","timestamp":1779227055888,"purpose":"test batch execution"}
+{"event":"exec-window-opened","session_id":"test-session-1779274363219","timestamp":1779274363304,"purpose":"test batch execution","ttl_minutes":5}
+{"event":"exec-window-closed","session_id":"test-session-1779274363219","timestamp":1779274363716,"purpose":"test batch execution"}
+{"event":"exec-window-opened","session_id":"test-session-1779274835908","timestamp":1779274835951,"purpose":"test batch execution","ttl_minutes":5}
+{"event":"exec-window-closed","session_id":"test-session-1779274835908","timestamp":1779274836369,"purpose":"test batch execution"}

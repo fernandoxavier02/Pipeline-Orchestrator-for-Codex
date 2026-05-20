@@ -37,6 +37,7 @@ DEFAULT_SCOPE_PREFIXES = (
     ".codex/",
     ".agents/skills/workflow-eval-gate/",
     "evals/",
+    ".pipeline/sessions/",
     "docs/pipeline-orchestrator-codex/11-eval-gate-plan.md",
     "docs/pipeline-orchestrator-codex/README.md",
     "AGENTS.md",
@@ -160,6 +161,31 @@ def trim_trailing_whitespace(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.splitlines())
 
 
+def merge_allowed_prefixes(existing: Any) -> list[str]:
+    prefixes: list[str] = []
+    if isinstance(existing, list):
+        prefixes.extend(str(item) for item in existing if isinstance(item, str) and item.strip())
+    for prefix in DEFAULT_SCOPE_PREFIXES:
+        if prefix not in prefixes:
+            prefixes.append(prefix)
+    return prefixes
+
+
+def payload_text(payload: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ("command", "tool_name", "pipeline_agent_fqn", "session_id"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    tool_input = payload.get("tool_input")
+    if isinstance(tool_input, dict):
+        for key in ("command", "cmd", "prompt", "message"):
+            value = tool_input.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+    return "\n".join(parts)
+
+
 def main() -> int:
     payload = load_payload()
     repo_root = resolve_repo_root(Path(payload.get("cwd") if isinstance(payload.get("cwd"), str) else Path.cwd()))
@@ -168,42 +194,43 @@ def main() -> int:
 
     files = changed_files(repo_root)
     untracked = untracked_files(repo_root)
-    if not files and not untracked:
-        return 0
+    has_git_changes = bool(files or untracked)
 
-    diff_text = run_git(
-        repo_root,
-        [
-            "diff",
-            "--no-ext-diff",
-            "--binary",
-            "--",
-            ".",
-            ":(exclude)evals/telemetry/git_diff.patch",
-        ],
-    )
+    diff_text = ""
     omitted_untracked: list[dict[str, str]] = []
-    if untracked:
-        sections = [diff_text.rstrip()]
-        for file_name in untracked:
-            path = repo_root / file_name
-            if path.is_file():
-                reason = omission_reason(file_name, path)
-                if reason:
-                    omitted_untracked.append({"path": file_name, "reason": reason})
-                    sections.append(f"# untracked file omitted from telemetry diff: {file_name} ({reason})")
-                    continue
-                sections.append("\n".join([
-                    f"diff --git a/{file_name} b/{file_name}",
-                    "new file mode 100644",
-                    "--- /dev/null",
-                    f"+++ b/{file_name}",
-                    "@@",
-                    path.read_text(encoding="utf-8", errors="replace"),
-                ]))
-            else:
-                sections.append(f"# untracked directory: {file_name}")
-        diff_text = "\n".join(section for section in sections if section)
+    if has_git_changes:
+        diff_text = run_git(
+            repo_root,
+            [
+                "diff",
+                "--no-ext-diff",
+                "--binary",
+                "--",
+                ".",
+                ":(exclude)evals/telemetry/git_diff.patch",
+            ],
+        )
+        if untracked:
+            sections = [diff_text.rstrip()]
+            for file_name in untracked:
+                path = repo_root / file_name
+                if path.is_file():
+                    reason = omission_reason(file_name, path)
+                    if reason:
+                        omitted_untracked.append({"path": file_name, "reason": reason})
+                        sections.append(f"# untracked file omitted from telemetry diff: {file_name} ({reason})")
+                        continue
+                    sections.append("\n".join([
+                        f"diff --git a/{file_name} b/{file_name}",
+                        "new file mode 100644",
+                        "--- /dev/null",
+                        f"+++ b/{file_name}",
+                        "@@",
+                        path.read_text(encoding="utf-8", errors="replace"),
+                    ]))
+                else:
+                    sections.append(f"# untracked directory: {file_name}")
+            diff_text = "\n".join(section for section in sections if section)
     diff_text = trim_trailing_whitespace(diff_text)
 
     (telemetry_dir / "changed_files.txt").write_text(
@@ -216,8 +243,7 @@ def main() -> int:
     trace = read_trace(trace_path)
     existing_scope_review = trace.get("scope_review") if isinstance(trace.get("scope_review"), dict) else {}
     allowed_prefixes = existing_scope_review.get("allowed_prefixes") if isinstance(existing_scope_review, dict) else None
-    if not isinstance(allowed_prefixes, list) or not all(isinstance(item, str) for item in allowed_prefixes):
-        allowed_prefixes = list(DEFAULT_SCOPE_PREFIXES)
+    allowed_prefixes = merge_allowed_prefixes(allowed_prefixes)
     scope_justifications = existing_scope_review.get("scope_justifications") if isinstance(existing_scope_review, dict) else {}
     if not isinstance(scope_justifications, dict):
         scope_justifications = {}
@@ -235,8 +261,21 @@ def main() -> int:
         str(scope_justifications.get(file_name, "")).strip()
         for file_name in unexpected_files
     )
-    trace.setdefault("added_unrequested_features", not trace["scope_respected"])
+    trace["added_unrequested_features"] = not trace["scope_respected"]
     trace.setdefault("eval_result", "PENDING")
+    observed_text = payload_text(payload)
+    trace["execution_observed"] = True
+    trace["execution_event"] = payload.get("hook_event_name", "PostToolUse")
+    trace["execution_identity"] = {
+        "hook_event": payload.get("hook_event_name", "PostToolUse"),
+        "session_id": payload.get("session_id"),
+        "tool_name": payload.get("tool_name"),
+    }
+    trace["plugin_execution"] = {
+        "observed": "pipeline-orchestrator-for-codex:pipeline" in observed_text,
+        "pipeline_agent_fqn": payload.get("pipeline_agent_fqn") if isinstance(payload.get("pipeline_agent_fqn"), str) else None,
+    }
+    trace["git_state"] = "dirty" if has_git_changes else "clean"
     trace["timestamp"] = datetime.now(timezone.utc).isoformat()
     trace["git_diff_captured"] = bool(diff_text)
     trace["changed_files"] = files

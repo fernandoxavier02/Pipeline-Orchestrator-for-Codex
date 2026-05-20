@@ -1,40 +1,32 @@
 {
   "added_unrequested_features": false,
   "changed_files": [
+    ".agents/skills/workflow-eval-gate/scripts/run_eval.py",
     ".codex/hooks/post_tool_use_telemetry.py",
-    ".kiro/specs/pipeline-trust-restoration/design.md",
-    ".kiro/specs/pipeline-trust-restoration/requirements.md",
-    ".kiro/specs/pipeline-trust-restoration/research.md",
-    ".kiro/specs/pipeline-trust-restoration/spec.json",
-    ".kiro/specs/pipeline-trust-restoration/tasks.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/01-task-orchestrator.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/02-information-gate.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/03-design-interrogator.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/04-plan-architect.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/05-audit-intake.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/06-audit-domain-analyzer.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/07-audit-compliance-checker.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/08-final-audit-report.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/09-findings-consolidated.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/10-pre-spec-input.md",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/confidence-score.yaml",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/gate-decisions.jsonl",
-    ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/sentinel-state.json",
     ".pipeline/sessions/audit.log",
-    ".pipeline/sessions/b7a9c366-4f74-4f2c-b277-df49a66921c8.lock",
+    "evals/README.md",
     "evals/outputs/latest_output.md",
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
-    "evals/telemetry/latest_trace.json"
+    "evals/telemetry/latest_trace.json",
+    "evals/tests/test_eval_gate.py",
+    "evals/tests/test_telemetry_hook.py"
   ],
   "eval_result": "PASS",
+  "execution_event": "PostToolUse",
+  "execution_identity": {
+    "hook_event": "PostToolUse",
+    "session_id": "019e450b-35ab-70c3-983c-5c39f7a4aa43",
+    "tool_name": "Bash"
+  },
+  "execution_observed": true,
   "git_diff_captured": true,
+  "git_state": "dirty",
   "last_hook_event": "PostToolUse",
-  "notes": [
-    "Manual telemetry refresh after publish validation.",
-    "Telemetry hook updated to avoid self-diff, post-commit dirty state, and Windows UTF-8 decoding failure.",
-    "dist/** is excluded from Git package and rebuilt in cache runtime separately."
-  ],
+  "plugin_execution": {
+    "observed": false,
+    "pipeline_agent_fqn": null
+  },
   "scope_respected": true,
   "scope_review": {
     "allowed_prefixes": [
@@ -46,44 +38,13 @@
       "AGENTS.md",
       "PROJECT_CONTEXT.md",
       "README.md",
-      ".kiro/"
+      ".kiro/",
+      ".pipeline/sessions/"
     ],
-    "scope_justifications": {
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/01-task-orchestrator.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/02-information-gate.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/03-design-interrogator.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/04-plan-architect.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/05-audit-intake.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/06-audit-domain-analyzer.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/07-audit-compliance-checker.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/08-final-audit-report.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/09-findings-consolidated.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/10-pre-spec-input.md": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/confidence-score.yaml": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/gate-decisions.jsonl": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/sentinel-state.json": "Audit/pre-complex action report produced for pipeline-trust-restoration and intentionally included as governance evidence.",
-      ".pipeline/sessions/audit.log": "Tracked operational execution log updated by validation/test runs; included as existing repo state, not runtime behavior.",
-      ".pipeline/sessions/b7a9c366-4f74-4f2c-b277-df49a66921c8.lock": "Tracked session-lock evidence updated by validation/test runs; included as existing repo state."
-    },
-    "unexpected_files": [
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/01-task-orchestrator.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/02-information-gate.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/03-design-interrogator.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/04-plan-architect.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/05-audit-intake.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/06-audit-domain-analyzer.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/07-audit-compliance-checker.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/08-final-audit-report.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/09-findings-consolidated.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/10-pre-spec-input.md",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/confidence-score.yaml",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/gate-decisions.jsonl",
-      ".pipeline/docs/Pre-Complex-action/2026-05-19-auditoria-pipeline-orchestrator-codex/sentinel-state.json",
-      ".pipeline/sessions/audit.log",
-      ".pipeline/sessions/b7a9c366-4f74-4f2c-b277-df49a66921c8.lock"
-    ]
+    "scope_justifications": {},
+    "unexpected_files": []
   },
-  "timestamp": "2026-05-19T21:22:20.107954+00:00",
+  "timestamp": "2026-05-20T11:07:31.977546+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validation_evidence": {
@@ -98,11 +59,11 @@
         "status": "PASS"
       },
       "npm test": {
-        "focused_evidence": "Full Vitest run passed: 122 files, 871 tests.",
+        "focused_evidence": "Full Vitest run passed: 123 files, 894 tests.",
         "status": "PASS"
       },
       "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
-        "focused_evidence": "42 tests passed after telemetry hook update.",
+        "focused_evidence": "46 tests passed after telemetry identity and scope updates.",
         "status": "PASS"
       },
       "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {
