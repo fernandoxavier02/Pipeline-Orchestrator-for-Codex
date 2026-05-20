@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { basename, join } from "node:path";
@@ -27,7 +27,7 @@ import { createCodexAgentRuntimeAdapter, detectCodexAgentRuntime, } from "./adap
 import { createSessionStore } from "./state/session-store.js";
 import { createSentinelStateStore } from "./sentinel/sentinel-state.js";
 import { writeTrace } from "./trace/trace.js";
-import { recordPostFinalValidatorCheckpoint, resolveEffectiveGateLog, } from "./validation/final-validator.js";
+import { isNonExemptMode, recordPostFinalValidatorCheckpoint, resolveEffectiveGateLog, } from "./validation/final-validator.js";
 function hasControllerCheckpointProof(input) {
     return input.checkpointEvidence.some((entry) => entry.batchName === input.batchName
         && entry.evidence.length > 0
@@ -52,7 +52,47 @@ function resolveAuthoritativeEvidenceKinds(input) {
     if (!requiresReducedValidation && finalReviewRecorded) {
         evidenceKinds.add("final-review");
     }
+    if (isNonExemptMode(input.mode) && input.validationIntent !== "reduced") {
+        evidenceKinds.add("protocol-events");
+        evidenceKinds.add("gate-decisions");
+        evidenceKinds.add("target-latest-trace");
+    }
     return evidenceKinds;
+}
+export function collectCanonicalArtifactEvidence(input) {
+    const protocolEventsPath = join(input.stateDir, "protocol-events.jsonl");
+    const gateDecisionsPath = join(input.stateDir, "gate-decisions.jsonl");
+    const latestTracePath = join(input.workspaceRoot, "evals", "telemetry", "latest_trace.json");
+    const hasNonEmptyFile = (path) => {
+        try {
+            // lstatSync does NOT follow symlinks — refuse symlinked evidence to
+            // prevent forgery via planted symlinks pointing at unrelated non-empty files.
+            const stats = lstatSync(path);
+            if (stats.isSymbolicLink())
+                return false;
+            return stats.isFile() && stats.size > 0;
+        }
+        catch {
+            return false;
+        }
+    };
+    return [
+        {
+            kind: "protocol-events",
+            passed: hasNonEmptyFile(protocolEventsPath),
+            label: "target .codex/pipeline/protocol-events.jsonl",
+        },
+        {
+            kind: "gate-decisions",
+            passed: hasNonEmptyFile(gateDecisionsPath),
+            label: "target .codex/pipeline/gate-decisions.jsonl",
+        },
+        {
+            kind: "target-latest-trace",
+            passed: hasNonEmptyFile(latestTracePath),
+            label: "target evals/telemetry/latest_trace.json",
+        },
+    ];
 }
 function resolveCloseoutScopeStartedAt(input) {
     const runStartedAt = input.session?.runStartedAt;
@@ -716,7 +756,16 @@ export function createPipelineRuntime(options) {
                     mode: input.mode,
                     validationIntent: input.validationIntent,
                 });
-                const verificationEvidence = input.verificationEvidence.map((evidence) => ({
+                const canonicalArtifactEvidence = isNonExemptMode(input.mode)
+                    ? collectCanonicalArtifactEvidence({
+                        workspaceRoot: options.cwd,
+                        stateDir,
+                    })
+                    : [];
+                const verificationEvidence = [
+                    ...input.verificationEvidence,
+                    ...canonicalArtifactEvidence,
+                ].map((evidence) => ({
                     ...evidence,
                     label: getEvidenceLabel(evidence),
                     passed: evidence.passed && authoritativeEvidenceKinds.has(evidence.kind),
@@ -751,7 +800,7 @@ export function createPipelineRuntime(options) {
                     verificationEvidence,
                     validationIntent: input.validationIntent,
                     mode: input.mode,
-                    dispatchMode: input.mode === "full"
+                    dispatchMode: isNonExemptMode(input.mode)
                         ? options.strictAgents ? "real-agent" : "harness"
                         : undefined,
                 };

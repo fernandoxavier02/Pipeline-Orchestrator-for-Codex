@@ -110,6 +110,12 @@ describe("recordPostFinalValidatorCheckpoint", () => {
 });
 
 describe("operational final validation", () => {
+  const canonicalEvidence = [
+    { kind: "protocol-events", passed: true, label: "target protocol-events.jsonl" },
+    { kind: "gate-decisions", passed: true, label: "target gate-decisions.jsonl" },
+    { kind: "target-latest-trace", passed: true, label: "target latest_trace.json" },
+  ];
+
   it("rejects harness/emulation evidence for operational runs", () => {
     const result = runFinalValidator({
       reviews: [{ status: "approved" }],
@@ -119,6 +125,7 @@ describe("operational final validation", () => {
         { kind: "build", passed: true, label: "npm run build" },
         { kind: "tests", passed: true, label: "npm test" },
         { kind: "final-review", passed: true, label: "parallel-emulation final review" },
+        ...canonicalEvidence,
       ],
       validationIntent: "standard",
       mode: "full",
@@ -127,5 +134,143 @@ describe("operational final validation", () => {
 
     expect(result.decision).toBe("NO-GO");
     expect(result.missingEvidence).toContain("real-agent-dispatch");
+  });
+
+  it("rejects real-agent operational runs without canonical target artifacts", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.95,
+      gateLog: [],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+      ],
+      validationIntent: "standard",
+      mode: "full",
+      dispatchMode: "real-agent",
+    });
+
+    expect(result.decision).toBe("NO-GO");
+    expect(result.missingEvidence).toEqual(expect.arrayContaining([
+      "protocol-events",
+      "gate-decisions",
+      "target-latest-trace",
+    ]));
+  });
+
+  it.each(["--complexa", "--plan", "--grill", "--media", "--simples", "--hotfix"])(
+    "requires canonical artifacts for forced mode %s (same as full)",
+    (forcedMode) => {
+      const result = runFinalValidator({
+        reviews: [{ status: "approved" }],
+        confidenceScore: 0.95,
+        gateLog: [],
+        verificationEvidence: [
+          { kind: "build", passed: true, label: "npm run build" },
+          { kind: "tests", passed: true, label: "npm test" },
+          { kind: "final-review", passed: true, label: "final adversarial review" },
+        ],
+        validationIntent: forcedMode === "--hotfix" ? "reduced" : "standard",
+        mode: forcedMode,
+        dispatchMode: "real-agent",
+      });
+
+      if (forcedMode === "--hotfix") {
+        expect(result.missingEvidence).not.toEqual(
+          expect.arrayContaining(["protocol-events"]),
+        );
+      } else {
+        expect(result.decision).toBe("NO-GO");
+        expect(result.missingEvidence).toEqual(expect.arrayContaining([
+          "protocol-events",
+          "gate-decisions",
+          "target-latest-trace",
+        ]));
+      }
+    },
+  );
+
+  it.each(["DIAGNOSTIC", "Diagnostic", " diagnostic ", "Review-Only", "REVIEW-ONLY"])(
+    "F5: case-insensitive + trimmed mode %s is recognized as exempt",
+    (variant) => {
+      const result = runFinalValidator({
+        reviews: [{ status: "approved" }],
+        confidenceScore: 0.95,
+        gateLog: [],
+        verificationEvidence: [
+          { kind: "build", passed: true, label: "npm run build" },
+          { kind: "tests", passed: true, label: "npm test" },
+        ],
+        validationIntent: "standard",
+        mode: variant,
+      });
+
+      expect(result.missingEvidence).not.toEqual(
+        expect.arrayContaining(["protocol-events", "gate-decisions", "target-latest-trace"]),
+      );
+    },
+  );
+
+  it.each(["diagnostic", "review-only"])(
+    "does NOT require canonical artifacts for exempt mode %s",
+    (exemptMode) => {
+      const result = runFinalValidator({
+        reviews: [{ status: "approved" }],
+        confidenceScore: 0.95,
+        gateLog: [],
+        verificationEvidence: [
+          { kind: "build", passed: true, label: "npm run build" },
+          { kind: "tests", passed: true, label: "npm test" },
+        ],
+        validationIntent: "standard",
+        mode: exemptMode,
+      });
+
+      expect(result.missingEvidence).not.toEqual(
+        expect.arrayContaining(["protocol-events", "gate-decisions", "target-latest-trace"]),
+      );
+    },
+  );
+
+  it("F8: requires protocol-events when runtime is expected to produce it", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.95,
+      gateLog: [],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+        { kind: "gate-decisions", passed: true, label: "target gate-decisions.jsonl" },
+        { kind: "target-latest-trace", passed: true, label: "target latest_trace.json" },
+      ],
+      validationIntent: "standard",
+      mode: "full",
+      dispatchMode: "real-agent",
+    });
+
+    expect(result.decision).toBe("NO-GO");
+    expect(result.missingEvidence).toContain("protocol-events");
+  });
+
+  it("allows real-agent operational runs with canonical target artifacts", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.95,
+      gateLog: [],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+        ...canonicalEvidence,
+      ],
+      validationIntent: "standard",
+      mode: "full",
+      dispatchMode: "real-agent",
+    });
+
+    expect(result.decision).toBe("GO");
+    expect(result.missingEvidence).toEqual([]);
   });
 });

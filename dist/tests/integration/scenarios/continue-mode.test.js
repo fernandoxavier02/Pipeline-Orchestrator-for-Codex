@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -77,5 +77,115 @@ describe("continue mode", () => {
             detail: "Plan completed",
         });
         await expect(controller.start("/pipeline continue")).rejects.toThrow("phase-1.5 session is missing controller-managed transition proof");
+    });
+    it("transitions light workflows (planModeStatus=skipped) to phase-2 after yes", async () => {
+        const root = mkdtempSync(join(tmpdir(), "pipeline-continue-light-"));
+        const sessionStore = createSessionStore(root);
+        const controller = createPipelineController({
+            stores: {
+                session: sessionStore,
+                checkpoints: createCheckpointStore(root),
+            },
+        });
+        await sessionStore.save({
+            sessionId: "light-workflow-1",
+            currentPhase: "phase-1",
+            mode: "--simples",
+            variant: "bugfix-light",
+            confidenceScore: 0.9,
+            proposal: {
+                summary: "quick login fix",
+                variant: "bugfix-light",
+                awaitingUserConfirmation: true,
+                infoGateStatus: "passed",
+                designReviewStatus: "skipped",
+                planModeStatus: "skipped",
+                affectedFiles: ["src/auth/login.ts"],
+                batchSize: 1,
+                validationIntent: "standard",
+            },
+        });
+        const confirmResult = await controller.start("yes");
+        expect(confirmResult.confirmation?.status).toBe("APPROVED");
+        expect(confirmResult.phase).toBe("phase-2");
+        const savedSession = await sessionStore.load();
+        expect(savedSession.currentPhase).toBe("phase-2");
+        expect(savedSession.pendingDecision).toBe("phase-2-ready");
+        expect(savedSession.approvalProof).toMatchObject({
+            kind: "controller-managed-transition",
+            from: "phase-1",
+            to: "phase-2",
+        });
+    });
+    it("F1: emits protocol-events.jsonl entries for proposal-confirmation gate", async () => {
+        const root = mkdtempSync(join(tmpdir(), "pipeline-protocol-events-"));
+        const sessionStore = createSessionStore(root);
+        const controller = createPipelineController({
+            workspaceRoot: root,
+            stores: {
+                session: sessionStore,
+                checkpoints: createCheckpointStore(root),
+            },
+        });
+        await sessionStore.save({
+            sessionId: "protocol-events-light-1",
+            currentPhase: "phase-1",
+            mode: "--simples",
+            variant: "bugfix-light",
+            confidenceScore: 0.9,
+            proposal: {
+                summary: "quick login fix",
+                variant: "bugfix-light",
+                awaitingUserConfirmation: true,
+                infoGateStatus: "passed",
+                designReviewStatus: "skipped",
+                planModeStatus: "skipped",
+                affectedFiles: ["src/auth/login.ts"],
+                batchSize: 1,
+                validationIntent: "standard",
+            },
+        });
+        await controller.start("yes");
+        const protocolPath = join(root, "protocol-events.jsonl");
+        expect(existsSync(protocolPath)).toBe(true);
+        const lines = readFileSync(protocolPath, "utf8")
+            .split("\n")
+            .filter((line) => line.length > 0);
+        expect(lines.length).toBeGreaterThanOrEqual(2);
+        const events = lines.map((line) => JSON.parse(line));
+        expect(events.some((e) => e.status === "emitted" && e.kind === "GATE_REQUEST")).toBe(true);
+        expect(events.some((e) => e.status === "answered" && e.kind === "GATE_REQUEST")).toBe(true);
+    });
+    it("does not transition to phase-2 when user rejects a light workflow", async () => {
+        const root = mkdtempSync(join(tmpdir(), "pipeline-continue-reject-"));
+        const sessionStore = createSessionStore(root);
+        const controller = createPipelineController({
+            stores: {
+                session: sessionStore,
+                checkpoints: createCheckpointStore(root),
+            },
+        });
+        await sessionStore.save({
+            sessionId: "light-workflow-reject",
+            currentPhase: "phase-1",
+            mode: "--simples",
+            variant: "bugfix-light",
+            confidenceScore: 0.9,
+            proposal: {
+                summary: "quick login fix",
+                variant: "bugfix-light",
+                awaitingUserConfirmation: true,
+                infoGateStatus: "passed",
+                designReviewStatus: "skipped",
+                planModeStatus: "skipped",
+                affectedFiles: ["src/auth/login.ts"],
+                batchSize: 1,
+                validationIntent: "standard",
+            },
+        });
+        const rejectResult = await controller.start("no");
+        expect(rejectResult.confirmation?.status).toBe("REJECTED");
+        const savedSession = await sessionStore.load();
+        expect(savedSession.currentPhase).toBe("phase-1");
     });
 });

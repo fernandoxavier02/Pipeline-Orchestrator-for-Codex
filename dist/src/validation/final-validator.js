@@ -1,5 +1,16 @@
 import { createGateRegistry } from "../gates/gate-registry.js";
 import { resolveFinalValidationEvidence } from "../review/domain-checklists.js";
+const NON_OPERATIONAL_MODES = new Set(["diagnostic", "review-only"]);
+function normalizeMode(mode) {
+    if (typeof mode !== "string")
+        return undefined;
+    const trimmed = mode.trim().toLowerCase();
+    return trimmed.length > 0 ? trimmed : undefined;
+}
+export function isNonExemptMode(mode) {
+    const normalized = normalizeMode(mode);
+    return !!normalized && !NON_OPERATIONAL_MODES.has(normalized);
+}
 const LATEST_ONLY_GATES = new Set(["CLOSEOUT_CONFIRM"]);
 const STICKY_ROLLBACKS = new Set(["manual", "stop"]);
 function getConfidenceBand(score) {
@@ -59,10 +70,17 @@ export function runFinalValidator(input) {
         .filter((evidence) => evidence.passed)
         .map((evidence) => evidence.kind));
     const missingEvidence = requiredEvidence.filter((kind) => !passedEvidenceKinds.has(kind));
+    if (isNonExemptMode(input.mode)
+        && input.validationIntent !== "reduced") {
+        for (const canonicalKind of ["protocol-events", "gate-decisions", "target-latest-trace"]) {
+            if (!passedEvidenceKinds.has(canonicalKind)) {
+                missingEvidence.push(canonicalKind);
+            }
+        }
+    }
     if (input.dispatchMode
         && input.dispatchMode !== "real-agent"
-        && input.mode !== "diagnostic"
-        && input.mode !== "review-only") {
+        && isNonExemptMode(input.mode)) {
         missingEvidence.push("real-agent-dispatch");
     }
     const blockedReviews = input.reviews.filter((review) => review.status !== "approved");

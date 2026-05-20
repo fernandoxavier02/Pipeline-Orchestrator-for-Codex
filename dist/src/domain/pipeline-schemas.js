@@ -98,7 +98,7 @@ export const designInterrogationSchema = z.object({
 const controllerManagedTransitionSchema = z.object({
     kind: z.literal("controller-managed-transition"),
     from: z.literal("phase-1"),
-    to: z.literal("phase-1.5"),
+    to: z.union([z.literal("phase-1.5"), z.literal("phase-2")]),
 });
 const redValidationSchema = z.object({
     status: redValidationStatusSchema,

@@ -14,11 +14,15 @@ export function execWindowDir(stateRoot: string): string {
   return join(stateRoot, SESSIONS_DIRNAME);
 }
 
+const MAX_SESSION_ID_LENGTH = 512;
+
 export function execWindowPath(stateRoot: string, sessionId: string): string {
   if (!sessionId) throw new Error("execWindowPath: sessionId is required");
-  if (sessionId.includes("/") || sessionId.includes("\\") || sessionId.includes("..")) {
-    throw new Error("execWindowPath: sessionId must not contain path separators");
+  if (sessionId.length > MAX_SESSION_ID_LENGTH) {
+    throw new Error(`execWindowPath: sessionId exceeds ${MAX_SESSION_ID_LENGTH} characters`);
   }
+  // base64url encoding produces only [A-Za-z0-9_-] — filesystem-safe and injective.
+  // No sanitization needed; raw input maps 1:1 to its encoded form.
   return join(execWindowDir(stateRoot), `${encodeSessionId(sessionId)}${EXEC_WINDOW_SUFFIX}`);
 }
 

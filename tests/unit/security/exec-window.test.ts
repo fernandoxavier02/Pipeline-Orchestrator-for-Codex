@@ -81,12 +81,56 @@ describe("ExecWindow value object", () => {
 });
 
 describe("exec-window-store", () => {
-  it("execWindowPath rejects sessionIds with path separators or '..' (path-traversal guard)", () => {
+  it("execWindowPath rejects empty sessionIds", () => {
     const root = freshRoot();
-    expect(() => execWindowPath(root, "../../etc")).toThrow();
-    expect(() => execWindowPath(root, "a/b")).toThrow();
-    expect(() => execWindowPath(root, "")).toThrow();
+    expect(() => execWindowPath(root, "")).toThrow(/required/);
     rmSync(root, { recursive: true, force: true });
+  });
+
+  it("execWindowPath rejects sessionIds beyond the length limit", () => {
+    const root = freshRoot();
+    expect(() => execWindowPath(root, "x".repeat(513))).toThrow(/exceeds/);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("execWindowPath neutralizes path-traversal inputs via base64url encoding", () => {
+    const root = freshRoot();
+    // Raw input may contain "..", "/", "\\" — base64url encoding produces only
+    // [A-Za-z0-9_-], so the resulting filename is safe regardless of input.
+    const path = execWindowPath(root, "../../etc/passwd");
+    expect(path).toContain("/sessions/");
+    expect(path).not.toMatch(/\.\.\//);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("execWindowPath maps distinct sessionIds to distinct files (injectivity)", () => {
+    const root = freshRoot();
+    const a = execWindowPath(root, "a/b");
+    const b = execWindowPath(root, "a-b");
+    expect(a).not.toBe(b);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("execWindowPath supports command-style sessionIds with slashes", () => {
+    const root = freshRoot();
+    try {
+      const store = createExecWindowStore(root);
+      const sessionId = "full:/pipeline-orchestrator-for-codex:brainstorm explore ideas";
+      const path = store.pathFor(sessionId);
+      expect(path).toBeTruthy();
+      const w = buildExecWindow({
+        session_id: sessionId,
+        now: 1,
+        ttl_seconds: 30,
+        purpose: "brainstorm",
+        spawning_agent: "pipeline-controller",
+      });
+      store.write(sessionId, w);
+      expect(store.read(sessionId)).toEqual(w);
+      expect(store.delete(sessionId)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("execWindowPath supports command-style sessionIds that contain Windows-invalid filename characters", () => {

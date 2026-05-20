@@ -25,6 +25,7 @@ import { createConfidenceScoreStore } from "../state/confidence-score.js";
 import { createGateLog, inferDecidedBy } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
 import { createSentinelStateStore } from "../sentinel/sentinel-state.js";
+import { createProtocolEventLog } from "../protocol/protocol-events.js";
 import { createStateAdapter } from "./state-adapter.js";
 import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../execution/executor-controller.js";
 import { resolveExecutionComplexity } from "../modes/complexity-resolution.js";
@@ -858,6 +859,55 @@ export function createPipelineController(runtime) {
                     throw new Error(`Sentinel blocked unexpected input. Expected: ${sentinelState.expectedNext.join(", ")}`);
                 }
                 const confirmation = confirmProposal(normalizedResponse);
+                // F1 — Emit a protocol event for the proposal-confirmation gate. This is
+                // the only direct user interaction in the controller that doesn't pass
+                // through runRole (which already persists protocol blocks). Without this
+                // hook, protocol-events.jsonl never gets populated for runs that complete
+                // via the controller's own confirmation path.
+                if (session?.currentPhase === "phase-1" && stateRoot) {
+                    try {
+                        const protocolLog = createProtocolEventLog(stateRoot);
+                        const gateId = `proposal-confirmation-${session.sessionId ?? "session"}`;
+                        const timestamp = new Date().toISOString();
+                        await protocolLog.append({
+                            event_id: `gate-request-${gateId}-emitted`,
+                            kind: "GATE_REQUEST",
+                            protocol_version: 1,
+                            status: "emitted",
+                            source: "pipeline-controller",
+                            timestamp,
+                            payload: {
+                                kind: "GATE_REQUEST",
+                                gate_id: gateId,
+                                protocol_version: 1,
+                                source: "pipeline-controller",
+                                question: "Confirm pipeline proposal?",
+                                multi_select: false,
+                                options: [
+                                    { label: "yes", description: "approve and execute", recommended: true },
+                                    { label: "no", description: "reject the proposal", recommended: false },
+                                    { label: "adjust", description: "modify before executing", recommended: false },
+                                ],
+                            },
+                        });
+                        await protocolLog.append({
+                            event_id: `gate-request-${gateId}-answered`,
+                            kind: "GATE_REQUEST",
+                            protocol_version: 1,
+                            status: "answered",
+                            source: "pipeline-controller",
+                            timestamp,
+                            payload: {
+                                gate_id: gateId,
+                                selected_label: normalizedResponse,
+                                confirmation_status: confirmation.status,
+                            },
+                        });
+                    }
+                    catch {
+                        // Best-effort: never fail the pipeline because of protocol log IO.
+                    }
+                }
                 if (session?.currentPhase === "phase-1") {
                     const planModeStatus = session.proposal?.planModeStatus;
                     if (normalizedResponse === "yes"
@@ -918,8 +968,60 @@ export function createPipelineController(runtime) {
                             }),
                         };
                     }
+                    if (normalizedResponse === "yes") {
+                        await runtime?.stores?.session?.save?.({
+                            sessionId: session.sessionId ?? `phase-1:${session.variant ?? "proposal"}`,
+                            runStartedAt: session.runStartedAt ?? new Date().toISOString(),
+                            currentPhase: "phase-2",
+                            phase: "phase-2",
+                            batchIndex: session.batchIndex ?? 0,
+                            mode: session.mode ?? mode,
+                            variant: session.variant ?? "proposal",
+                            confidenceScore: session.confidenceScore ?? 1,
+                            proposal: session.proposal,
+                            unresolvedBlockers: session.unresolvedBlockers ?? [],
+                            // F4 — distinct from "resume" (used by /pipeline continue) so the
+                            // continue resolver can detect a freshly-transitioned session
+                            // that has no checkpoints yet.
+                            pendingDecision: "phase-2-ready",
+                            touchedFiles: session.touchedFiles ?? session.proposal?.affectedFiles ?? [],
+                            approvalProof: {
+                                kind: "controller-managed-transition",
+                                from: "phase-1",
+                                to: "phase-2",
+                            },
+                            executionProof: createInitialExecutionProof(),
+                        });
+                        // F3 — mirror the phase-1→1.5 path: persist sentinel state and a
+                        // SENTINEL_CHECKPOINT gate log entry. Without these, dispatch
+                        // guards relying on sentinel state see stale data for light
+                        // workflows transitioning straight to phase-2.
+                        await saveSentinelState(runtime, {
+                            pipelineActive: true,
+                            currentPhase: "phase-2",
+                            currentAgent: "pipeline-controller",
+                            expectedNext: ["continue"],
+                            completedPhases: ["phase-0", "phase-1"],
+                            gateSummary: ["SENTINEL_CHECKPOINT"],
+                            batchState: {
+                                batchIndex: session.batchIndex ?? 0,
+                                status: "execution-approved",
+                            },
+                            consecutiveCorrections: sentinelState?.consecutiveCorrections ?? 0,
+                            lastCheckpoint: "phase_1_to_2",
+                        });
+                        await persistGateAndConfidence(runtime ?? {}, [
+                            toGateLogEntry({
+                                gate: "SENTINEL_CHECKPOINT",
+                                hardness: "HARD",
+                                phase: "phase-1",
+                                decision: "pass",
+                                detail: "Sentinel recorded phase_1_to_2 light-workflow transition.",
+                            }),
+                        ], session.confidenceScore ?? 1);
+                    }
                     return {
-                        phase: session.currentPhase,
+                        phase: normalizedResponse === "yes" ? "phase-2" : session.currentPhase,
                         confirmation,
                     };
                 }

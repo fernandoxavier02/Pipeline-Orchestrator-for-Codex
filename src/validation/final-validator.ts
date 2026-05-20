@@ -18,6 +18,19 @@ type GateLogEntry = {
   confidence_impact?: number;
 };
 
+const NON_OPERATIONAL_MODES = new Set(["diagnostic", "review-only"]);
+
+function normalizeMode(mode: string | undefined): string | undefined {
+  if (typeof mode !== "string") return undefined;
+  const trimmed = mode.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function isNonExemptMode(mode: string | undefined): boolean {
+  const normalized = normalizeMode(mode);
+  return !!normalized && !NON_OPERATIONAL_MODES.has(normalized);
+}
+
 const LATEST_ONLY_GATES = new Set(["CLOSEOUT_CONFIRM"]);
 const STICKY_ROLLBACKS = new Set(["manual", "stop"]);
 
@@ -99,10 +112,19 @@ export function runFinalValidator(input: {
   );
   const missingEvidence = requiredEvidence.filter((kind) => !passedEvidenceKinds.has(kind));
   if (
+    isNonExemptMode(input.mode)
+    && input.validationIntent !== "reduced"
+  ) {
+    for (const canonicalKind of ["protocol-events", "gate-decisions", "target-latest-trace"]) {
+      if (!passedEvidenceKinds.has(canonicalKind)) {
+        missingEvidence.push(canonicalKind);
+      }
+    }
+  }
+  if (
     input.dispatchMode
     && input.dispatchMode !== "real-agent"
-    && input.mode !== "diagnostic"
-    && input.mode !== "review-only"
+    && isNonExemptMode(input.mode)
   ) {
     missingEvidence.push("real-agent-dispatch");
   }

@@ -29,6 +29,14 @@ export function resolveContinueRollbackState(input: {
     return null;
   }
 
+  // F4 — Distinct sentinel for light workflows that just transitioned from
+  // phase-1 to phase-2 via the controller-managed-transition path. Treated
+  // like "resume" for rollback purposes (no rollback), but disambiguated so
+  // callers can tell a fresh confirmation apart from a generic resume.
+  if (pendingDecision === "phase-2-ready") {
+    return null;
+  }
+
   const allowedDecisions = new Set(["stop", "revalidate", "phase-2-proof-required", "replan", "manual"]);
   const specPendingDecisionRoutes = new Map<string, "revalidate" | "replan">([
     ["spec-artifacts-required", "replan"],
