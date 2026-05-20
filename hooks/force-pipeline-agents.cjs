@@ -237,7 +237,7 @@ DO NOT execute any phase inline. DO NOT write audit reports, classifications, or
 DO NOT say "I chose the conservative approach" to skip spawning.
 
 YOUR FIRST ACTION must be:
-1. Find the agents directory using CODEX_PLUGIN_ROOT/agents/ (CLAUDE_PLUGIN_ROOT is only a compatibility fallback for legacy harness tests)
+1. Find the agents directory using PLUGIN_ROOT/agents/ (CODEX_PLUGIN_ROOT and CLAUDE_PLUGIN_ROOT are compatibility fallbacks only)
 2. Read agents/core/pipeline-controller.md
 3. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
 4. Call wait_agent for the returned agent id

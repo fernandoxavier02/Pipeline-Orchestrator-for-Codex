@@ -2,50 +2,55 @@
 
 ## What was inspected
 
-- Local Eval Gate telemetry hook: `.codex/hooks/post_tool_use_telemetry.py`.
-- Deterministic eval runner: `.agents/skills/workflow-eval-gate/scripts/run_eval.py`.
-- Eval Gate documentation: `evals/README.md`.
-- Regression tests for telemetry and eval behavior under `evals/tests/**`.
-- Current repository validation commands and Git diff hygiene.
+- Plugin hook registration in `hooks/hooks.json`.
+- Hook metadata/root resolution in `hooks/hook-events.cjs`, `hooks/dispatch-guard.cjs`, and `hooks/force-pipeline-agents.cjs`.
+- Local Eval Gate telemetry hook in `.codex/hooks/post_tool_use_telemetry.py`.
+- Deterministic eval runner in `.agents/skills/workflow-eval-gate/scripts/run_eval.py`.
+- Regression tests for hook root resolution, telemetry, and eval behavior under `tests/**` and `evals/tests/**`.
+- Behavior cases in `evals/cases/orchestrator_behavior.yaml`.
 
 ## What was changed
 
-Telemetry now records an execution heartbeat even when Git has no changed files. The hook no longer exits silently on a clean worktree. Instead, it writes the telemetry artifacts and marks the trace with `execution_observed: true`, `execution_identity`, `execution_event`, and `git_state` as `clean` or `dirty`.
-
-The eval runner now treats empty `changed_files.txt` as valid only when the trace explicitly proves an execution was observed. Without `execution_observed: true`, an empty changed-file inventory still fails.
-
-The hook also separates generic hook execution from plugin execution. `execution_observed` means the telemetry hook ran; `plugin_execution.observed` is only true when the hook payload contains a Pipeline Orchestrator command marker. This prevents the heartbeat from being overstated as proof that the plugin itself ran.
-
-Regression tests were added so a clean execution without Git changes still refreshes telemetry, so the eval runner rejects empty telemetry unless the execution heartbeat is present, and so a payload containing `/pipeline-orchestrator-for-codex:pipeline` is marked distinctly.
+- Plugin hook commands now use the canonical Codex plugin root interpolation `${PLUGIN_ROOT}` instead of `${CODEX_PLUGIN_ROOT}`.
+- Runtime helpers preserve compatibility fallback order: `PLUGIN_ROOT`, then `CODEX_PLUGIN_ROOT`, then `CLAUDE_PLUGIN_ROOT`.
+- The force-pipeline-agents hook now reports the correct agent root contract: `${PLUGIN_ROOT}/agents`, with legacy variables only as fallbacks.
+- Telemetry now accumulates operational plugin evidence across hook calls. A pipeline command or `PIPELINE_AGENT_FQN` marks plugin execution as observed, `spawn_agent` marks spawn evidence, and `wait_agent` marks wait evidence.
+- The eval runner now fails an operational plugin success claim unless telemetry proves all three: pipeline agent FQN, `spawn_agent` evidence, and `wait_agent` evidence.
+- Regression tests were added for ATDD/TDD/BDD coverage: canonical `PLUGIN_ROOT` hook commands, trusted frontmatter resolution from `PLUGIN_ROOT`, hook event metadata from `PLUGIN_ROOT`, telemetry accumulation of `spawn_agent` and `wait_agent`, and Eval Gate rejection of successful plugin reports without real-agent evidence.
 
 ## What was not changed
 
-No runtime TypeScript orchestration code, plugin manifest, command entrypoint, skill contract, packaged cache, marketplace config, or global Codex config was changed in this fix.
-
-This change does not yet add the separate contract test for "operational pipeline review or bugfix without `spawn_agent` must fail." It fixes the telemetry heartbeat problem first.
+- No plugin manifest, command entrypoint, global Codex config, or remote publication state was changed.
+- Parallel Claude work was not edited or removed. Current unrelated dirty work includes `CLAUDE.md`, `src/workflow/next-step.ts`, and untracked `skills/codex-kb-*`.
 
 ## Eval result
 
-EVAL RESULT: PASS / eval runner passed.
+EVAL RESULT: BLOCKED in the current workspace state.
 
-behavior_cases: 4
+The Eval Gate runner now fails because the workspace contains parallel Claude changes outside this bugfix scope: `src/workflow/next-step.ts`, `dist/src/workflow/next-step.js`, and untracked `skills/codex-kb-*`. These files are intentionally not edited by this bugfix closeout.
+
+behavior_cases: 5
 
 Validation evidence:
 
-- `python3 -m unittest evals.tests.test_telemetry_hook evals.tests.test_eval_gate`: PASS, 31 tests.
+- `npm test -- --run tests/unit/version-consistency.test.ts tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/hook-events-sanitization.test.ts tests/unit/hooks/force-pipeline-agents.test.ts`: PASS, 37 tests.
+- `python3 -m unittest evals.tests.test_eval_gate evals.tests.test_telemetry_hook`: PASS, 36 tests.
+- `python3 -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 52 tests.
 - `npm run lint:types`: PASS.
-- `python3 -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 46 tests.
 - `npm run build`: PASS.
 - `git diff --check`: PASS.
-- `npm test`: PASS, 123 files and 894 tests.
-- `python3 .agents/skills/workflow-eval-gate/scripts/run_eval.py`: PASS.
+- `python3 .agents/skills/workflow-eval-gate/scripts/run_eval.py`: BLOCKED by parallel Claude workspace changes outside this bugfix scope.
+- `npm test`: BLOCKED by parallel Claude workspace changes. The full suite fails in workflow inventory tests because unrelated `skills/codex-kb-*` are present while `WORKFLOW_NEXT_STEPS` coverage is outside this hook-root bugfix scope.
+- Manual hook simulation with only `PLUGIN_ROOT` for `hooks/force-pipeline-agents.cjs`: PASS.
+- Manual hook simulation with only `PLUGIN_ROOT` for `hooks/dispatch-guard.cjs`: PASS.
 
 ## Remaining risks
 
-The hook is still a local Codex project hook. It proves local Eval Gate telemetry behavior for this repository, not that every installed/global plugin execution in every Codex session is already wired to the same telemetry path.
-
-The next missing safety check is an explicit eval case that fails when a Pipeline Orchestrator operational review or bugfix claims execution without real `spawn_agent`/`wait_agent` evidence. This fix adds the telemetry identity fields needed for that next gate, but it does not yet enforce the dispatch contract itself.
+- Hook trust still depends on the Codex app `/hooks` trust state for this repository. This run manually refreshed telemetry because the session cannot prove the UI trust toggle.
+- Marketplace/cache copies were synced for the changed hook, telemetry, Eval Gate, and regression test files. Checksums matched between the source repo, local marketplace copy, and installed cache copy for the core changed files at sync time.
+- Telemetry proves that the parent controller invoked `spawn_agent` and `wait_agent`; it does not require the spawned agent to finish successfully before the eval can verify real-agent dispatch evidence.
+- The full `npm test` suite should be rerun after the parallel Claude workflow stabilizes its `skills/codex-kb-*` and `src/workflow/next-step.ts` changes. Focused regression tests for this bugfix pass.
 
 ## Next safest step
 
-Add the `spawn_agent` contract eval: operational pipeline review or bugfix without real agent dispatch evidence must fail, even if the narrative report says the review passed.
+After the parallel Claude workflow finishes its KB/workflow changes, rerun full `npm test` once more to prove the whole repo is quiet under the stable workspace state.

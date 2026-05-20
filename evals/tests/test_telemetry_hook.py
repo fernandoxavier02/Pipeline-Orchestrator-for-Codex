@@ -180,6 +180,51 @@ class TelemetryHookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         trace = json.loads((self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8"))
         self.assertEqual(trace["plugin_execution"]["observed"], True)
+        self.assertEqual(trace["plugin_execution"]["real_agent_runtime"]["spawn_agent_observed"], False)
+        self.assertEqual(trace["plugin_execution"]["real_agent_runtime"]["wait_agent_observed"], False)
+
+    def test_telemetry_accumulates_spawn_and_wait_agent_evidence(self) -> None:
+        spawn_result = subprocess.run(
+            [sys.executable, str(TELEMETRY_HOOK)],
+            cwd=self.root,
+            input=json.dumps({
+                "hook_event_name": "PostToolUse",
+                "cwd": str(self.root),
+                "tool_name": "spawn_agent",
+                "tool_input": {
+                    "message": "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller\nRun controller.",
+                },
+            }),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(spawn_result.returncode, 0, spawn_result.stderr)
+
+        wait_result = subprocess.run(
+            [sys.executable, str(TELEMETRY_HOOK)],
+            cwd=self.root,
+            input=json.dumps({
+                "hook_event_name": "PostToolUse",
+                "cwd": str(self.root),
+                "tool_name": "wait_agent",
+            }),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(wait_result.returncode, 0, wait_result.stderr)
+
+        trace = json.loads((self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8"))
+        self.assertEqual(trace["plugin_execution"]["observed"], True)
+        self.assertEqual(
+            trace["plugin_execution"]["pipeline_agent_fqn"],
+            "pipeline-orchestrator-for-codex:core:pipeline-controller",
+        )
+        self.assertEqual(trace["plugin_execution"]["real_agent_runtime"]["spawn_agent_observed"], True)
+        self.assertEqual(trace["plugin_execution"]["real_agent_runtime"]["wait_agent_observed"], True)
 
     def test_telemetry_diff_omits_self_generated_patch(self) -> None:
         git_diff = self.root / "evals" / "telemetry" / "git_diff.patch"

@@ -43,6 +43,22 @@ describe("version consistency across manifests", () => {
     expect(spawnAgentHook?.hooks?.some((entry) => entry.command?.includes("sentinel-hook.cjs"))).toBe(true);
   });
 
+  it("ATDD: hook commands use the canonical PLUGIN_ROOT interpolation", () => {
+    const parsedHooks = JSON.parse(hooksJson) as {
+      hooks?: Record<string, Array<{ hooks?: Array<{ type?: string; command?: string }> }>>;
+    };
+    const commandHooks = Object.values(parsedHooks.hooks ?? {})
+      .flatMap((entries) => entries)
+      .flatMap((entry) => entry.hooks ?? [])
+      .filter((hook) => hook.type === "command");
+
+    expect(commandHooks.length, "test setup should find command hooks").toBeGreaterThan(0);
+    for (const hook of commandHooks) {
+      expect(hook.command, hook.command).toContain("${PLUGIN_ROOT}");
+      expect(hook.command, hook.command).not.toContain("${CODEX_PLUGIN_ROOT}");
+    }
+  });
+
   it("CHANGELOG has entries for 0.5.0, 0.4.1, 0.4.0, and 0.3.0", () => {
     expect(changelog).toMatch(/##\s+\[?0\.5\.0\]?/);
     expect(changelog).toMatch(/##\s+\[?0\.4\.1\]?/);

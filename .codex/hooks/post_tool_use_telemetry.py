@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -45,6 +46,7 @@ DEFAULT_SCOPE_PREFIXES = (
     "README.md",
     ".kiro/",
 )
+PIPELINE_AGENT_FQN_RE = re.compile(r"PIPELINE_AGENT_FQN:\s*([A-Za-z0-9:_-]+)")
 
 
 def resolve_repo_root(start: Path) -> Path:
@@ -186,6 +188,48 @@ def payload_text(payload: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def resolve_pipeline_agent_fqn(payload: dict[str, Any], observed_text: str, existing: Any) -> str | None:
+    value = payload.get("pipeline_agent_fqn")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+
+    match = PIPELINE_AGENT_FQN_RE.search(observed_text)
+    if match:
+        return match.group(1)
+
+    if isinstance(existing, dict):
+        value = existing.get("pipeline_agent_fqn")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return None
+
+
+def merge_plugin_execution(trace: dict[str, Any], payload: dict[str, Any], observed_text: str) -> dict[str, Any]:
+    existing = trace.get("plugin_execution")
+    existing = existing if isinstance(existing, dict) else {}
+    existing_runtime = existing.get("real_agent_runtime")
+    existing_runtime = existing_runtime if isinstance(existing_runtime, dict) else {}
+
+    tool_name = payload.get("tool_name")
+    pipeline_agent_fqn = resolve_pipeline_agent_fqn(payload, observed_text, existing)
+    observed = (
+        existing.get("observed") is True
+        or "pipeline-orchestrator-for-codex:pipeline" in observed_text
+        or bool(pipeline_agent_fqn)
+    )
+
+    return {
+        "observed": observed,
+        "status": existing.get("status", "observed" if observed else "not-observed"),
+        "pipeline_agent_fqn": pipeline_agent_fqn,
+        "real_agent_runtime": {
+            "spawn_agent_observed": existing_runtime.get("spawn_agent_observed") is True or tool_name == "spawn_agent",
+            "wait_agent_observed": existing_runtime.get("wait_agent_observed") is True or tool_name == "wait_agent",
+        },
+    }
+
+
 def main() -> int:
     payload = load_payload()
     repo_root = resolve_repo_root(Path(payload.get("cwd") if isinstance(payload.get("cwd"), str) else Path.cwd()))
@@ -271,10 +315,7 @@ def main() -> int:
         "session_id": payload.get("session_id"),
         "tool_name": payload.get("tool_name"),
     }
-    trace["plugin_execution"] = {
-        "observed": "pipeline-orchestrator-for-codex:pipeline" in observed_text,
-        "pipeline_agent_fqn": payload.get("pipeline_agent_fqn") if isinstance(payload.get("pipeline_agent_fqn"), str) else None,
-    }
+    trace["plugin_execution"] = merge_plugin_execution(trace, payload, observed_text)
     trace["git_state"] = "dirty" if has_git_changes else "clean"
     trace["timestamp"] = datetime.now(timezone.utc).isoformat()
     trace["git_diff_captured"] = bool(diff_text)

@@ -270,10 +270,46 @@ def validate_command_evidence(telemetry: dict[str, object]) -> list[str]:
         allowed_statuses = {"PASS"}
         if "npm test" in command_options:
             allowed_statuses.add("PASS_FOCUSED_AFTER_TIMEOUT")
+            allowed_statuses.add("PASS_FOCUSED_AFTER_UNRELATED_FAILURE")
         if evidence.get("status") not in allowed_statuses:
             errors.append(f"validation command did not pass: {' or '.join(command_options)}")
-        if evidence.get("status") == "PASS_FOCUSED_AFTER_TIMEOUT" and not str(evidence.get("focused_evidence", "")).strip():
-            errors.append(f"validation command needs focused evidence after timeout: {' or '.join(command_options)}")
+        if (
+            evidence.get("status") in {"PASS_FOCUSED_AFTER_TIMEOUT", "PASS_FOCUSED_AFTER_UNRELATED_FAILURE"}
+            and not str(evidence.get("focused_evidence", "")).strip()
+        ):
+            errors.append(f"validation command needs focused evidence for npm test fallback: {' or '.join(command_options)}")
+    return errors
+
+
+def validate_plugin_execution_evidence(telemetry: dict[str, object], report_text: str) -> list[str]:
+    plugin_execution = telemetry.get("plugin_execution")
+    if not isinstance(plugin_execution, dict):
+        return []
+
+    status = str(plugin_execution.get("status", "")).strip().lower()
+    reported_success = (
+        status in {"success", "passed", "complete", "completed"}
+        or "pipeline complete" in report_text.lower()
+        or final_report_claims_success(report_text)
+    )
+    if plugin_execution.get("observed") is not True or not reported_success:
+        return []
+
+    errors = []
+    pipeline_agent_fqn = plugin_execution.get("pipeline_agent_fqn")
+    if not isinstance(pipeline_agent_fqn, str) or not pipeline_agent_fqn.strip():
+        errors.append("operational plugin success requires pipeline_agent_fqn evidence")
+    elif not pipeline_agent_fqn.startswith("pipeline-orchestrator-for-codex:"):
+        errors.append("operational plugin success requires pipeline-orchestrator-for-codex agent FQN evidence")
+
+    real_agent_runtime = plugin_execution.get("real_agent_runtime")
+    if not isinstance(real_agent_runtime, dict):
+        real_agent_runtime = {}
+    if real_agent_runtime.get("spawn_agent_observed") is not True:
+        errors.append("operational plugin success requires spawn_agent evidence")
+    if real_agent_runtime.get("wait_agent_observed") is not True:
+        errors.append("operational plugin success requires wait_agent evidence")
+
     return errors
 
 
@@ -315,6 +351,7 @@ def validate(repo_root: Path) -> list[str]:
             errors.append("telemetry added_unrequested_features must not be true")
         errors.extend(missing_scope_justifications(telemetry.get("scope_review")))
         errors.extend(validate_command_evidence(telemetry))
+        errors.extend(validate_plugin_execution_evidence(telemetry, report_text))
     elif telemetry is not None:
         errors.append("evals/telemetry/latest_trace.json must contain a JSON object")
 

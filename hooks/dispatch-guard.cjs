@@ -162,6 +162,7 @@ function loadTrustedSkillFrontmatter(skillName) {
   if (!skillName) return undefined;
   const leaf = skillName.includes(':') ? skillName.split(':').pop() : skillName;
   const roots = [
+    process.env.PLUGIN_ROOT,
     process.env.CODEX_PLUGIN_ROOT,
     process.env.CLAUDE_PLUGIN_ROOT,
   ].filter((entry) => typeof entry === 'string' && entry.length > 0);

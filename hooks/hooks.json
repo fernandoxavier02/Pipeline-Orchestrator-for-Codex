@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/session-lock-hook.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-lock-hook.cjs\""
           },
           {
             "type": "prompt",
@@ -21,11 +21,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/force-pipeline-agents.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/force-pipeline-agents.cjs\""
           },
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/session-lock-hook.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-lock-hook.cjs\""
           }
         ]
       }
@@ -36,11 +36,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/completion-checklist.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/completion-checklist.cjs\""
           },
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/session-cleanup-hook.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-cleanup-hook.cjs\""
           }
         ]
       }
@@ -51,11 +51,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
           },
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/sentinel-hook.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/sentinel-hook.cjs\""
           }
         ]
       },
@@ -64,11 +64,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
           },
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/sentinel-hook.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/sentinel-hook.cjs\""
           }
         ]
       },
@@ -77,7 +77,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
           }
         ]
       },
@@ -86,7 +86,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CODEX_PLUGIN_ROOT}/hooks/edit-guard-hook.cjs\""
+            "command": "node \"${PLUGIN_ROOT}/hooks/edit-guard-hook.cjs\""
           }
         ]
       }

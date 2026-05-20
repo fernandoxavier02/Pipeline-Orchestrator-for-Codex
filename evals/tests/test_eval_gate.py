@@ -332,17 +332,32 @@ class EvalGateRunnerTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_npm_test_timeout_requires_focused_evidence(self) -> None:
+    def test_npm_test_unrelated_failure_can_pass_with_focused_evidence(self) -> None:
         telemetry = json.loads(json.dumps(VALID_TELEMETRY))
         telemetry["validation_evidence"]["commands"]["npm test"] = {
-            "status": "PASS_FOCUSED_AFTER_TIMEOUT",
+            "status": "PASS_FOCUSED_AFTER_UNRELATED_FAILURE",
+            "focused_evidence": "Full Vitest failed on pre-existing untracked skills; bugfix-focused Vitest and Python suites passed.",
         }
         (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
             json.dumps(telemetry),
             encoding="utf-8",
         )
 
-        self.assert_fails_with("validation command needs focused evidence after timeout: npm test")
+        result = self.run_eval()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_npm_test_timeout_requires_focused_evidence(self) -> None:
+        telemetry = json.loads(json.dumps(VALID_TELEMETRY))
+        telemetry["validation_evidence"]["commands"]["npm test"] = {
+            "status": "PASS_FOCUSED_AFTER_UNRELATED_FAILURE",
+        }
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("validation command needs focused evidence for npm test fallback: npm test")
 
     def test_success_claim_without_eval_evidence_fails(self) -> None:
         report = VALID_REPORT.replace(
@@ -352,6 +367,88 @@ class EvalGateRunnerTests(unittest.TestCase):
         (self.root / "evals" / "outputs" / "latest_output.md").write_text(report, encoding="utf-8")
 
         self.assert_fails_with("final report claims success without eval evidence")
+
+    def test_operational_plugin_success_requires_spawn_and_wait_evidence(self) -> None:
+        telemetry = {
+            **VALID_TELEMETRY,
+            "plugin_execution": {
+                "observed": True,
+                "status": "success",
+                "pipeline_agent_fqn": "pipeline-orchestrator-for-codex:core:pipeline-controller",
+                "real_agent_runtime": {
+                    "spawn_agent_observed": True,
+                    "wait_agent_observed": False,
+                },
+            },
+        }
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("operational plugin success requires wait_agent evidence")
+
+    def test_operational_plugin_success_requires_pipeline_agent_fqn(self) -> None:
+        telemetry = {
+            **VALID_TELEMETRY,
+            "plugin_execution": {
+                "observed": True,
+                "status": "success",
+                "pipeline_agent_fqn": None,
+                "real_agent_runtime": {
+                    "spawn_agent_observed": True,
+                    "wait_agent_observed": True,
+                },
+            },
+        }
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("operational plugin success requires pipeline_agent_fqn evidence")
+
+    def test_operational_plugin_success_requires_namespaced_pipeline_agent_fqn(self) -> None:
+        telemetry = {
+            **VALID_TELEMETRY,
+            "plugin_execution": {
+                "observed": True,
+                "status": "success",
+                "pipeline_agent_fqn": "other-plugin:core:pipeline-controller",
+                "real_agent_runtime": {
+                    "spawn_agent_observed": True,
+                    "wait_agent_observed": True,
+                },
+            },
+        }
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("operational plugin success requires pipeline-orchestrator-for-codex agent FQN evidence")
+
+    def test_operational_plugin_success_passes_with_spawn_wait_and_fqn(self) -> None:
+        telemetry = {
+            **VALID_TELEMETRY,
+            "plugin_execution": {
+                "observed": True,
+                "status": "success",
+                "pipeline_agent_fqn": "pipeline-orchestrator-for-codex:core:pipeline-controller",
+                "real_agent_runtime": {
+                    "spawn_agent_observed": True,
+                    "wait_agent_observed": True,
+                },
+            },
+        }
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        result = self.run_eval()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_future_eval_command_mention_is_not_eval_evidence(self) -> None:
         report = VALID_REPORT.replace(

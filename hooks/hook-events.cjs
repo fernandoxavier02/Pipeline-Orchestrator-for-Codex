@@ -41,7 +41,7 @@ function findUp(start, relativePath) {
 
 function resolvePluginMetadata() {
   const roots = [
-    process.env.CODEX_PLUGIN_ROOT,
+    process.env.PLUGIN_ROOT,
     process.env.CODEX_PLUGIN_ROOT,
     process.env.CLAUDE_PLUGIN_ROOT,
   ].filter(Boolean);
@@ -77,8 +77,8 @@ function resolvePluginMetadata() {
 }
 
 function resolveRuntime() {
-  if (process.env.CODEX_HOME || process.env.CODEX_PLUGIN_ROOT) return 'codex';
-  if (process.env.CODEX_PLUGIN_ROOT || process.env.CODEX_CLI) return 'codex';
+  if (process.env.CODEX_HOME || process.env.PLUGIN_ROOT || process.env.CODEX_PLUGIN_ROOT) return 'codex';
+  if (process.env.CODEX_CLI) return 'codex';
   if (process.env.CLAUDE_PLUGIN_ROOT || process.env.CLAUDECODE) return 'claude-code';
   return 'unknown';
 }

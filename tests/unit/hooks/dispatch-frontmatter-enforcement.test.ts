@@ -222,6 +222,41 @@ describe("dispatch-guard frontmatter enforcement", () => {
     }
   });
 
+  it("ATDD: resolves trusted skill frontmatter from PLUGIN_ROOT before compatibility roots", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
+    const canonicalPluginRoot = mkdtempSync(join(tmpdir(), "pipeline-plugin-root-"));
+    const codexPluginRoot = mkdtempSync(join(tmpdir(), "pipeline-codex-root-"));
+    try {
+      writeTrustedSkill(canonicalPluginRoot, "pipeline", [
+        "agent_type: worker",
+        "gates_at: [phase-0]",
+        "sentinel_checkpoints: [post_orchestrator]",
+      ].join("\n"));
+      writeTrustedSkill(codexPluginRoot, "pipeline", [
+        "agent_type: root",
+        "gates_at: [not-a-phase]",
+        "sentinel_checkpoints: [skip-everything]",
+      ].join("\n"));
+
+      const result = runHook(cwd, {
+        tool_name: "Skill",
+        tool_input: {
+          skill: "pipeline",
+        },
+      }, {
+        PLUGIN_ROOT: canonicalPluginRoot,
+        CODEX_PLUGIN_ROOT: codexPluginRoot,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(canonicalPluginRoot, { recursive: true, force: true });
+      rmSync(codexPluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("validates Codex spawn_agent payloads instead of only Claude subagent_type payloads", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
     try {

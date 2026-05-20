@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -104,5 +104,54 @@ describe("recordHookEvent JSONL sanitization", () => {
       event_id: expect.stringMatching(/^evt-/),
       surface: "hook:correlated-hook",
     });
+  });
+
+  it("ATDD: records plugin metadata from canonical PLUGIN_ROOT before compatibility roots", () => {
+    const canonicalRoot = mkdtempSync(join(tmpdir(), "hook-events-plugin-root-"));
+    const compatRoot = mkdtempSync(join(tmpdir(), "hook-events-codex-root-"));
+    try {
+      for (const root of [canonicalRoot, compatRoot]) {
+        mkdirSync(join(root, ".codex-plugin"), { recursive: true });
+      }
+      writeFileSync(
+        join(canonicalRoot, ".codex-plugin", "plugin.json"),
+        JSON.stringify({ name: "canonical-plugin", version: "9.9.9" }),
+      );
+      writeFileSync(
+        join(compatRoot, ".codex-plugin", "plugin.json"),
+        JSON.stringify({ name: "compat-plugin", version: "1.0.0" }),
+      );
+
+      const driver = `
+        const { recordHookEvent } = require(${JSON.stringify(HOOK_EVENTS)});
+        recordHookEvent({
+          hook: 'metadata-hook',
+          event: 'UserPromptSubmit',
+          decision: 'allow',
+        });
+      `;
+      const result = spawnSync(process.execPath, ["-e", driver], {
+        cwd: workspace,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PLUGIN_ROOT: canonicalRoot,
+          CODEX_PLUGIN_ROOT: compatRoot,
+        },
+      });
+
+      expect(result.status).toBe(0);
+      const file = join(workspace, ".codex", "pipeline", "hook-events.jsonl");
+      const entry = JSON.parse(readFileSync(file, "utf8").trim().split("\n").at(-1) as string);
+      expect(entry.execution_identity).toMatchObject({
+        plugin_name: "canonical-plugin",
+        plugin_version: "9.9.9",
+        plugin_root: canonicalRoot,
+        runtime: "codex",
+      });
+    } finally {
+      rmSync(canonicalRoot, { recursive: true, force: true });
+      rmSync(compatRoot, { recursive: true, force: true });
+    }
   });
 });

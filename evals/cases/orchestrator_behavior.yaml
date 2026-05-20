@@ -21,4 +21,10 @@ scenarios:
     when: The agent completes the workflow.
     then:
       - Telemetry must not report added_unrequested_features as true.
-
+  - name: Operational plugin execution must prove real-agent runtime.
+    given: A Pipeline Orchestrator plugin run is reported as successful.
+    when: The eval gate checks telemetry.
+    then:
+      - Telemetry must show the pipeline agent FQN.
+      - Telemetry must show spawn_agent evidence.
+      - Telemetry must show wait_agent evidence.
