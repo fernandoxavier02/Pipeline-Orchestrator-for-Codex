@@ -1,22 +1,18 @@
 {
   "added_unrequested_features": false,
   "changed_files": [
-    ".agents/skills/workflow-eval-gate/scripts/run_eval.py",
-    ".codex/hooks/post_tool_use_telemetry.py",
-    ".pipeline/sessions/audit.log",
-    "evals/README.md",
     "evals/outputs/latest_output.md",
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
     "evals/telemetry/latest_trace.json",
-    "evals/tests/test_eval_gate.py",
-    "evals/tests/test_telemetry_hook.py"
+    "hooks/force-pipeline-agents.cjs",
+    "tests/unit/hooks/force-pipeline-agents.test.ts"
   ],
   "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
     "hook_event": "PostToolUse",
-    "session_id": "019e450b-35ab-70c3-983c-5c39f7a4aa43",
+    "session_id": "019e460c-e91c-7910-9f75-df8f895f267d",
     "tool_name": "Bash"
   },
   "execution_observed": true,
@@ -25,7 +21,12 @@
   "last_hook_event": "PostToolUse",
   "plugin_execution": {
     "observed": false,
-    "pipeline_agent_fqn": null
+    "pipeline_agent_fqn": null,
+    "real_agent_runtime": {
+      "spawn_agent_observed": false,
+      "wait_agent_observed": false
+    },
+    "status": "not-observed"
   },
   "scope_respected": true,
   "scope_review": {
@@ -33,18 +34,24 @@
       ".codex/",
       ".agents/skills/workflow-eval-gate/",
       "evals/",
+      ".pipeline/sessions/",
       "docs/pipeline-orchestrator-codex/11-eval-gate-plan.md",
       "docs/pipeline-orchestrator-codex/README.md",
       "AGENTS.md",
       "PROJECT_CONTEXT.md",
       "README.md",
-      ".kiro/",
-      ".pipeline/sessions/"
+      ".kiro/"
     ],
-    "scope_justifications": {},
-    "unexpected_files": []
+    "scope_justifications": {
+      "hooks/force-pipeline-agents.cjs": "requested hook fix for plugin mention front-door routing",
+      "tests/unit/hooks/force-pipeline-agents.test.ts": "regression coverage for @plugin without explicit workflow"
+    },
+    "unexpected_files": [
+      "hooks/force-pipeline-agents.cjs",
+      "tests/unit/hooks/force-pipeline-agents.test.ts"
+    ]
   },
-  "timestamp": "2026-05-20T11:07:31.977546+00:00",
+  "timestamp": "2026-05-20T16:36:53.807772+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validation_evidence": {
@@ -59,11 +66,9 @@
         "status": "PASS"
       },
       "npm test": {
-        "focused_evidence": "Full Vitest run passed: 123 files, 894 tests.",
         "status": "PASS"
       },
       "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
-        "focused_evidence": "46 tests passed after telemetry identity and scope updates.",
         "status": "PASS"
       },
       "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {

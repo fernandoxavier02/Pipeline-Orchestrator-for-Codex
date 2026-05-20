@@ -1,10 +1,6 @@
-.agents/skills/workflow-eval-gate/scripts/run_eval.py
-.codex/hooks/post_tool_use_telemetry.py
-.pipeline/sessions/audit.log
-evals/README.md
 evals/outputs/latest_output.md
 evals/telemetry/changed_files.txt
 evals/telemetry/git_diff.patch
 evals/telemetry/latest_trace.json
-evals/tests/test_eval_gate.py
-evals/tests/test_telemetry_hook.py
+hooks/force-pipeline-agents.cjs
+tests/unit/hooks/force-pipeline-agents.test.ts

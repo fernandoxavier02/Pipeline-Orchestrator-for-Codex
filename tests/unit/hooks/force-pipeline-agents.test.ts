@@ -78,10 +78,37 @@ describe("force pipeline agents hook", () => {
     const output = parseOutput(result);
 
     expect(output.systemMessage).toContain("MANDATORY SUBAGENT EXECUTION");
+    expect(output.systemMessage).toContain("Call update_plan");
+    expect(output.systemMessage).toContain("WORKFLOW_METHOD_GATE");
     expect(output.systemMessage).toContain("agents/core/pipeline-controller.md");
     expect(output.systemMessage).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller");
     expect(output.systemMessage).toContain("blocked-no-agent-runtime");
     expect(output.systemMessage).not.toContain("agents/core/task-orchestrator.md");
+  });
+
+  it("ATDD: plugin mention without explicit workflow enters the canonical pipeline front door", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-"));
+
+    const result = runHook(
+      cwd,
+      "[@pipeline-orchestrator-for-codex](plugin://pipeline-orchestrator-for-codex@fx-studio-ai) quero que analise a qualidade da ultima execucao",
+    );
+    const output = parseOutput(result);
+
+    expect(output.systemMessage).toContain("MANDATORY SUBAGENT EXECUTION");
+    expect(output.systemMessage).toContain("plugin front door");
+    expect(output.systemMessage).toContain("Call update_plan");
+    expect(output.systemMessage).toContain("WORKFLOW_METHOD_GATE");
+    expect(output.systemMessage).toContain("agents/core/pipeline-controller.md");
+    expect(output.systemMessage).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller");
+    expect(output.systemMessage).toContain("blocked-no-agent-runtime");
+
+    const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
+    expect(event).toMatchObject({
+      decision: "inject_pipeline_skill_message",
+      attempted: "pipeline",
+      reason: "explicit plugin-mention-default workflow",
+    });
   });
 
   it("ATDD: preserves explicit governed slash workflow variants exactly", () => {

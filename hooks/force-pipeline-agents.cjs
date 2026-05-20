@@ -157,6 +157,10 @@ function detectExplicitWorkflow(prompt) {
     }
   }
 
+  if (pluginMention) {
+    return { workflow: 'pipeline', source: 'plugin-mention-default' };
+  }
+
   return undefined;
 }
 
@@ -230,19 +234,21 @@ const SKILL_MESSAGE = `
 const PIPELINE_SKILL_MESSAGE = `
 ⛔ MANDATORY SUBAGENT EXECUTION — PIPELINE WORKFLOW WAS INVOKED ⛔
 
-The user explicitly invoked /pipeline-orchestrator-for-codex:pipeline. This means YOU MUST call spawn_agent for each pipeline phase.
+The user explicitly invoked /pipeline-orchestrator-for-codex:pipeline, or invoked the plugin front door without selecting a narrower workflow. This means YOU MUST follow the pipeline skill contract and call spawn_agent for each pipeline phase.
 This hook message is the user's explicit subagent-delegation request for this invocation.
 
 DO NOT execute any phase inline. DO NOT write audit reports, classifications, or reviews yourself.
 DO NOT say "I chose the conservative approach" to skip spawning.
 
 YOUR FIRST ACTION must be:
-1. Find the agents directory using PLUGIN_ROOT/agents/ (CODEX_PLUGIN_ROOT and CLAUDE_PLUGIN_ROOT are compatibility fallbacks only)
-2. Read agents/core/pipeline-controller.md
-3. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
-4. Call wait_agent for the returned agent id
-5. Process every GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST block before advancing
-6. Use send_input to continue the same controller when it is still open, or spawn a fresh worker when a new isolated dispatch is required
+1. Call update_plan to open the visible Codex plan before any execution, classification, report, file edit, or dispatch
+2. Present the WORKFLOW_METHOD_GATE for pipeline and wait for approval or workflow switch
+3. Find the agents directory using PLUGIN_ROOT/agents/ (CODEX_PLUGIN_ROOT and CLAUDE_PLUGIN_ROOT are compatibility fallbacks only)
+4. Read agents/core/pipeline-controller.md
+5. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
+6. Call wait_agent for the returned agent id
+7. Process every GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST block before advancing
+8. Use send_input to continue the same controller when it is still open, or spawn a fresh worker when a new isolated dispatch is required
 
 If spawn_agent, wait_agent, or send_input is not available, stop with blocked-no-agent-runtime instead of executing inline.
 
