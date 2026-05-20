@@ -60,6 +60,27 @@ export const WORKFLOW_NEXT_STEPS = Object.freeze({
         defaultMode: "suggest",
         requiresApproval: false,
     },
+    "codex-kb-drift-check": {
+        workflow: "codex-kb-drift-check",
+        next: null,
+        reason: "KB drift report finished; act on findings manually or invoke the recommended follow-up.",
+        defaultMode: "stop",
+        requiresApproval: false,
+    },
+    "codex-kb-lookup": {
+        workflow: "codex-kb-lookup",
+        next: null,
+        reason: "KB lookup is informational; invoke the recommended follow-up explicitly when ready.",
+        defaultMode: "stop",
+        requiresApproval: false,
+    },
+    "codex-kb-refresh": {
+        workflow: "codex-kb-refresh",
+        next: "codex-kb-drift-check",
+        reason: "KB refresh updated source documentation; run drift check to verify repo alignment.",
+        defaultMode: "suggest",
+        requiresApproval: true,
+    },
     feature: {
         workflow: "feature",
         next: implementationVariant,

@@ -12,6 +12,9 @@ export type WorkflowId =
   | "bugfix"
   | "bugfix-heavy"
   | "bugfix-light"
+  | "codex-kb-drift-check"
+  | "codex-kb-lookup"
+  | "codex-kb-refresh"
   | "feature"
   | "feature-heavy"
   | "feature-light"
@@ -123,6 +126,27 @@ export const WORKFLOW_NEXT_STEPS: Readonly<Record<WorkflowId, WorkflowNextStepRu
     reason: "Light bugfix implementation finished; review the implementation before final verification.",
     defaultMode: "suggest",
     requiresApproval: false,
+  },
+  "codex-kb-drift-check": {
+    workflow: "codex-kb-drift-check",
+    next: null,
+    reason: "KB drift report finished; act on findings manually or invoke the recommended follow-up.",
+    defaultMode: "stop",
+    requiresApproval: false,
+  },
+  "codex-kb-lookup": {
+    workflow: "codex-kb-lookup",
+    next: null,
+    reason: "KB lookup is informational; invoke the recommended follow-up explicitly when ready.",
+    defaultMode: "stop",
+    requiresApproval: false,
+  },
+  "codex-kb-refresh": {
+    workflow: "codex-kb-refresh",
+    next: "codex-kb-drift-check",
+    reason: "KB refresh updated source documentation; run drift check to verify repo alignment.",
+    defaultMode: "suggest",
+    requiresApproval: true,
   },
   feature: {
     workflow: "feature",
