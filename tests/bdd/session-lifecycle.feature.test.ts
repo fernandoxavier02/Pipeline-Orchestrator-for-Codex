@@ -33,6 +33,7 @@ function runHook(cwd: string, payload: Record<string, unknown>) {
     decision?: "block" | null;
     reason?: string;
     continue?: boolean;
+    stopReason?: string;
     systemMessage?: string;
   };
 }
@@ -64,8 +65,19 @@ describe("Feature: session-lock guards SessionStart", () => {
   it("Scenario: a second startup while the lock is active is blocked", () => {
     runHook(workspace, { source: "startup", session_id: "A" });
     const out = runHook(workspace, { source: "startup", session_id: "B" });
-    expect(out.decision).toBe("block");
-    expect(out.reason).toContain("session_id=A");
+    expect(out.continue).toBe(false);
+    expect(out.stopReason).toContain("session_id=A");
+    expect(out.decision).toBeUndefined();
+    expect(out.reason).toBeUndefined();
+  });
+
+  it("Scenario: repeated startup for the same active session is permitted", () => {
+    runHook(workspace, { source: "startup", session_id: "A" });
+    const before = readFileSync(lockPath(workspace), "utf8");
+    const out = runHook(workspace, { source: "startup", session_id: "A" });
+    expect(out.continue).toBe(true);
+    const after = readFileSync(lockPath(workspace), "utf8");
+    expect(after).toBe(before);
   });
 
   it("Scenario: resume with an active lock is permitted without overwriting it", () => {
@@ -82,6 +94,16 @@ describe("Feature: session-lock guards SessionStart", () => {
     const out = runHook(workspace, { source: "clear", session_id: "A" });
     expect(out.decision).not.toBe("block");
     expect(existsSync(lockPath(workspace))).toBe(false);
+  });
+
+  it("Scenario: source=clear with another session is blocked with the Codex SessionStart contract", () => {
+    runHook(workspace, { source: "startup", session_id: "A" });
+    const out = runHook(workspace, { source: "clear", session_id: "B" });
+    expect(out.continue).toBe(false);
+    expect(out.stopReason).toContain("provided session_id does not match active lock");
+    expect(out.decision).toBeUndefined();
+    expect(out.reason).toBeUndefined();
+    expect(existsSync(lockPath(workspace))).toBe(true);
   });
 
   it("Scenario: an expired lock allows a fresh startup", () => {

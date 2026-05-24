@@ -17,7 +17,8 @@
  *      - GC: removes expired locks.
  *
  * Output contract (Codex hook):
- *   { decision: "block" | null, reason?: string, continue?: true, systemMessage?: string }
+ *   allow: { continue: true }
+ *   block: { continue: false, stopReason: string, systemMessage: string }
  *
  * Atomic writes (Windows-safe): write `.tmp`, unlink target if present, rename.
  */
@@ -108,6 +109,14 @@ function emit(output) {
   console.log(JSON.stringify(output));
 }
 
+function emitBlock(reason) {
+  emit({
+    continue: false,
+    stopReason: reason,
+    systemMessage: reason,
+  });
+}
+
 function handleHeartbeat(input) {
   const now = nowEpochSeconds();
   const existing = readLock();
@@ -173,11 +182,7 @@ function handleSessionStart(input) {
         expected: existing.session_id,
         reason: 'clear rejected: provided session_id does not match active lock',
       });
-      emit({
-        decision: 'block',
-        reason: `session-lock clear rejected: provided session_id does not match active lock (${existing.session_id}).`,
-        continue: true,
-      });
+      emitBlock(`session-lock clear rejected: provided session_id does not match active lock (${existing.session_id}).`);
       return;
     }
     const removed = deleteLock();
@@ -221,6 +226,19 @@ function handleSessionStart(input) {
 
   // startup
   if (existing && !isExpired(existing, now)) {
+    if (existing.session_id === incomingSessionId) {
+      recordHookEvent({
+        hook: 'session-lock',
+        event: 'SessionStart',
+        decision: 'startup-idempotent',
+        attempted: incomingSessionId,
+        expected: existing.session_id,
+        reason: 'startup repeated for active session',
+      });
+      emit({ continue: true });
+      return;
+    }
+
     const reason =
       `Pipeline session-lock is ACTIVE for session_id=${existing.session_id} ` +
       `(expires_at=${existing.expires_at}). Concurrent pipeline executions are not permitted. ` +
@@ -233,7 +251,7 @@ function handleSessionStart(input) {
       expected: existing.session_id,
       reason: 'concurrent session',
     });
-    emit({ decision: 'block', reason, continue: true });
+    emitBlock(reason);
     return;
   }
 
@@ -277,10 +295,6 @@ process.stdin.on('end', () => {
       decision: 'block',
       reason: `hook crash: ${err && err.message ? err.message : String(err)}`,
     });
-    emit({
-      decision: 'block',
-      reason: `session-lock-hook crashed: ${err && err.message ? err.message : 'unknown error'}`,
-      continue: true,
-    });
+    emitBlock(`session-lock-hook crashed: ${err && err.message ? err.message : 'unknown error'}`);
   }
 });
