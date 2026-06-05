@@ -9,3 +9,6 @@ coverage/
 node_modules/
 hooks.backup-session-lock-*/
 dist/tests/integration/plugin/package-surface.test.js
+dist/src/dispatcher/multi-agent-runner.js
+dist/src/primitives/plan-mode.js
+dist/tests/unit/primitives/plan-mode.test.js
