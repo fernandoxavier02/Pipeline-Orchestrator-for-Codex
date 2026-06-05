@@ -5,10 +5,6 @@
         "matcher": "",
         "hooks": [
           {
-            "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/hooks/session-lock-hook.cjs\""
-          },
-          {
             "type": "prompt",
             "prompt": "Pipeline Orchestrator for Codex v0.5.0 loaded. Parity target: local Claude Code Pipeline Orchestrator v5.2.0 (strict real-agent dispatch, GATE_REQUEST/DISPATCH_REQUEST/PLAN_MODE_REQUEST protocol-events.jsonl, brainstorm pipeline-runs, Spec lifecycle gates, TRACE.md, session-lock, dispatch/edit guards, sentinel checkpoints, atomic stores, cleanup, execution identity tracing). Try: /pipeline-orchestrator-for-codex:pipeline [task] for strict execution, /pipeline-orchestrator-for-codex:pipeline diagnostic [task] to preview, or /pipeline-orchestrator-for-codex:brainstorm [task] for preparation. Without spawn_agent, operational pipeline execution blocks with blocked-no-agent-runtime instead of simulating multi-agent execution."
           }

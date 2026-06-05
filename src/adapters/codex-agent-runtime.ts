@@ -126,6 +126,14 @@ export function createCodexAgentRuntimeAdapter(
   const namespace = options.pluginNamespace ?? DEFAULT_NAMESPACE;
 
   return {
+    capabilities: {
+      spawnAgent: true,
+      waitAgent: false,
+      collectArtifacts: false,
+      recordGates: false,
+      recordCheckpoints: false,
+      structuredFinalState: false,
+    },
     async spawnAgent(request: AgentDispatchRequest): Promise<DispatchResult> {
       try {
         const response = await options.spawnAgent({

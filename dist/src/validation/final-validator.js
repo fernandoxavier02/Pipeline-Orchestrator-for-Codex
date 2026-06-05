@@ -1,4 +1,5 @@
 import { createGateRegistry } from "../gates/gate-registry.js";
+import { REQUIRED_PIPELINE_GATES } from "../governance/pipeline-contract.js";
 import { resolveFinalValidationEvidence } from "../review/domain-checklists.js";
 const NON_OPERATIONAL_MODES = new Set(["diagnostic", "review-only"]);
 function normalizeMode(mode) {
@@ -56,9 +57,16 @@ export function runFinalValidator(input) {
     const gateRegistry = createGateRegistry();
     const effectiveGateLog = resolveEffectiveGateLog(input.gateLog);
     const confidenceBand = getConfidenceBand(input.confidenceScore);
-    const blockingGates = effectiveGateLog
-        .filter((entry) => entry.decision === "block")
-        .map((entry) => entry.gate);
+    const presentGateNames = new Set(effectiveGateLog.map((entry) => entry.gate));
+    const missingRequiredGates = isNonExemptMode(input.mode)
+        ? REQUIRED_PIPELINE_GATES.filter((gate) => !presentGateNames.has(gate))
+        : [];
+    const blockingGates = [
+        ...effectiveGateLog
+            .filter((entry) => entry.decision === "block")
+            .map((entry) => entry.gate),
+        ...missingRequiredGates,
+    ];
     const skippedSoftGates = effectiveGateLog
         .filter((entry) => entry.hardness === "SOFT" && entry.decision === "skip")
         .map((entry) => entry.gate);
@@ -77,6 +85,9 @@ export function runFinalValidator(input) {
                 missingEvidence.push(canonicalKind);
             }
         }
+    }
+    for (const gate of missingRequiredGates) {
+        missingEvidence.push(`gate:${gate}`);
     }
     if (input.dispatchMode
         && input.dispatchMode !== "real-agent"
@@ -105,6 +116,7 @@ export function runFinalValidator(input) {
         missingEvidence,
         verificationEvidence: input.verificationEvidence,
         blockingGates,
+        missingRequiredGates,
         skippedSoftGates,
         blockedReviews: blockedReviews.length,
         rollbackHint,

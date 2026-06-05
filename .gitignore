@@ -12,6 +12,9 @@ dist/src/controller/*
 !dist/src/controller/pipeline-controller.js
 !dist/src/controller/plan-mode.js
 !dist/src/controller/workflow-selection.js
+!dist/src/governance/
+dist/src/governance/*
+!dist/src/governance/pipeline-contract.js
 !dist/src/spec/
 dist/src/spec/*
 !dist/src/spec/spec-lifecycle.js

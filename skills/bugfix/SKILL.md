@@ -32,6 +32,8 @@ When this workflow reaches any terminal state, emit the `NEXT_STEP` block define
 
 Any operational path in this workflow that dispatches pipeline work MUST use real Codex `spawn_agent` with a `PIPELINE_AGENT_FQN` marker. If `spawn_agent` is unavailable, fails, or cannot return an isolated agent result, stop with `blocked-no-agent-runtime`. Do not continue inline, do not simulate subagents, and do not report the run as real multi-agent execution.
 
+If a manual auxiliary review is offered after a runtime block, label it `manual_fallback_not_pipeline` and include exactly: "This is a manual fallback review, not a valid pipeline execution." It never counts as approval, PASS, or a valid pipeline execution.
+
 For informational-only workflows, do not launch the recommended workflow from the help/router context. Recommend the command and stop unless the user explicitly invokes an executable workflow with real agent support.
 
 ## Codex Parent Protocol Contract

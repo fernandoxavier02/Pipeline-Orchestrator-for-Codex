@@ -147,7 +147,6 @@ class EvalGateRunnerTests(unittest.TestCase):
                 ".git/config",
                 ".git",
                 "node_modules/package/index.js",
-                "dist/src/index.js",
                 "build/output.js",
             ]),
             encoding="utf-8",
@@ -155,8 +154,31 @@ class EvalGateRunnerTests(unittest.TestCase):
 
         result = self.run_eval()
         self.assertNotEqual(result.returncode, 0)
-        for path in [".git/config", ".git", "node_modules/package/index.js", "dist/src/index.js", "build/output.js"]:
+        for path in [".git/config", ".git", "node_modules/package/index.js", "build/output.js"]:
             self.assertIn(f"forbidden changed path: {path}", result.stdout)
+
+    def test_dist_changed_paths_require_build_evidence(self) -> None:
+        telemetry = {
+            **VALID_TELEMETRY,
+            "validation_evidence": {
+                "commands": {
+                    **VALID_TELEMETRY["validation_evidence"]["commands"],
+                    "npm run build": {"status": "FAIL"},
+                }
+            },
+        }
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+        (self.root / "evals" / "telemetry" / "changed_files.txt").write_text(
+            "dist/src/index.js",
+            encoding="utf-8",
+        )
+
+        result = self.run_eval()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("forbidden changed path without npm run build evidence: dist/src/index.js", result.stdout)
 
     def test_missing_git_diff_patch_fails(self) -> None:
         (self.root / "evals" / "telemetry" / "git_diff.patch").unlink()

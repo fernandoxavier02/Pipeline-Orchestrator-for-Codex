@@ -20,7 +20,7 @@ export function resolveCliExitCode(result: unknown) {
   }
 
   const status = (result as { status?: unknown }).status;
-  if (typeof status === "string" && status.startsWith("blocked")) {
+  if (typeof status === "string" && status.toLowerCase().startsWith("blocked")) {
     return 1;
   }
 
@@ -74,7 +74,7 @@ export async function runPipelineCli(options: PipelineCliOptions) {
   // R6 AC 6.2 — on continue, if the caller did not pass --strict-agents,
   // honor the value persisted in the latest session.json. Legacy sessions
   // (no field) keep strictAgents as undefined and the cascade applies fresh.
-  let effectiveStrictAgents = options.strictAgents;
+  let effectiveStrictAgents: boolean | undefined = options.strictAgents;
   if (options.continue && effectiveStrictAgents === undefined) {
     try {
       const { findLatestRun } = await import("../continue/find-latest-run.js");
@@ -88,14 +88,7 @@ export async function runPipelineCli(options: PipelineCliOptions) {
       // peek is best-effort; fall back to undefined (cascade default applies).
     }
   }
-
-  if (effectiveStrictAgents && !agentRuntime) {
-    return {
-      status: "blocked-no-agent-runtime",
-      reason: "spawn_agent is not available to this Node process. Provide --agent-runtime-adapter=<module> or CODEX_AGENT_RUNTIME_ADAPTER so the CLI can call a real Codex spawn_agent bridge.",
-      input: options.task,
-    };
-  }
+  effectiveStrictAgents ??= true;
 
   const runtime = createPipelineRuntime({
     cwd: options.cwd,

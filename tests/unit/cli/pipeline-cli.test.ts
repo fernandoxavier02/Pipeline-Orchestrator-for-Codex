@@ -4,6 +4,7 @@ import { resolveCliExitCode, runPipelineCli } from "../../../src/cli/pipeline-cl
 describe("pipeline CLI exit code", () => {
   it("treats every blocked status as a failed execution", () => {
     expect(resolveCliExitCode({ status: "blocked" })).toBe(1);
+    expect(resolveCliExitCode({ status: "BLOCKED" })).toBe(1);
     expect(resolveCliExitCode({ status: "blocked-no-agent-runtime" })).toBe(1);
     expect(resolveCliExitCode({ status: "blocked-awaiting-parent-action" })).toBe(1);
   });
@@ -22,12 +23,16 @@ describe("pipeline CLI exit code", () => {
     });
 
     expect(result).toMatchObject({
-      status: "blocked-no-agent-runtime",
+      status: "BLOCKED",
+      reason: "blocked-no-agent-runtime",
+      pipeline_valid: false,
+      blockedBy: "CAPABILITY_GATE",
     });
+    expect(result.missing_capabilities).toContain("spawn_agent");
     expect(resolveCliExitCode(result)).toBe(1);
   });
 
-  it("uses the operational runtime when an agent adapter is explicitly injected", async () => {
+  it("blocks an injected adapter that cannot wait for agents or collect artifacts", async () => {
     const result = await runPipelineCli({
       cwd: process.cwd(),
       codexHome: process.cwd(),
@@ -47,7 +52,46 @@ describe("pipeline CLI exit code", () => {
       },
     });
 
-    expect(result.status).not.toBe("blocked-no-agent-runtime");
+    expect(result.status).toBe("BLOCKED");
+    expect(result.missing_capabilities).toContain("wait_agent");
+    expect(result.pipeline_valid).toBe(false);
+  });
+
+  it("uses the operational runtime when a complete agent adapter is explicitly injected", async () => {
+    const result = await runPipelineCli({
+      cwd: process.cwd(),
+      codexHome: process.cwd(),
+      strictAgents: true,
+      task: "audit current workflow execution",
+      agentRuntime: {
+        capabilities: {
+          spawnAgent: true,
+          waitAgent: true,
+          collectArtifacts: true,
+          recordGates: true,
+          recordCheckpoints: true,
+          structuredFinalState: true,
+        },
+        async spawnAgent(request) {
+          return {
+            mode: "single-agent",
+            role: request.role,
+            output: {
+              status: "approved",
+              dispatchMode: "real-agent",
+            },
+          };
+        },
+        async waitAgent(dispatch) {
+          return dispatch;
+        },
+        async collectArtifacts(dispatches) {
+          return dispatches.map((dispatch) => dispatch.output);
+        },
+      },
+    });
+
+    expect(result.status).not.toBe("BLOCKED");
     expect(result.proposal.awaitingUserConfirmation).toBe(true);
   });
 });

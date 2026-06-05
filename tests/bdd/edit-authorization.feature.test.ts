@@ -69,6 +69,7 @@ describe("Feature: edit-guard gates write-capable dispatches", () => {
             output: { ok: true },
           };
         },
+        waitAgent: async (dispatch) => dispatch,
       },
       sessionRoot: stateRoot,
       sessionId: "S1",
@@ -95,7 +96,10 @@ describe("Feature: edit-guard gates write-capable dispatches", () => {
       prompt: "implement",
       input: {},
       requireRealAgent: true,
-      agentRuntime: { spawnAgent: async () => ({ mode: "single-agent", role: "executor-implementer", output: {} }) },
+      agentRuntime: {
+        spawnAgent: async () => ({ mode: "single-agent", role: "executor-implementer", output: {} }),
+        waitAgent: async (dispatch) => dispatch,
+      },
       sessionRoot: stateRoot,
       sessionId: "S1",
     });
@@ -127,6 +131,7 @@ describe("Feature: edit-guard gates write-capable dispatches", () => {
           spawned = true;
           return { mode: "single-agent", role: "review-orchestrator", output: {} };
         },
+        waitAgent: async (dispatch) => dispatch,
       },
       sessionRoot: stateRoot,
       sessionId: "S1",
@@ -187,10 +192,16 @@ describe("IMP-01: pipeline-controller opens exec-window around executeApprovedWo
       workspaceRoot,
       stores: {
         session: { load: async () => session, save: async () => undefined },
-        checkpoints: { list: async () => [] },
+        checkpoints: { list: async () => [], save: async () => undefined },
         gateLog: { append: async () => undefined, list: async () => [] },
         confidence: { save: async () => undefined, load: async () => undefined as any },
         sentinel: { save: async () => undefined, load: async () => undefined as any },
+      },
+      agentRuntime: {
+        capabilities: { structuredFinalState: true },
+        spawnAgent: async (request: any) => ({ mode: "single-agent", role: request.role, output: {} }),
+        waitAgent: async (dispatch: any) => dispatch,
+        collectArtifacts: async (dispatches: any[]) => dispatches.map((dispatch) => dispatch.output),
       },
       executionController: {
         executeApprovedWork: async (_input: any) => {
@@ -244,10 +255,16 @@ describe("IMP-01: pipeline-controller opens exec-window around executeApprovedWo
       workspaceRoot,
       stores: {
         session: { load: async () => session, save: async () => undefined },
-        checkpoints: { list: async () => [] },
+        checkpoints: { list: async () => [], save: async () => undefined },
         gateLog: { append: async () => undefined, list: async () => [] },
         confidence: { save: async () => undefined, load: async () => undefined as any },
         sentinel: { save: async () => undefined, load: async () => undefined as any },
+      },
+      agentRuntime: {
+        capabilities: { structuredFinalState: true },
+        spawnAgent: async (request: any) => ({ mode: "single-agent", role: request.role, output: {} }),
+        waitAgent: async (dispatch: any) => dispatch,
+        collectArtifacts: async (dispatches: any[]) => dispatches.map((dispatch) => dispatch.output),
       },
       executionController: {
         executeApprovedWork: async (input: any) => {

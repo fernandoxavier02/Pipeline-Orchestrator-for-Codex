@@ -566,7 +566,7 @@ describe("closeout confirmation", () => {
     });
 
     expect(result.decision).toBe("NO-GO");
-    expect(result.missingEvidence).toEqual(["build", "tests"]);
+    expect(result.missingEvidence).toEqual(expect.arrayContaining(["build", "tests", "gate:CAPABILITY_GATE"]));
   });
 
   it("does not allow the public runtime stores surface to forge standard closeout proof", async () => {
@@ -645,7 +645,7 @@ describe("closeout confirmation", () => {
     expect("save" in runtime.stores.session).toBe(false);
     expect("save" in runtime.stores.checkpoints).toBe(false);
     expect(result.decision).toBe("NO-GO");
-    expect(result.missingEvidence).toEqual(["build", "tests"]);
+    expect(result.missingEvidence).toEqual(expect.arrayContaining(["build", "tests"]));
   });
 
   it("does not allow the public runtime stores surface to forge reduced closeout proof", async () => {
@@ -715,7 +715,7 @@ describe("closeout confirmation", () => {
     expect("save" in runtime.stores.session).toBe(false);
     expect("save" in runtime.stores.checkpoints).toBe(false);
     expect(result.decision).toBe("NO-GO");
-    expect(result.missingEvidence).toEqual(["build", "tests"]);
+    expect(result.missingEvidence).toEqual(expect.arrayContaining(["build", "tests"]));
   });
 
   it("rejects final-review evidence unless the recorded gate pass is controller-authoritative", async () => {

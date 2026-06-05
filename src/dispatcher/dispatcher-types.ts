@@ -21,7 +21,18 @@ export interface AgentDispatchRequest {
 
 export interface AgentRuntimeAdapter {
   spawnAgent: (request: AgentDispatchRequest) => Promise<DispatchResult>;
+  waitAgent?: (dispatch: DispatchResult) => Promise<DispatchResult>;
+  collectArtifacts?: (dispatches: DispatchResult[]) => Promise<Record<string, unknown>[]>;
+  capabilities?: Partial<Record<AgentRuntimeCapability, boolean>>;
 }
+
+export type AgentRuntimeCapability =
+  | "spawnAgent"
+  | "waitAgent"
+  | "collectArtifacts"
+  | "recordGates"
+  | "recordCheckpoints"
+  | "structuredFinalState";
 
 export type DispatchOutputWithIdentity = Record<string, unknown> & {
   executionIdentity: ExecutionIdentity;

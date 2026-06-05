@@ -60,10 +60,11 @@ function validateAgentRuntime(agentRuntime: unknown): void {
   if (
     !agentRuntime ||
     typeof agentRuntime !== "object" ||
-    typeof (agentRuntime as Record<string, unknown>).spawnAgent !== "function"
+    typeof (agentRuntime as Record<string, unknown>).spawnAgent !== "function" ||
+    typeof (agentRuntime as Record<string, unknown>).waitAgent !== "function"
   ) {
     throw new Error(
-      "blocked-no-agent-runtime: agentRuntime must be an object with a spawnAgent function.",
+      "blocked-no-agent-runtime: agentRuntime must be an object with spawnAgent and waitAgent functions.",
     );
   }
 }
@@ -126,8 +127,10 @@ export async function runRole(request: DispatchRequest): Promise<RunRoleResult> 
     }
 
     validateAgentRuntime(normalizedRequest.agentRuntime);
+    const agentRuntime = normalizedRequest.agentRuntime as Required<Pick<NonNullable<DispatchRequest["agentRuntime"]>, "spawnAgent" | "waitAgent">>;
 
-    const result = await normalizedRequest.agentRuntime.spawnAgent(buildAgentDispatchRequest(requestWithIdentity));
+    const spawned = await agentRuntime.spawnAgent(buildAgentDispatchRequest(requestWithIdentity));
+    const result = await agentRuntime.waitAgent(spawned);
     return withExecutionIdentity({
       ...result,
       output: {

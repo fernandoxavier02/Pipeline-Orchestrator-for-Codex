@@ -1,6 +1,6 @@
 ---
 name: pipeline
-description: "Automated pipeline orchestrator for any project. Works in Codex CLI (spawn_agent) and Claude Code (Agent tool) — detects host and uses the correct dispatch path. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. The public command /pipeline-orchestrator-for-codex:pipeline auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. Always use this for tasks affecting 2+ files or requiring careful orchestration. Even if the user doesn't mention 'pipeline' — if the task is non-trivial, this skill applies."
+description: "Automated Codex pipeline orchestrator for any project. Requires complete real-agent runtime: spawn_agent, wait_agent, artifact collection, gate recording, hook/checkpoint recording, and structured final state. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. The public command /pipeline-orchestrator-for-codex:pipeline auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. If mandatory runtime capabilities are missing, it blocks with blocked-no-agent-runtime; manual fallback is not a valid pipeline execution."
 agent_type: worker
 allowed-tools: update_plan, spawn_agent, wait_agent, send_input
 gates_at: [phase-0, phase-1, phase-1.5, phase-2, phase-3]
@@ -26,79 +26,46 @@ If the user switches workflow, rebuild the gate and ask again. If the gate canno
 When this workflow reaches any terminal state, emit the `NEXT_STEP` block defined in `references/workflow-next-step.md`. Use the workflow name from this file's frontmatter as `current_workflow`; if blocked or waiting on the user, point back to the same workflow instead of advancing.
 
 <HOST-DETECTION>
-## Host Environment Detection
+## Codex Runtime Capability Gate
 
-This skill runs in TWO host environments. Detect which tools are available and use the correct dispatch path. **Never block execution solely because the host is not Codex** — use the equivalent tools.
+This plugin is a Codex plugin. A valid `/pipeline-orchestrator-for-codex:pipeline` execution requires the complete Codex real-agent runtime: `spawn_agent`, `wait_agent`, subagent artifact collection, gate recording, hook/checkpoint recording, and structured final state.
 
-### Tool Mapping
+Before Step 1, run `CAPABILITY_GATE`. If any mandatory capability is missing, stop with `status: BLOCKED`, `reason: blocked-no-agent-runtime`, and a structured artifact that includes `missing_capabilities`, `manual_fallback_allowed: true`, and `manual_fallback_counts_as_pipeline: false`.
 
-| Purpose | Codex CLI | Claude Code | Detection |
-|---------|-----------|-------------|-----------|
-| Spawn isolated agent | `spawn_agent` | `Agent` tool (with `subagent_type` or `prompt`) | Try `spawn_agent` first; if unavailable, use `Agent` |
-| Wait for agent result | `wait_agent` | Automatic (Agent returns result inline) | N/A — Claude Code agents return synchronously |
-| Continue existing agent | `send_input` | `SendMessage(to: agent_name)` | Match by agent name/id |
-| Open visible plan | `update_plan` | `TaskCreate` + `TaskUpdate` (or skip gracefully) | If `update_plan` unavailable, use task tracking |
-| Ask user | GATE_REQUEST protocol | `AskUserQuestion` | Both paths use structured questions |
-
-### Behavior per host
-
-**Codex CLI** (`spawn_agent` available):
-- Use `spawn_agent` / `wait_agent` / `send_input` for all agent dispatch
-- Use `update_plan` for the visible plan panel
-- Hooks in `hooks.json` enforce FQN via `PreToolUse:spawn_agent`
-
-**Claude Code** (`Agent` tool available, no `spawn_agent`):
-- Use `Agent(description, prompt, subagent_type)` to spawn subagents with context isolation
-- Agent results return inline — no separate `wait_agent` call needed
-- Use `SendMessage(to: agent_name)` to continue an existing agent
-- Use `TaskCreate` / `TaskUpdate` for plan tracking (or omit if not needed)
-- Use `AskUserQuestion` for gates that need user input
-- Hooks in `hooks.json` enforce FQN via `PreToolUse:Agent` (already registered)
-
-**Detection at runtime:** Before Step 1, check if `spawn_agent` is available as a tool. If yes → Codex path. If no but `Agent` tool is available → Claude Code path. If neither → `blocked-no-agent-runtime`.
+Do not route this Codex plugin through host-equivalent tools and do not continue inline. If a manual auxiliary review is offered, it must be separate and labeled `manual_fallback_not_pipeline`.
 </HOST-DETECTION>
 
 <MANDATORY-SUBAGENT-RULE>
 ## Subagent Delegation Behavior
 
-When the user invokes `/pipeline-orchestrator-for-codex:pipeline`, they are requesting structured execution. The plugin supports three runtime modes:
+When the user invokes `/pipeline-orchestrator-for-codex:pipeline`, they are requesting structured execution. The plugin supports two strictly separated modes:
 
-### Codex Operational (`spawn_agent` available)
+### Codex Operational (complete real-agent runtime available)
 - **ALWAYS** call `spawn_agent` for every phase.
+- **ALWAYS** call `wait_agent` and collect artifacts before processing a phase result.
 - **NEVER** execute agent work inline.
 - This is the production-grade mode with real context isolation between reviewers and implementers.
 - Requires `multi_agent = true` in `~/.codex/config.toml`.
-
-### Claude Code Operational (`Agent` tool available)
-- **ALWAYS** use the `Agent` tool for every phase that requires delegation.
-- **NEVER** execute agent work inline — delegate to subagents.
-- Use `subagent_type` when a specialized agent matches the role (e.g., `review:code-reviewer`, `review:security-auditor`).
-- For pipeline-specific roles (controller, executor, reviewer), use `Agent(prompt: ...)` with the role contract from `agents/` as the prompt.
-- This mode provides real context isolation via Claude Code's agent framework.
 
 ### Test Harness (`strictAgents = false`)
 - The runtime uses **local emulation** via TypeScript heuristic functions.
 - "Agents" run as async functions in the same Node process with **zero context isolation**.
 - This is a **test harness and contract validator**, not production multi-agent execution.
+- Harness output MUST NOT return `pipeline_valid: true` for explicit `/pipeline-orchestrator-for-codex:pipeline` requests.
 
 Do not present emulation mode as real multi-agent execution. Always document which mode is active in execution logs.
 </MANDATORY-SUBAGENT-RULE>
 
 You are the **PIPELINE SKILL** — a thin delegator. Your ONLY job is:
 
-1. Open the visible plan (Codex: `update_plan` / Claude Code: `TaskCreate` or skip)
+1. Open the visible plan with `update_plan`
 2. Show the workflow/method gate
 3. **Read** `agents/core/pipeline-controller.md`
 4. **Dispatch** it as a worker agent:
-   - Codex: `spawn_agent(agent_type: "worker", message: <controller prompt>)`
-   - Claude Code: `Agent(description: "Pipeline controller", prompt: <controller prompt>)`
-5. **Wait** for the result:
-   - Codex: `wait_agent(agent_id)`
-   - Claude Code: Agent returns result inline
+   - `spawn_agent(agent_type: "worker", message: <controller prompt>)`
+5. **Wait** for the result with `wait_agent`
 6. **Process** the structured blocks it emits (`=== DISPATCH_REQUEST v1 ===`, `=== GATE_REQUEST v1 ===`, `=== PLAN_MODE_REQUEST v1 ===`)
-7. **Re-dispatch** with responses:
-   - Codex: `send_input` (same agent) or fresh `spawn_agent`
-   - Claude Code: `SendMessage(to: agent_name)` (same agent) or fresh `Agent()`
+7. **Re-dispatch** with responses through `send_input` (same agent) or fresh `spawn_agent`
 8. Repeat until `PIPELINE COMPLETE`
 
 You do NOT classify tasks. You do NOT review code. You do NOT run builds. You do NOT write code. **The pipeline-controller agent does ALL of that.** You are the protocol handler.
@@ -110,8 +77,6 @@ $ARGUMENTS
 ## How to Dispatch the Pipeline Controller
 
 **Step 1.** Read `agents/core/pipeline-controller.md`
-
-### Codex Path (spawn_agent available)
 
 **Step 2.** Call `spawn_agent` with:
 - `agent_type: "worker"`
@@ -125,24 +90,9 @@ $ARGUMENTS
 **Step 6.** Call `wait_agent` after every dispatch
 **Step 7.** Repeat until `PIPELINE COMPLETE`
 
-### Claude Code Path (Agent tool available)
-
-**Step 2.** Call `Agent` with:
-- `description`: "Pipeline controller — phase 0"
-- `prompt`: `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller\n` + full content of `agents/core/pipeline-controller.md` + user task in a `<context>` block
-- `name`: "pipeline-controller" (enables SendMessage for continuation)
-**Step 3.** Agent returns result inline — parse the output
-**Step 4.** Parse structured protocol blocks:
-- `=== DISPATCH_REQUEST v1 ===` → call `Agent(description, prompt)` for the requested agent, using `subagent_type` when a matching specialized agent exists
-- `=== GATE_REQUEST v1 ===` → call `AskUserQuestion` and collect the answer
-- `=== PLAN_MODE_REQUEST v1 ===` → call `Agent(mode: "plan")` for read-only research
-**Step 5.** Re-dispatch via `SendMessage(to: "pipeline-controller")` (same agent) or fresh `Agent()` (new turn)
-**Step 6.** Result returns inline after each dispatch
-**Step 7.** Repeat until `PIPELINE COMPLETE`
-
 ### Fallback
 
-If neither `spawn_agent` nor `Agent` tool is available, tell the user: "blocked-no-agent-runtime: no agent dispatch tool is available in this session. The pipeline requires either Codex spawn_agent (multi_agent = true in ~/.codex/config.toml) or Claude Code Agent tool." Do not continue inline.
+If `spawn_agent`, `wait_agent`, artifact collection, gate recording, checkpoint recording, or structured final state is unavailable, return the structured `BLOCKED` artifact. Any optional manual review must say exactly: "This is a manual fallback review, not a valid pipeline execution." Do not continue inline.
 
 ## Protocol Processing Rules
 
@@ -229,10 +179,10 @@ If absent, auto-detect from package.json / Makefile.
 
 You are a **PROTOCOL HANDLER**, not an executor. For EVERY invocation:
 
-1. **Detect host:** Is `spawn_agent` available? → Codex path. Is `Agent` tool available? → Claude Code path. Neither? → blocked.
+1. **Run CAPABILITY_GATE:** complete Codex real-agent runtime available? If no, return `BLOCKED`.
 2. **Read** `agents/core/pipeline-controller.md`
-3. **Dispatch** the controller as a worker agent (Codex: `spawn_agent` / Claude Code: `Agent`)
+3. **Dispatch** the controller as a worker agent using `spawn_agent`
 4. **Process** protocol blocks (DISPATCH_REQUEST, GATE_REQUEST, PLAN_MODE_REQUEST)
 5. **Wait and re-dispatch** until PIPELINE COMPLETE
 
-**Self-check before responding:** Did you dispatch at least one agent (`spawn_agent` OR `Agent` tool) and receive its result? If no, you violated the pipeline contract. Executing the controller's work inline is NEVER acceptable — always delegate.
+**Self-check before responding:** Did you dispatch at least one agent with `spawn_agent`, call `wait_agent`, and receive its result? If no, you violated the pipeline contract. Executing the controller's work inline is NEVER acceptable.

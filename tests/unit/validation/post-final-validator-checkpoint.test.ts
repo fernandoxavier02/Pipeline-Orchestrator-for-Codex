@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { REQUIRED_PIPELINE_GATES } from "../../../src/governance/pipeline-contract.js";
 import { recordPostFinalValidatorCheckpoint } from "../../../src/validation/final-validator.js";
 import { runFinalValidator } from "../../../src/validation/final-validator.js";
 
@@ -110,6 +111,16 @@ describe("recordPostFinalValidatorCheckpoint", () => {
 });
 
 describe("operational final validation", () => {
+  const requiredGovernanceGateLog = REQUIRED_PIPELINE_GATES.map((gate) => ({
+    gate,
+    hardness: "HARD" as const,
+    phase: "phase-3",
+    decision: "pass" as const,
+    decided_by: "controller" as const,
+    timestamp: "2026-04-02T12:00:00.000Z",
+    detail: `${gate} passed`,
+    confidence_impact: 0,
+  }));
   const canonicalEvidence = [
     { kind: "protocol-events", passed: true, label: "target protocol-events.jsonl" },
     { kind: "gate-decisions", passed: true, label: "target gate-decisions.jsonl" },
@@ -140,7 +151,7 @@ describe("operational final validation", () => {
     const result = runFinalValidator({
       reviews: [{ status: "approved" }],
       confidenceScore: 0.95,
-      gateLog: [],
+      gateLog: requiredGovernanceGateLog,
       verificationEvidence: [
         { kind: "build", passed: true, label: "npm run build" },
         { kind: "tests", passed: true, label: "npm test" },
@@ -157,6 +168,27 @@ describe("operational final validation", () => {
       "gate-decisions",
       "target-latest-trace",
     ]));
+  });
+
+  it("rejects real-agent operational runs without mandatory governance gates", () => {
+    const result = runFinalValidator({
+      reviews: [{ status: "approved" }],
+      confidenceScore: 0.95,
+      gateLog: [],
+      verificationEvidence: [
+        { kind: "build", passed: true, label: "npm run build" },
+        { kind: "tests", passed: true, label: "npm test" },
+        { kind: "final-review", passed: true, label: "final adversarial review" },
+        ...canonicalEvidence,
+      ],
+      validationIntent: "standard",
+      mode: "full",
+      dispatchMode: "real-agent",
+    });
+
+    expect(result.decision).toBe("NO-GO");
+    expect(result.blockingGates).toEqual(expect.arrayContaining(["CAPABILITY_GATE", "FINAL_VERDICT_GATE"]));
+    expect(result.missingEvidence).toEqual(expect.arrayContaining(["gate:CAPABILITY_GATE", "gate:FINAL_VERDICT_GATE"]));
   });
 
   it.each(["--complexa", "--plan", "--grill", "--media", "--simples", "--hotfix"])(
@@ -258,7 +290,7 @@ describe("operational final validation", () => {
     const result = runFinalValidator({
       reviews: [{ status: "approved" }],
       confidenceScore: 0.95,
-      gateLog: [],
+      gateLog: requiredGovernanceGateLog,
       verificationEvidence: [
         { kind: "build", passed: true, label: "npm run build" },
         { kind: "tests", passed: true, label: "npm test" },

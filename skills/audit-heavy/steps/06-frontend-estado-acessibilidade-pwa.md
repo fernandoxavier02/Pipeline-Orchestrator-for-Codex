@@ -2,7 +2,7 @@
 step_number: 6
 step_name: "frontend-estado-acessibilidade-pwa"
 execution_mode: subagent
-agent_type: "pipeline-orchestrator-for-codex:executor/type-specific:audit-compliance-checker"
+agent_type: "pipeline-orchestrator-for-codex:executor:type-specific:audit-compliance-checker"
 production_writes_allowed: false
 expected_inputs:
   - AuditIntake: from_step_1

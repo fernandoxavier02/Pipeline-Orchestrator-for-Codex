@@ -51,22 +51,22 @@ const PIPELINE_AGENT_LEAVES = [
   ['executor', 'executor-implementer-task'],
   ['executor', 'executor-quality-reviewer'],
   ['executor', 'executor-spec-reviewer'],
-  ['executor/type-specific', 'adversarial-architecture-critic'],
-  ['executor/type-specific', 'adversarial-review-coordinator'],
-  ['executor/type-specific', 'adversarial-security-scanner'],
-  ['executor/type-specific', 'audit-compliance-checker'],
-  ['executor/type-specific', 'audit-domain-analyzer'],
-  ['executor/type-specific', 'audit-intake'],
-  ['executor/type-specific', 'audit-risk-matrix-generator'],
-  ['executor/type-specific', 'bugfix-diagnostic-agent'],
-  ['executor/type-specific', 'bugfix-regression-tester'],
-  ['executor/type-specific', 'bugfix-root-cause-analyzer'],
-  ['executor/type-specific', 'feature-implementer'],
-  ['executor/type-specific', 'feature-integration-validator'],
-  ['executor/type-specific', 'feature-vertical-slice-planner'],
-  ['executor/type-specific', 'ux-accessibility-auditor'],
-  ['executor/type-specific', 'ux-qa-validator'],
-  ['executor/type-specific', 'ux-simulator'],
+  ['executor:type-specific', 'adversarial-architecture-critic'],
+  ['executor:type-specific', 'adversarial-review-coordinator'],
+  ['executor:type-specific', 'adversarial-security-scanner'],
+  ['executor:type-specific', 'audit-compliance-checker'],
+  ['executor:type-specific', 'audit-domain-analyzer'],
+  ['executor:type-specific', 'audit-intake'],
+  ['executor:type-specific', 'audit-risk-matrix-generator'],
+  ['executor:type-specific', 'bugfix-diagnostic-agent'],
+  ['executor:type-specific', 'bugfix-regression-tester'],
+  ['executor:type-specific', 'bugfix-root-cause-analyzer'],
+  ['executor:type-specific', 'feature-implementer'],
+  ['executor:type-specific', 'feature-integration-validator'],
+  ['executor:type-specific', 'feature-vertical-slice-planner'],
+  ['executor:type-specific', 'ux-accessibility-auditor'],
+  ['executor:type-specific', 'ux-qa-validator'],
+  ['executor:type-specific', 'ux-simulator'],
   ['quality', 'architecture-reviewer'],
   ['quality', 'design-interrogator'],
   ['quality', 'final-adversarial-orchestrator'],
@@ -286,6 +286,24 @@ function extractPipelineAgentType(toolInput, options = {}) {
     if (marker?.[1]) return marker[1].trim();
   }
 
+  const hostAgentType = toolInput.agent_type || toolInput.agentType;
+  if (hostAgentType !== undefined && hostAgentType !== null) {
+    if (typeof hostAgentType !== 'string') {
+      return { invalid: true, value: hostAgentType };
+    }
+    const leaf = hostAgentType.includes(':') ? hostAgentType.split(':').pop() : hostAgentType;
+    if (
+      hostAgentType.startsWith(`${PIPELINE_NAMESPACE}:`) ||
+      hostAgentType.startsWith(`${LEGACY_PIPELINE_NAMESPACE}:`) ||
+      isPipelineAgentLeaf(leaf)
+    ) {
+      if (options.requireMarker) {
+        return { markerMissing: true, value: hostAgentType };
+      }
+      return hostAgentType;
+    }
+  }
+
   const direct = toolInput.subagent_type || toolInput.subagentType || toolInput.target_name || toolInput.targetName;
   if (direct !== undefined && direct !== null) {
     if (typeof direct !== 'string') {
@@ -322,7 +340,7 @@ function evaluateAgent(toolInput, options = {}) {
     return {
       kind: 'deny',
       reason:
-        `DISPATCH_GUARD: Codex spawn_agent pipeline dispatch must put the canonical FQN in ` +
+        `DISPATCH_GUARD: Codex spawn_agent pipeline dispatch must use agent_type "worker" and put the canonical FQN in ` +
         `the message as "PIPELINE_AGENT_FQN: <fqn>". Direct pipeline identity fields are not enough.`,
       attempted: String(subagentType.value),
       expected: "PIPELINE_AGENT_FQN marker in message",

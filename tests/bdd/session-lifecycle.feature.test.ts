@@ -4,7 +4,8 @@
  * In order to prevent concurrent pipeline runs in the same workspace,
  * As the pipeline orchestrator,
  * The hooks/session-lock-hook.cjs SessionStart guard must:
- *   - block startup when an active lock exists,
+ *   - avoid locking normal Codex startup/resume events,
+ *   - block explicit pipeline startup when an active lock exists,
  *   - permit resume when the lock is still valid,
  *   - clear the lock when source=clear.
  */
@@ -42,7 +43,7 @@ function lockPath(root: string) {
   return join(root, ".codex", "pipeline", "session-lock.json");
 }
 
-describe("Feature: session-lock guards SessionStart", () => {
+describe("Feature: session-lock guards explicit pipeline SessionStart", () => {
   let workspace: string;
 
   beforeEach(() => {
@@ -53,8 +54,19 @@ describe("Feature: session-lock guards SessionStart", () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
-  it("Scenario: startup with no prior lock acquires the lock", () => {
+  it("Scenario: normal Codex startup with no prior lock does not acquire the lock", () => {
     const out = runHook(workspace, { source: "startup", session_id: "A" });
+    expect(out.decision).not.toBe("block");
+    expect(out.continue).toBe(true);
+    expect(existsSync(lockPath(workspace))).toBe(false);
+  });
+
+  it("Scenario: explicit pipeline startup with no prior lock acquires the lock", () => {
+    const out = runHook(workspace, {
+      source: "startup",
+      session_id: "A",
+      enforce_session_lock: true,
+    });
     expect(out.decision).not.toBe("block");
     expect(existsSync(lockPath(workspace))).toBe(true);
     const lock = JSON.parse(readFileSync(lockPath(workspace), "utf8"));
@@ -62,42 +74,58 @@ describe("Feature: session-lock guards SessionStart", () => {
     expect(lock.status).toBe("active");
   });
 
-  it("Scenario: a second startup while the lock is active is blocked", () => {
-    runHook(workspace, { source: "startup", session_id: "A" });
+  it("Scenario: normal Codex startup while an explicit pipeline lock is active is permitted", () => {
+    runHook(workspace, { source: "startup", session_id: "A", enforce_session_lock: true });
     const out = runHook(workspace, { source: "startup", session_id: "B" });
+    expect(out.continue).toBe(true);
+    const lock = JSON.parse(readFileSync(lockPath(workspace), "utf8"));
+    expect(lock.session_id).toBe("A");
+  });
+
+  it("Scenario: a second explicit pipeline startup while the lock is active is blocked", () => {
+    runHook(workspace, { source: "startup", session_id: "A", enforce_session_lock: true });
+    const out = runHook(workspace, {
+      source: "startup",
+      session_id: "B",
+      enforce_session_lock: true,
+    });
     expect(out.continue).toBe(false);
     expect(out.stopReason).toContain("session_id=A");
     expect(out.decision).toBeUndefined();
     expect(out.reason).toBeUndefined();
   });
 
-  it("Scenario: repeated startup for the same active session is permitted", () => {
-    runHook(workspace, { source: "startup", session_id: "A" });
+  it("Scenario: repeated explicit startup for the same active session is permitted", () => {
+    runHook(workspace, { source: "startup", session_id: "A", enforce_session_lock: true });
     const before = readFileSync(lockPath(workspace), "utf8");
-    const out = runHook(workspace, { source: "startup", session_id: "A" });
+    const out = runHook(workspace, {
+      source: "startup",
+      session_id: "A",
+      enforce_session_lock: true,
+    });
     expect(out.continue).toBe(true);
     const after = readFileSync(lockPath(workspace), "utf8");
     expect(after).toBe(before);
   });
 
-  it("Scenario: resume with an active lock is permitted without overwriting it", () => {
-    runHook(workspace, { source: "startup", session_id: "A" });
+  it("Scenario: explicit resume with an active lock is permitted without overwriting it", () => {
+    runHook(workspace, { source: "startup", session_id: "A", enforce_session_lock: true });
     const before = readFileSync(lockPath(workspace), "utf8");
-    const out = runHook(workspace, { source: "resume", session_id: "A" });
+    const out = runHook(workspace, { source: "resume", session_id: "A", enforce_session_lock: true });
     expect(out.decision).not.toBe("block");
     const after = readFileSync(lockPath(workspace), "utf8");
     expect(after).toBe(before);
   });
 
   it("Scenario: source=clear releases the lock", () => {
-    runHook(workspace, { source: "startup", session_id: "A" });
+    runHook(workspace, { source: "startup", session_id: "A", enforce_session_lock: true });
     const out = runHook(workspace, { source: "clear", session_id: "A" });
     expect(out.decision).not.toBe("block");
     expect(existsSync(lockPath(workspace))).toBe(false);
   });
 
   it("Scenario: source=clear with another session is blocked with the Codex SessionStart contract", () => {
-    runHook(workspace, { source: "startup", session_id: "A" });
+    runHook(workspace, { source: "startup", session_id: "A", enforce_session_lock: true });
     const out = runHook(workspace, { source: "clear", session_id: "B" });
     expect(out.continue).toBe(false);
     expect(out.stopReason).toContain("provided session_id does not match active lock");
@@ -106,7 +134,7 @@ describe("Feature: session-lock guards SessionStart", () => {
     expect(existsSync(lockPath(workspace))).toBe(true);
   });
 
-  it("Scenario: an expired lock allows a fresh startup", () => {
+  it("Scenario: an expired lock allows a fresh explicit pipeline startup", () => {
     const dir = join(workspace, ".codex", "pipeline");
     require("node:fs").mkdirSync(dir, { recursive: true });
     const expired = {
@@ -116,13 +144,17 @@ describe("Feature: session-lock guards SessionStart", () => {
       status: "active",
     };
     writeFileSync(join(dir, "session-lock.json"), JSON.stringify(expired), "utf8");
-    const out = runHook(workspace, { source: "startup", session_id: "NEW" });
+    const out = runHook(workspace, {
+      source: "startup",
+      session_id: "NEW",
+      enforce_session_lock: true,
+    });
     expect(out.decision).not.toBe("block");
     const lock = JSON.parse(readFileSync(lockPath(workspace), "utf8"));
     expect(lock.session_id).toBe("NEW");
   });
 
-  it("Scenario: resume with an expired lock refreshes it under the original session_id", () => {
+  it("Scenario: explicit resume with an expired lock refreshes it under the original session_id", () => {
     const dir = join(workspace, ".codex", "pipeline");
     require("node:fs").mkdirSync(dir, { recursive: true });
     const expired = {
@@ -132,7 +164,11 @@ describe("Feature: session-lock guards SessionStart", () => {
       status: "active",
     };
     writeFileSync(join(dir, "session-lock.json"), JSON.stringify(expired), "utf8");
-    const out = runHook(workspace, { source: "resume", session_id: "ignored" });
+    const out = runHook(workspace, {
+      source: "resume",
+      session_id: "ignored",
+      enforce_session_lock: true,
+    });
     expect(out.decision).not.toBe("block");
     const lock = JSON.parse(readFileSync(lockPath(workspace), "utf8"));
     expect(lock.session_id).toBe("OLD");

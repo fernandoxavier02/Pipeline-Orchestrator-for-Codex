@@ -177,6 +177,9 @@ describe("runRole", () => {
                         },
                     };
                 },
+                async waitAgent(dispatch) {
+                    return dispatch;
+                },
             },
         });
         expect(result.output.dispatchMode).toBe("real-agent");

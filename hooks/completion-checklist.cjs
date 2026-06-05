@@ -122,6 +122,8 @@ process.stdin.on('end', () => {
     contextParts.push('- [ ] Phase 3: final-validator (Pa de Cal) emitiu GO/CONDITIONAL/NO-GO?');
     contextParts.push('- [ ] Phase 3: finishing-branch apresentou opcoes de closeout?');
     contextParts.push('- [ ] Gate decisions logadas em gate-decisions.jsonl?');
+    contextParts.push('- [ ] Artefato final estruturado emitido com pipeline_requested, pipeline_valid, gates, hooks, agents, manual_fallback e final_verdict?');
+    contextParts.push('- [ ] CAPABILITY_GATE e FINAL_VERDICT_GATE presentes antes de qualquer PASS?');
     contextParts.push('- [ ] Phase transition summaries emitidos entre cada fase?');
     contextParts.push('');
     contextParts.push('Se /pipeline-orchestrator-for-codex:pipeline NAO foi invocado, ignore esta secao.');

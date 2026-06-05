@@ -46,6 +46,13 @@ import {
 import type { PipelineClassification, ValidationIntent } from "./classification-overrides.js";
 import type { ReferenceProfileIndex } from "../references/reference-profiles.js";
 import type { SentinelState } from "../sentinel/sentinel-state.js";
+import type { AgentRuntimeAdapter } from "../dispatcher/dispatcher-types.js";
+import {
+  createBlockedPipelineArtifact,
+  evaluateCapabilities,
+  isExplicitPipelineRequest,
+  type PipelineGateArtifact,
+} from "../governance/pipeline-contract.js";
 import ts from "typescript";
 
 type SessionStore = {
@@ -974,6 +981,16 @@ function toGateLogEntry(input: {
   } satisfies PersistedGateLogEntry;
 }
 
+function pipelineGateToLogEntry(input: PipelineGateArtifact) {
+  return toGateLogEntry({
+    gate: input.gate,
+    hardness: "MANDATORY",
+    phase: "phase-0",
+    decision: input.status === "PASS" ? "pass" : input.status === "FAIL" ? "block" : "block",
+    detail: input.reason,
+  });
+}
+
 function getLatestGateLogEntry(entries: PersistedGateLogEntry[]) {
   return [...entries]
     .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
@@ -1127,19 +1144,30 @@ export function createPipelineController(runtime?: {
     reviewBatch: (input: any) => Promise<any>;
   };
   strictAgents?: boolean;
+  agentRuntime?: AgentRuntimeAdapter;
 }) {
   return {
     async start(input: string): Promise<any> {
-      // Thin wrapper: quando agentes reais são obrigatórios e não há fallback,
-      // retornamos blocked-no-agent-runtime para que o caller despache o agente real.
-      if (runtime?.strictAgents && !runtime?.executionController) {
+      const trimmedInput = input.trim();
+      const explicitPipelineRequested = isExplicitPipelineRequest(trimmedInput);
+      const capabilityGate = explicitPipelineRequested
+        ? evaluateCapabilities({
+            agentRuntime: runtime?.agentRuntime,
+            stores: runtime?.stores,
+          })
+        : undefined;
+
+      if (capabilityGate?.status !== undefined && capabilityGate.status !== "PASS") {
         return {
-          status: "blocked-no-agent-runtime",
-          reason: "spawn_agent is not available in this session. The pipeline requires real Codex agent support. Check that multi_agent = true in ~/.codex/config.toml.",
-          input,
+          ...createBlockedPipelineArtifact({
+            request: input,
+            reason: "blocked-no-agent-runtime",
+            missing_capabilities: capabilityGate.missing_capabilities,
+            capabilityGate: capabilityGate.gate,
+          }),
+          blockedBy: "CAPABILITY_GATE",
         };
       }
-      const trimmedInput = input.trim();
       const normalizedResponse = trimmedInput.toLowerCase();
       const { mode, normalizedRequest, explicitClassification } = parseMode(input);
       const stateRoot = getStateRoot(runtime);
@@ -1742,6 +1770,7 @@ export function createPipelineController(runtime?: {
         : proposal;
 
       const gateEntries = [
+        ...(capabilityGate?.status === "PASS" ? [pipelineGateToLogEntry(capabilityGate.gate)] : []),
         toGateLogEntry({
           gate: infoGate.gate,
           hardness: infoGate.hardness,
@@ -1816,6 +1845,7 @@ export function createPipelineController(runtime?: {
           variant: classificationResult.classification.variant,
           proposal: authoritativeProposal,
           gates: [
+            ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
             infoGate,
             designInterrogation,
             {
@@ -1888,6 +1918,7 @@ export function createPipelineController(runtime?: {
           variant: classificationResult.classification.variant,
           proposal: authoritativeProposal,
           gates: [
+            ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
             infoGate,
             designInterrogation,
             {
@@ -1914,7 +1945,11 @@ export function createPipelineController(runtime?: {
           complexity: classificationResult.classification.complexity,
           variant: classificationResult.classification.variant,
           proposal: authoritativeProposal,
-          gates: [infoGate, designInterrogation],
+          gates: [
+            ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
+            infoGate,
+            designInterrogation,
+          ],
           stoppedAfterProposal: true,
         };
       }
@@ -1926,7 +1961,11 @@ export function createPipelineController(runtime?: {
             mode,
             classification: classificationResult.classification,
             proposal: authoritativeProposal,
-            gates: [infoGate, designInterrogation],
+            gates: [
+              ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
+              infoGate,
+              designInterrogation,
+            ],
           });
         }
         const changedDomains = detectChangedDomains(changedFiles);
@@ -1945,7 +1984,11 @@ export function createPipelineController(runtime?: {
           complexity: classificationResult.classification.complexity,
           variant: classificationResult.classification.variant,
           proposal: authoritativeProposal,
-          gates: [infoGate, designInterrogation],
+          gates: [
+            ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
+            infoGate,
+            designInterrogation,
+          ],
           implementationSkipped: true,
           review,
         };
@@ -2008,7 +2051,11 @@ export function createPipelineController(runtime?: {
         complexity: classificationResult.classification.complexity,
         variant: classificationResult.classification.variant,
         proposal: authoritativeProposal,
-        gates: [infoGate, designInterrogation],
+        gates: [
+          ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
+          infoGate,
+          designInterrogation,
+        ],
         planModeStatus,
       };
     },

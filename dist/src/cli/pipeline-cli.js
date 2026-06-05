@@ -16,7 +16,7 @@ export function resolveCliExitCode(result) {
         return 1;
     }
     const status = result.status;
-    if (typeof status === "string" && status.startsWith("blocked")) {
+    if (typeof status === "string" && status.toLowerCase().startsWith("blocked")) {
         return 1;
     }
     if (result.ok === false) {
@@ -75,13 +75,7 @@ export async function runPipelineCli(options) {
             // peek is best-effort; fall back to undefined (cascade default applies).
         }
     }
-    if (effectiveStrictAgents && !agentRuntime) {
-        return {
-            status: "blocked-no-agent-runtime",
-            reason: "spawn_agent is not available to this Node process. Provide --agent-runtime-adapter=<module> or CODEX_AGENT_RUNTIME_ADAPTER so the CLI can call a real Codex spawn_agent bridge.",
-            input: options.task,
-        };
-    }
+    effectiveStrictAgents ??= true;
     const runtime = createPipelineRuntime({
         cwd: options.cwd,
         codexHome: options.codexHome,

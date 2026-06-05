@@ -18,6 +18,7 @@ This is the canonical `quality gate` and `final validation` entrypoint for the p
 
 ### `strictAgents = true` (Operational Default)
 `spawn_agent` plus `wait_agent` is mandatory. The controller spawns real pipeline agents with context isolation, and the parent waits for completed results before processing protocol blocks. If the parent agent toolchain is unavailable, stop with `blocked-no-agent-runtime`.
+The runtime must also prove subagent artifact collection, gate recording, hook/checkpoint recording, and structured final state before any result can count as a valid pipeline execution.
 
 ### `strictAgents = false` (Diagnostic/Test Harness Only)
 The runtime uses **parallel local emulation** via TypeScript heuristic functions. All "agents" run as async functions in the same Node process with **zero context isolation**. This is a test harness and contract validator, not production multi-agent execution.
@@ -68,6 +69,7 @@ If the user switches the workflow, rebuild the gate and ask again. If the later 
    - adversarial gate
    - final validation
 6. If this command was invoked, never replace it with inline execution. Use real `spawn_agent`, then `wait_agent`, and use `send_input` when continuing an existing controller thread; if any parent-agent primitive is unavailable, stop with `blocked-no-agent-runtime`.
+7. If a manual auxiliary review is offered after a block, it must be labeled `manual_fallback_not_pipeline`, must say exactly "This is a manual fallback review, not a valid pipeline execution.", and must not return `pipeline_valid: true`.
 
 ## NEXT_STEP
 

@@ -32,6 +32,7 @@ import { resolveExecutionComplexity } from "../modes/complexity-resolution.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
 import { detectChangedDomains } from "../review/domain-checklists.js";
 import { deriveSpecIdFromRequest, isSpecLifecycleVariant, validateSpecAcceptanceTraceability, validateSpecContentReviewGate, validateSpecFormatGate, validateSpecLifecycleArtifacts, validateSpecPostImplementationGate, } from "../spec/spec-lifecycle.js";
+import { createBlockedPipelineArtifact, evaluateCapabilities, isExplicitPipelineRequest, } from "../governance/pipeline-contract.js";
 import ts from "typescript";
 function shouldAdvanceLegacyPlanningSession(session) {
     return session.currentPhase === "phase-1"
@@ -644,6 +645,15 @@ function toGateLogEntry(input) {
         confidence_impact: input.confidence_impact ?? (input.decision === "skip" ? definition.confidenceImpactOnSkip : 0),
     };
 }
+function pipelineGateToLogEntry(input) {
+    return toGateLogEntry({
+        gate: input.gate,
+        hardness: "MANDATORY",
+        phase: "phase-0",
+        decision: input.status === "PASS" ? "pass" : input.status === "FAIL" ? "block" : "block",
+        detail: input.reason,
+    });
+}
 function getLatestGateLogEntry(entries) {
     return [...entries]
         .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
@@ -751,16 +761,25 @@ async function persistGateAndConfidence(runtime, entries, baseScore) {
 export function createPipelineController(runtime) {
     return {
         async start(input) {
-            // Thin wrapper: quando agentes reais são obrigatórios e não há fallback,
-            // retornamos blocked-no-agent-runtime para que o caller despache o agente real.
-            if (runtime?.strictAgents && !runtime?.executionController) {
+            const trimmedInput = input.trim();
+            const explicitPipelineRequested = isExplicitPipelineRequest(trimmedInput);
+            const capabilityGate = explicitPipelineRequested
+                ? evaluateCapabilities({
+                    agentRuntime: runtime?.agentRuntime,
+                    stores: runtime?.stores,
+                })
+                : undefined;
+            if (capabilityGate?.status !== undefined && capabilityGate.status !== "PASS") {
                 return {
-                    status: "blocked-no-agent-runtime",
-                    reason: "spawn_agent is not available in this session. The pipeline requires real Codex agent support. Check that multi_agent = true in ~/.codex/config.toml.",
-                    input,
+                    ...createBlockedPipelineArtifact({
+                        request: input,
+                        reason: "blocked-no-agent-runtime",
+                        missing_capabilities: capabilityGate.missing_capabilities,
+                        capabilityGate: capabilityGate.gate,
+                    }),
+                    blockedBy: "CAPABILITY_GATE",
                 };
             }
-            const trimmedInput = input.trim();
             const normalizedResponse = trimmedInput.toLowerCase();
             const { mode, normalizedRequest, explicitClassification } = parseMode(input);
             const stateRoot = getStateRoot(runtime);
@@ -1307,6 +1326,7 @@ export function createPipelineController(runtime) {
                 }
                 : proposal;
             const gateEntries = [
+                ...(capabilityGate?.status === "PASS" ? [pipelineGateToLogEntry(capabilityGate.gate)] : []),
                 toGateLogEntry({
                     gate: infoGate.gate,
                     hardness: infoGate.hardness,
@@ -1373,6 +1393,7 @@ export function createPipelineController(runtime) {
                     variant: classificationResult.classification.variant,
                     proposal: authoritativeProposal,
                     gates: [
+                        ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
                         infoGate,
                         designInterrogation,
                         {
@@ -1435,6 +1456,7 @@ export function createPipelineController(runtime) {
                     variant: classificationResult.classification.variant,
                     proposal: authoritativeProposal,
                     gates: [
+                        ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
                         infoGate,
                         designInterrogation,
                         {
@@ -1455,7 +1477,11 @@ export function createPipelineController(runtime) {
                     complexity: classificationResult.classification.complexity,
                     variant: classificationResult.classification.variant,
                     proposal: authoritativeProposal,
-                    gates: [infoGate, designInterrogation],
+                    gates: [
+                        ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
+                        infoGate,
+                        designInterrogation,
+                    ],
                     stoppedAfterProposal: true,
                 };
             }
@@ -1466,7 +1492,11 @@ export function createPipelineController(runtime) {
                         mode,
                         classification: classificationResult.classification,
                         proposal: authoritativeProposal,
-                        gates: [infoGate, designInterrogation],
+                        gates: [
+                            ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
+                            infoGate,
+                            designInterrogation,
+                        ],
                     });
                 }
                 const changedDomains = detectChangedDomains(changedFiles);
@@ -1484,7 +1514,11 @@ export function createPipelineController(runtime) {
                     complexity: classificationResult.classification.complexity,
                     variant: classificationResult.classification.variant,
                     proposal: authoritativeProposal,
-                    gates: [infoGate, designInterrogation],
+                    gates: [
+                        ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
+                        infoGate,
+                        designInterrogation,
+                    ],
                     implementationSkipped: true,
                     review,
                 };
@@ -1536,7 +1570,11 @@ export function createPipelineController(runtime) {
                 complexity: classificationResult.classification.complexity,
                 variant: classificationResult.classification.variant,
                 proposal: authoritativeProposal,
-                gates: [infoGate, designInterrogation],
+                gates: [
+                    ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
+                    infoGate,
+                    designInterrogation,
+                ],
                 planModeStatus,
             };
         },

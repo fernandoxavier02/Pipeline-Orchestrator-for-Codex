@@ -9,9 +9,10 @@
  *
  * Supports TWO event modes:
  *   1. SessionStart (source field present):
- *      - "startup" : a fresh CLI invocation. Active lock => block.
- *      - "resume"  : continuation of an existing session. Active lock => permit; expired => refresh.
- *      - "clear"   : user explicitly cleared the session. Always remove the lock.
+ *      - normal Codex startup/resume is informational and never acquires a lock.
+ *      - startup/resume only enforce locking when explicitly opted in with
+ *        enforce_session_lock=true or PIPELINE_SESSION_LOCK_ENFORCE=1.
+ *      - "clear" removes the lock when the provided session_id matches.
  *   2. UserPromptSubmit (event field === "UserPromptSubmit"):
  *      - Heartbeat: updates last_seen_at and refreshes expires_at.
  *      - GC: removes expired locks.
@@ -32,6 +33,18 @@ const DEFAULT_TTL_SECONDS = 60 * 60;
 const MAX_TTL_SECONDS = 24 * 60 * 60; // 24 hours cap
 const LOCK_DIR = path.join(process.cwd(), '.codex', 'pipeline');
 const LOCK_PATH = path.join(LOCK_DIR, 'session-lock.json');
+
+function truthy(value) {
+  return value === true || value === 'true' || value === '1' || value === 1;
+}
+
+function shouldEnforceSessionLock(input) {
+  return (
+    truthy(input && input.enforce_session_lock) ||
+    truthy(input && input.pipeline_session_lock) ||
+    truthy(process.env.PIPELINE_SESSION_LOCK_ENFORCE)
+  );
+}
 
 function nowEpochSeconds() {
   return Math.floor(Date.now() / 1000);
@@ -192,6 +205,31 @@ function handleSessionStart(input) {
       decision: removed ? 'clear-removed' : 'clear-noop',
       reason: 'session cleared',
     });
+    emit({ continue: true });
+    return;
+  }
+
+  if (!shouldEnforceSessionLock(input)) {
+    const existing = readLock();
+    if (existing && isExpired(existing, now)) {
+      deleteLock();
+      recordHookEvent({
+        hook: 'session-lock',
+        event: 'SessionStart',
+        decision: 'session-start-removed-expired',
+        attempted: incomingSessionId,
+        reason: 'normal Codex SessionStart removed expired lock',
+      });
+    } else {
+      recordHookEvent({
+        hook: 'session-lock',
+        event: 'SessionStart',
+        decision: 'session-start-noop',
+        attempted: incomingSessionId,
+        expected: existing ? existing.session_id : '',
+        reason: 'normal Codex SessionStart does not acquire pipeline locks',
+      });
+    }
     emit({ continue: true });
     return;
   }

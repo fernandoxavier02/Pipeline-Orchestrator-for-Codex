@@ -12,10 +12,12 @@ describe("state adapter integration", () => {
         },
       });
 
-      const result = await controller.start("fix login bug");
+      const result = await controller.start(
+        "/pipeline-orchestrator-for-codex:pipeline fix login bug",
+      );
 
-      expect(result.status).toBe("blocked-no-agent-runtime");
-      expect(result.reason).toContain("spawn_agent is not available");
+      expect(result.status).toBe("BLOCKED");
+      expect(result.reason).toBe("blocked-no-agent-runtime");
     });
 
     it("uses fallback when strictAgents is false", async () => {

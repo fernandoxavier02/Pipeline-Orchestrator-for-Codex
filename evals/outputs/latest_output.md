@@ -2,23 +2,27 @@
 
 ## What was inspected
 
-- Plugin front-door behavior for `@pipeline-orchestrator-for-codex` mentions in `hooks/force-pipeline-agents.cjs`.
-- Canonical pipeline first-action contract from `commands/pipeline.md` and `skills/pipeline/SKILL.md`.
-- Existing hook regression coverage in `tests/unit/hooks/force-pipeline-agents.test.ts`.
-- Local Eval Gate structure and telemetry files under `evals/**`.
+- Canonical repository: `D:\Pipeline Orchestrator for Codex`.
+- Local Marketplace entry: `C:\Users\win\plugins\pipeline-orchestrator-for-codex`, which is a junction to the canonical repository.
+- Installed Codex cache: `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.0`.
+- Runtime governance changes under `src/**`, `hooks/**`, `skills/**`, `commands/**`, `agents/**`, `dist/**`, and regression tests.
+- Package surface produced by `npm pack --dry-run --json`.
 
 ## What was changed
 
-- `@pipeline-orchestrator-for-codex` without an explicit narrower workflow now resolves to the canonical `pipeline` workflow instead of falling through to the generic pipeline-worthy message.
-- The injected pipeline hook message now matches the documented order: call `update_plan` first, present `WORKFLOW_METHOD_GATE` second, then read and dispatch `agents/core/pipeline-controller.md`.
-- Added a regression test proving that a plain plugin mention enters the canonical pipeline front door and requires `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`.
-- Strengthened the explicit `/pipeline-orchestrator-for-codex:pipeline` test so it also checks for `update_plan` and `WORKFLOW_METHOD_GATE`.
+- Added package hygiene via `.npmignore` so local reports, pipeline state, Codex state, telemetry, coverage, worktrees, and dependencies are excluded from the package artifact.
+- Updated `.gitignore` so `dist/src/governance/pipeline-contract.js` is tracked and can be shipped with compiled runtime imports.
+- Added `tests/integration/plugin/package-surface.test.ts` to prove the compiled governance module is packaged and `security-audit/**` plus `evals/telemetry/**` are excluded.
+- Moved `security-audit/**` out of the plugin tree into `C:\Users\win\CodexCleanupBackups\pipeline-orchestrator-20260605-135151`.
+- Removed local-only state from the installed cache while preserving tracked canonical `.pipeline/**` history in the repository.
+- Synchronized the installed Codex cache with the canonical repository for all in-scope delivery files.
 
 ## What was not changed
 
-- No plugin manifest, marketplace/cache install, command entrypoint, controller TypeScript, global Codex config, or published package state was changed.
-- No manual edits were made to `dist/**`; `npm run build` was run successfully after the source change.
-- The hook still cannot execute the controller by itself at `UserPromptSubmit`; it can only inject a stronger mandatory instruction into the Codex host. Real enforcement still depends on the parent runtime honoring the hook message and exposing `spawn_agent`, `wait_agent`, and `send_input`.
+- No runtime capability was faked; missing real-agent capability still blocks through the pipeline governance contract.
+- No broad destructive cleanup was applied to untracked code; `src/governance/**` and governance tests were preserved as runtime hardening.
+- The local Marketplace path was not copied over because it is already a junction to the canonical `D:` repository.
+- `evals/telemetry/**` remains a local Eval Gate evidence area in the canonical repository but is excluded from the package and installed cache.
 
 ## Eval result
 
@@ -28,20 +32,20 @@ behavior_cases: 5
 
 Validation evidence:
 
-- `npm test -- tests/unit/hooks/force-pipeline-agents.test.ts`: PASS, 7 tests.
 - `npm run lint:types`: PASS.
 - `npm run build`: PASS.
-- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 52 tests.
-- `npm test`: PASS, 123 test files and 898 tests.
+- `npm test -- --testTimeout=15000`: PASS, 127 test files and 955 tests.
+- Focused timeout follow-up: `tests/integration/modes/review-only.test.ts` and `tests/unit/hooks/force-pipeline-agents.test.ts` both passed after the default 5s full run timed out in two cases.
+- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 53 tests.
 - `git diff --check`: PASS.
-- `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`: PASS.
+- `npm pack --dry-run --json` from the installed cache: `dist/src/governance/pipeline-contract.js` present, `security-audit/**` absent, `evals/telemetry/**` absent.
 
 ## Remaining risks
 
-- This closes the documented `@plugin` routing gap at the hook instruction layer. It does not create a new Codex host primitive that automatically calls `controller.start(...)` from `plugin.json`.
-- If the Codex app ignores `UserPromptSubmit` hook system messages or the local hooks are not trusted in `/hooks`, the parent assistant can still drift. That is a host/runtime trust issue, not solved by this hook-only patch.
-- The truly deterministic fix would require an official plugin front-controller capability from Codex, or a supported host binding that maps plugin mention directly to the controller runtime.
+- The package surface is intentionally repo-shaped and still includes many source, test, docs, and eval files. The current hard guard only blocks known local-noise directories and proves the required governance runtime is present.
+- Hook activation still depends on the trusted hook state in the Codex host. The installed plugin cache is aligned, but runtime trust is host-managed.
+- The default `npm test` 5s per-test timeout can be too tight under load; the suite passed with `--testTimeout=15000`.
 
 ## Next safest step
 
-Publish or sync this plugin build only after confirming the installed cache/marketplace copy contains the changed `hooks/force-pipeline-agents.cjs`, then run one real `@pipeline-orchestrator-for-codex` smoke test in a fresh Codex session and verify that the first assistant action is `update_plan`.
+Stage the cleaned delivery set, commit it on `codex/pipeline-plugin-cleanup-global-ready`, and use the installed cache smoke tests as the final local readiness proof before relying on the plugin from other projects on this computer.

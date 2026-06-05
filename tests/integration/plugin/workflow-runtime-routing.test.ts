@@ -14,10 +14,39 @@ async function withTempWorkspace<T>(fn: (root: string) => Promise<T>) {
   }
 }
 
+function completeAgentRuntime() {
+  return {
+    capabilities: { structuredFinalState: true },
+    async spawnAgent(request: any) {
+      return { mode: "single-agent" as const, role: request.role, output: { status: "approved" } };
+    },
+    async waitAgent(dispatch: any) {
+      return dispatch;
+    },
+    async collectArtifacts(dispatches: any[]) {
+      return dispatches.map((dispatch) => dispatch.output);
+    },
+  };
+}
+
+function stores() {
+  return {
+    session: { load: async () => undefined, save: async () => undefined },
+    checkpoints: { list: async () => [], save: async () => undefined },
+    gateLog: { append: async () => undefined, list: async () => [] },
+    confidence: { save: async () => undefined },
+    sentinel: { save: async () => undefined },
+  };
+}
+
 describe("workflow runtime routing", () => {
   it("routes direct feature --heavy commands to feature-heavy without UX reclassification", async () => {
     await withTempWorkspace(async (root) => {
-      const runtime = createPipelineRuntime({ cwd: root, codexHome: "/codex-home" });
+      const runtime = createPipelineRuntime({
+        cwd: root,
+        codexHome: "/codex-home",
+        agentRuntime: completeAgentRuntime(),
+      });
 
       const result = await runtime.controller.start(
         "/pipeline-orchestrator-for-codex:feature --heavy add journey-aware lease dashboard workflow",
@@ -31,7 +60,11 @@ describe("workflow runtime routing", () => {
 
   it("routes direct bugfix-heavy commands without requiring spec lifecycle artifacts", async () => {
     await withTempWorkspace(async (root) => {
-      const controller = createPipelineController({ workspaceRoot: root });
+      const controller = createPipelineController({
+        workspaceRoot: root,
+        stores: stores(),
+        agentRuntime: completeAgentRuntime(),
+      });
 
       const result = await controller.start(
         "/pipeline-orchestrator-for-codex:bugfix-heavy fix lease calculation regression",
@@ -45,7 +78,11 @@ describe("workflow runtime routing", () => {
 
   it("routes spec --audit-only commands without contaminating the spec id with the flag", async () => {
     await withTempWorkspace(async (root) => {
-      const controller = createPipelineController({ workspaceRoot: root });
+      const controller = createPipelineController({
+        workspaceRoot: root,
+        stores: stores(),
+        agentRuntime: completeAgentRuntime(),
+      });
 
       const result = await controller.start(
         "/pipeline-orchestrator-for-codex:spec --audit-only .kiro/specs/payment-flow",
@@ -61,7 +98,11 @@ describe("workflow runtime routing", () => {
 
   it("preserves spec-audit-only when reference profiles are loaded by the runtime", async () => {
     await withTempWorkspace(async (root) => {
-      const runtime = createPipelineRuntime({ cwd: root, codexHome: "/codex-home" });
+      const runtime = createPipelineRuntime({
+        cwd: root,
+        codexHome: "/codex-home",
+        agentRuntime: completeAgentRuntime(),
+      });
 
       const result = await runtime.controller.start(
         "/pipeline-orchestrator-for-codex:spec --audit-only .kiro/specs/payment-flow",

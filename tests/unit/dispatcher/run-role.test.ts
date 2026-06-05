@@ -198,6 +198,9 @@ describe("runRole", () => {
             },
           };
         },
+        async waitAgent(dispatch) {
+          return dispatch;
+        },
       },
     });
 

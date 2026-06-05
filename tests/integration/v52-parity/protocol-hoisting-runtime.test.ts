@@ -149,6 +149,9 @@ phase: phase-0
             },
           };
         },
+        async waitAgent(dispatch) {
+          return dispatch;
+        },
       },
     });
 
@@ -223,6 +226,9 @@ options:
               text: "INFORMATION_GATE\nSTATUS: passed",
             },
           };
+        },
+        async waitAgent(dispatch) {
+          return dispatch;
         },
       },
     });

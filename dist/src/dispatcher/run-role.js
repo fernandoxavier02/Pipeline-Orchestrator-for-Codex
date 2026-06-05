@@ -43,8 +43,9 @@ function withExecutionIdentity(result, executionIdentity) {
 function validateAgentRuntime(agentRuntime) {
     if (!agentRuntime ||
         typeof agentRuntime !== "object" ||
-        typeof agentRuntime.spawnAgent !== "function") {
-        throw new Error("blocked-no-agent-runtime: agentRuntime must be an object with a spawnAgent function.");
+        typeof agentRuntime.spawnAgent !== "function" ||
+        typeof agentRuntime.waitAgent !== "function") {
+        throw new Error("blocked-no-agent-runtime: agentRuntime must be an object with spawnAgent and waitAgent functions.");
     }
 }
 export async function runRole(request) {
@@ -100,7 +101,9 @@ export async function runRole(request) {
             throw new AgentRuntimeUnavailableError(normalizedRequest.role, hostStatus);
         }
         validateAgentRuntime(normalizedRequest.agentRuntime);
-        const result = await normalizedRequest.agentRuntime.spawnAgent(buildAgentDispatchRequest(requestWithIdentity));
+        const agentRuntime = normalizedRequest.agentRuntime;
+        const spawned = await agentRuntime.spawnAgent(buildAgentDispatchRequest(requestWithIdentity));
+        const result = await agentRuntime.waitAgent(spawned);
         return withExecutionIdentity({
             ...result,
             output: {

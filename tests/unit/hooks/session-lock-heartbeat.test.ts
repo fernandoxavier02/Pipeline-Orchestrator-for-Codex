@@ -84,10 +84,26 @@ describe("session-lock-hook heartbeat", () => {
     }
   });
 
-  it("still works for SessionStart (backward compat)", () => {
+  it("does not acquire a lock on normal Codex SessionStart", () => {
     const cwd = mkdtempSync(join(tmpdir(), "session-lock-hb-"));
     try {
       const result = runHook(cwd, { source: "startup", session_id: "S4" });
+
+      expect(result.status).toBe(0);
+      expect(readLock(cwd)).toBeNull();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("still supports explicit SessionStart lock enforcement", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "session-lock-hb-"));
+    try {
+      const result = runHook(cwd, {
+        source: "startup",
+        session_id: "S4",
+        enforce_session_lock: true,
+      });
 
       expect(result.status).toBe(0);
       const lock = readLock(cwd);

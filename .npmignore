@@ -1,0 +1,11 @@
+security-audit/
+.pipeline/
+evals/telemetry/
+evals/tests/__pycache__/
+.codex/
+.worktrees/
+.parity-audit/
+coverage/
+node_modules/
+hooks.backup-session-lock-*/
+dist/tests/integration/plugin/package-surface.test.js

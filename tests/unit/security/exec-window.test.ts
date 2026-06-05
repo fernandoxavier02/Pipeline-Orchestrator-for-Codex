@@ -98,7 +98,7 @@ describe("exec-window-store", () => {
     // Raw input may contain "..", "/", "\\" — base64url encoding produces only
     // [A-Za-z0-9_-], so the resulting filename is safe regardless of input.
     const path = execWindowPath(root, "../../etc/passwd");
-    expect(path).toContain("/sessions/");
+    expect(path.replace(/\\/g, "/")).toContain("/sessions/");
     expect(path).not.toMatch(/\.\.\//);
     rmSync(root, { recursive: true, force: true });
   });

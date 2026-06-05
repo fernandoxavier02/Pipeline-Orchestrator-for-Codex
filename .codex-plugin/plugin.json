@@ -24,8 +24,9 @@
     "privacyPolicyURL": "https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex/blob/main/README.md",
     "termsOfServiceURL": "https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex/blob/main/LICENSE",
     "defaultPrompt": [
-      "Run the pipeline for this repository.",
-      "Classify the request, show the proposal, then execute in phases."
+      "Run /pipeline-orchestrator-for-codex:pipeline for this repository.",
+      "Classify the request, present the WORKFLOW_METHOD_GATE, then execute in phases with spawn_agent.",
+      "If spawn_agent is unavailable, stop with blocked-no-agent-runtime instead of executing inline."
     ],
     "brandColor": "#14532D",
     "composerIcon": "./assets/pipeline-icon.svg",

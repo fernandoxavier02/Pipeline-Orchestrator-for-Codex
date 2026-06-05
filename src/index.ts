@@ -799,6 +799,8 @@ export function createPipelineRuntime(options: RuntimeOptions) {
     referenceIndex: getReferenceIndex,
     executionController: runtimeExecutionController,
     reviewOrchestrator: runtimeReviewOrchestrator,
+    strictAgents: options.strictAgents,
+    agentRuntime: options.agentRuntime,
   });
 
   const ensureRuntimePrompts = async () => {

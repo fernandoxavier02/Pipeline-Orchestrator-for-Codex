@@ -24,7 +24,6 @@ REQUIRED_REPORT_SECTIONS = [
 FORBIDDEN_PATH_PREFIXES = (
     "node_modules/",
     ".git/",
-    "dist/",
     "build/",
 )
 
@@ -221,6 +220,30 @@ def forbidden_changed_paths(changed_files: Iterable[str]) -> list[str]:
     return forbidden
 
 
+def command_passed(telemetry: dict[str, object], command_name: str) -> bool:
+    validation_evidence = telemetry.get("validation_evidence")
+    if not isinstance(validation_evidence, dict):
+        return False
+    commands = validation_evidence.get("commands")
+    if not isinstance(commands, dict):
+        return False
+    evidence = commands.get(command_name)
+    return isinstance(evidence, dict) and evidence.get("status") == "PASS"
+
+
+def dist_paths_without_build(changed_files: Iterable[str], telemetry: dict[str, object] | None) -> list[str]:
+    dist_paths = [
+        changed_file
+        for changed_file in changed_files
+        if normalize_path(changed_file) == "dist" or normalize_path(changed_file).startswith("dist/")
+    ]
+    if not dist_paths:
+        return []
+    if isinstance(telemetry, dict) and command_passed(telemetry, "npm run build"):
+        return []
+    return dist_paths
+
+
 def path_matches_prefix(path: str, prefixes: Iterable[str]) -> bool:
     normalized = normalize_path(path)
     for prefix in prefixes:
@@ -372,6 +395,8 @@ def validate(repo_root: Path) -> list[str]:
         errors.append("evals/telemetry/changed_files.txt must not be empty without execution_observed=true")
     for changed_file in forbidden_changed_paths(changed_files):
         errors.append(f"forbidden changed path: {changed_file}")
+    for changed_file in dist_paths_without_build(changed_files, telemetry if isinstance(telemetry, dict) else None):
+        errors.append(f"forbidden changed path without npm run build evidence: {changed_file}")
 
     if isinstance(telemetry, dict):
         scope_review = telemetry.get("scope_review")

@@ -9,6 +9,7 @@ import { createGateLog } from "../../../src/state/gate-log.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
 import { runInformationGate } from "../../../src/gates/information-gate.js";
 import { runAdversarialReview } from "../../../src/review/adversarial-review.js";
+import { REQUIRED_PIPELINE_GATES } from "../../../src/governance/pipeline-contract.js";
 
 describe("hotfix mode", () => {
   it("forces a reduced-validation bug fix path and narrows execution to one regression proof", { timeout: 10000 }, async () => {
@@ -142,6 +143,20 @@ describe("hotfix mode", () => {
       },
     });
 
+    const gateLog = createGateLog(runtime.stateDir);
+    for (const gate of REQUIRED_PIPELINE_GATES) {
+      await gateLog.append({
+        gate,
+        hardness: "HARD",
+        phase: "phase-3",
+        decision: "pass",
+        decided_by: "controller",
+        timestamp: "2026-04-02T12:00:00.000Z",
+        detail: `${gate} passed`,
+        confidence_impact: 0,
+      });
+    }
+
     const result = await runtime.closeout.finalize({
       mode: "--hotfix",
       validationIntent: "reduced",
@@ -154,7 +169,7 @@ describe("hotfix mode", () => {
       confirmed: true,
     });
 
-    const gateEntries = await createGateLog(runtime.stateDir).list();
+    const gateEntries = await gateLog.list();
 
     expect(result.requiredEvidence).toEqual(["build", "tests"]);
     expect(result.decision).toBe("GO");
