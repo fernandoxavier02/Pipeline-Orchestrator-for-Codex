@@ -1,7 +1,7 @@
 ---
 name: spec-requirements
 description: Generate EARS-format requirements based on project description and steering context. Use when generating requirements from project description.
-allowed-tools: update_plan, spawn_agent, wait_agent, send_input
+allowed-tools: update_plan, spawn_agent, wait_agent
 metadata:
   shared-rules: "ears-format.md, requirements-review-gate.md"
 disable-model-invocation: true

@@ -2,7 +2,7 @@
 name: audit
 description: Audit shortcut — skips task-orchestrator type-classification by pre-fixing task_type=Audit. Same pipeline machinery as /pipeline-orchestrator-for-codex:pipeline (information-gate, design-interrogator, plan-architect, executor-controller, sanity, Pa de Cal). Invoked manually via `/pipeline-orchestrator-for-codex:audit [scope]` — never auto-invoked because every audit run produces a structured report (AUDIT_REPORT) that the user must consciously trigger. Variant flags `--light` / `--heavy` route directly to skills/audit-light or skills/audit-heavy with their prescriptive 9-step procedures imported from Pulsar.
 disable-model-invocation: true
-allowed-tools: update_plan, spawn_agent, wait_agent, send_input
+allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: [audit scope description — modules, axes, baseline]
 gates_at: [phase-1]
 sentinel_checkpoints: [post_orchestrator]

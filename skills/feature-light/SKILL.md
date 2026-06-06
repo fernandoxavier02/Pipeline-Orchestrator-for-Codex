@@ -12,7 +12,7 @@ description: |
   Manual-only invocation via /pipeline-orchestrator-for-codex:feature-light or via
   /pipeline-orchestrator-for-codex:feature --light.
 disable-model-invocation: true
-allowed-tools: update_plan, spawn_agent, wait_agent, send_input
+allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[feature description with user story + DoD]"
 sequence: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 sequence_lock: true

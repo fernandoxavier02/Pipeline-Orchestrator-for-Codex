@@ -2,7 +2,7 @@
 name: bugfix-heavy
 description: Prescriptive 11-step bug fix workflow for COMPLEXA bugs and production incidents (cross-cutting concerns, persistence, concurrency, multi-user impact, business rules). Imported from Pulsar bugfix workflow per spec §21. Use when complexity classification is heavy or when bugfix-light auto-escalates at its complexity gate. Steps 1-3 subagent (recon + root-cause + domain truth model), 4 inline gate (controlled change proposal — REQUIRES APPROVAL), 5-6 inline (TDD pre-impl + minimal diff), 7 subagent (sanity + regression), 8 parallel subagents gate (adversarial security+architecture+quality), 9 subagent (post-fix UX E2E), 10 inline gate (Pa de Cal GO/NO-GO), 11 subagent (final after-all sanity sweep). Closes 4 audit gaps Heavy 3 (domain truth model net-new), Heavy 8 (3-way adversarial), Heavy 9 (UX as post-fix E2E), Heavy 11 (after-all distinct from Pa de Cal). Manual-only invocation via /pipeline-orchestrator-for-codex:bugfix-heavy or via /pipeline-orchestrator-for-codex:bugfix --heavy.
 disable-model-invocation: true
-allowed-tools: update_plan, spawn_agent, wait_agent, send_input
+allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: [bug description with repro details]
 sequence: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 sequence_lock: true

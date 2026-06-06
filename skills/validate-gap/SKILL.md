@@ -1,7 +1,7 @@
 ---
 name: validate-gap
 description: Analyze implementation gap between requirements and existing codebase. Use when planning integration with existing systems.
-allowed-tools: update_plan, spawn_agent, wait_agent, send_input
+allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: <feature-name>
 metadata:
   shared-rules: "gap-analysis.md"

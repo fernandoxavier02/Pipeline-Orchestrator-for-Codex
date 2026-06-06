@@ -11,7 +11,7 @@ description: |
   spec-format-gate (1), spec-post-impl-validator (4), spec-closer (6); step 2 and 5 inline.
   Manual-only invocation via /pipeline-orchestrator-for-codex:spec-light.
 disable-model-invocation: true
-allowed-tools: update_plan, spawn_agent, wait_agent, send_input
+allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"
 sequence: [1, 2, 3, 4, 5, 6]
 sequence_lock: true

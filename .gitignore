@@ -2,6 +2,9 @@ node_modules/
 dist/*
 !dist/src/
 dist/src/*
+!dist/src/adapters/
+dist/src/adapters/*
+!dist/src/adapters/codex-cli-process-runtime.js
 !dist/src/cli/
 dist/src/cli/*
 !dist/src/cli/pipeline-cli.js

@@ -2,7 +2,7 @@
 name: pipeline
 description: "Automated Codex pipeline orchestrator for any project. Requires complete real-agent runtime: spawn_agent, wait_agent, artifact collection, gate recording, hook/checkpoint recording, and structured final state. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. The public command /pipeline-orchestrator-for-codex:pipeline auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. If mandatory runtime capabilities are missing, it blocks with blocked-no-agent-runtime; manual fallback is not a valid pipeline execution."
 agent_type: worker
-allowed-tools: update_plan, spawn_agent, wait_agent, send_input
+allowed-tools: update_plan, spawn_agent, wait_agent
 gates_at: [phase-0, phase-1, phase-1.5, phase-2, phase-3]
 sentinel_checkpoints: [post_orchestrator, phase_0_to_1, phase_1_to_2, phase_2_to_3, post_final_validator]
 ---
@@ -65,7 +65,7 @@ You are the **PIPELINE SKILL** — a thin delegator. Your ONLY job is:
    - `spawn_agent(agent_type: "worker", message: <controller prompt>)`
 5. **Wait** for the result with `wait_agent`
 6. **Process** the structured blocks it emits (`=== DISPATCH_REQUEST v1 ===`, `=== GATE_REQUEST v1 ===`, `=== PLAN_MODE_REQUEST v1 ===`)
-7. **Re-dispatch** with responses through `send_input` (same agent) or fresh `spawn_agent`
+7. **Re-dispatch** with responses through fresh `spawn_agent` calls and persisted protocol state
 8. Repeat until `PIPELINE COMPLETE`
 
 You do NOT classify tasks. You do NOT review code. You do NOT run builds. You do NOT write code. **The pipeline-controller agent does ALL of that.** You are the protocol handler.
@@ -86,7 +86,7 @@ $ARGUMENTS
 - `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent` for the requested agent
 - `=== GATE_REQUEST v1 ===` → ask the user and collect the answer
 - `=== PLAN_MODE_REQUEST v1 ===` → enter planning mode, return results
-**Step 5.** Re-dispatch via `send_input` (same agent) or fresh `spawn_agent` (new turn)
+**Step 5.** Re-dispatch via fresh `spawn_agent` with the prior protocol state prepended
 **Step 6.** Call `wait_agent` after every dispatch
 **Step 7.** Repeat until `PIPELINE COMPLETE`
 

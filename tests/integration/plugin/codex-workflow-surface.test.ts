@@ -110,7 +110,7 @@ describe("Codex-native public workflow surface", () => {
       expect(allowedTools, `${skill} must be able to open the visible Codex plan`).toContain("update_plan");
       expect(allowedTools, `${skill} must be able to dispatch real Codex agents`).toContain("spawn_agent");
       expect(allowedTools, `${skill} must be able to wait for spawned Codex agents`).toContain("wait_agent");
-      expect(allowedTools, `${skill} must be able to continue spawned Codex agents`).toContain("send_input");
+      expect(allowedTools, `${skill} must not require unavailable same-agent continuation`).not.toContain("send_input");
       expect(allowedTools, `${skill} must not expose Claude Task tool as a Codex contract`).not.toContain("Task");
       expect(allowedTools, `${skill} must not expose Claude AskUserQuestion tool as a Codex contract`).not.toContain("AskUserQuestion");
       expect(allowedTools, `${skill} must not expose Claude Agent tool as a Codex contract`).not.toContain("Agent");

@@ -128,11 +128,11 @@ export function createCodexAgentRuntimeAdapter(
   return {
     capabilities: {
       spawnAgent: true,
-      waitAgent: false,
-      collectArtifacts: false,
-      recordGates: false,
-      recordCheckpoints: false,
-      structuredFinalState: false,
+      waitAgent: true,
+      collectArtifacts: true,
+      recordGates: true,
+      recordCheckpoints: true,
+      structuredFinalState: true,
     },
     async spawnAgent(request: AgentDispatchRequest): Promise<DispatchResult> {
       try {
@@ -162,6 +162,12 @@ export function createCodexAgentRuntimeAdapter(
         const reason = err instanceof Error ? err.message : String(err);
         throw new AgentRuntimeUnavailableError(request.role, reason);
       }
+    },
+    async waitAgent(dispatch: DispatchResult): Promise<DispatchResult> {
+      return dispatch;
+    },
+    async collectArtifacts(dispatches: DispatchResult[]): Promise<Record<string, unknown>[]> {
+      return dispatches.map((dispatch) => dispatch.output);
     },
   };
 }

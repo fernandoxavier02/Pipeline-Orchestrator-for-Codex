@@ -1,7 +1,7 @@
 ---
 name: spec-init
 description: Initialize a new specification with detailed project description
-allowed-tools: update_plan, spawn_agent, wait_agent, send_input
+allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: <project-description>
 disable-model-invocation: true
 gates_at: [phase-1]

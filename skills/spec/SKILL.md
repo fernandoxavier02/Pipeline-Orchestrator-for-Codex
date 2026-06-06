@@ -2,7 +2,7 @@
 name: spec
 description: Spec Lifecycle shortcut — pre-classifies task_type=Spec to skip the type-detection round in task-orchestrator. Same Phase-0/Phase-3 wrapper as /pipeline-orchestrator-for-codex:pipeline (information-gate, sentinel checkpoints, sanity-checker, final-validator, finishing-branch). Variant flags `--light` / `--heavy` / `--audit-only` route directly to skills/spec-light, spec-heavy, or spec-audit-only with their prescriptive 6/9/5-step procedures (Wave 2). Without a flag, dispatches to pipeline-controller, which uses the Wave 3-spec 4-signal classifier (explicit path / --type=spec flag / prose regex / glob fallback under .kiro/specs/) to select the right variant. Manual-only invocation via `/pipeline-orchestrator-for-codex:spec`.
 disable-model-invocation: true
-allowed-tools: update_plan, spawn_agent, wait_agent, send_input
+allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[--light | --heavy | --audit-only] [spec feature name or path to .kiro/specs/<feature>/]"
 gates_at: [phase-1]
 sentinel_checkpoints: [post_orchestrator]

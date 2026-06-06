@@ -17,6 +17,21 @@ async function withTempModule<T>(source: string, fn: (path: string) => Promise<T
 }
 
 describe("agent runtime adapter loader", () => {
+  it("loads the built-in Codex CLI process adapter by alias", async () => {
+    const adapter = await loadAgentRuntimeAdapter("codex-cli");
+
+    expect(adapter?.capabilities).toMatchObject({
+      spawnAgent: true,
+      waitAgent: true,
+      collectArtifacts: true,
+      recordGates: true,
+      recordCheckpoints: true,
+      structuredFinalState: true,
+    });
+    expect(typeof adapter?.spawnAgent).toBe("function");
+    expect(typeof adapter?.waitAgent).toBe("function");
+  });
+
   it("loads a Codex spawn_agent adapter for operational CLI execution", async () => {
     await withTempModule(
       `

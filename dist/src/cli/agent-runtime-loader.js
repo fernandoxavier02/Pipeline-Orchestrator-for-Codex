@@ -1,5 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createCodexCliProcessRuntime } from "../adapters/codex-cli-process-runtime.js";
 function assertAgentRuntime(candidate) {
     if (!candidate
         || typeof candidate !== "object"
@@ -11,6 +12,9 @@ function assertAgentRuntime(candidate) {
 export async function loadAgentRuntimeAdapter(adapterPath) {
     if (!adapterPath) {
         return undefined;
+    }
+    if (adapterPath === "codex-cli" || adapterPath === "codex-cli-process") {
+        return createCodexCliProcessRuntime();
     }
     const resolvedPath = isAbsolute(adapterPath) ? adapterPath : resolve(process.cwd(), adapterPath);
     const loaded = await import(pathToFileURL(resolvedPath).href);

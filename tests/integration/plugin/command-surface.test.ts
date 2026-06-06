@@ -42,7 +42,7 @@ describe('plugin command surface', () => {
 
     expect(skillDoc).toContain('spawn_agent');
     expect(skillDoc).toContain('wait_agent');
-    expect(skillDoc).toContain('send_input');
+    expect(skillDoc).toContain('fresh `spawn_agent`');
     expect(skillDoc).toContain('agent_type: "worker"');
     expect(skillDoc).toContain('message');
     expect(skillDoc).not.toContain('name: "pipeline-orchestrator-for-codex:core:pipeline-controller"');
