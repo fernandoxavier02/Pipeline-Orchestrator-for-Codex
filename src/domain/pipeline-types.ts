@@ -9,6 +9,7 @@ export const PIPELINE_MODES = [
   "--media",
   "--complexa",
   "--plan",
+  "--no-plan",
   "--grill",
   "--hotfix",
 ] as const;

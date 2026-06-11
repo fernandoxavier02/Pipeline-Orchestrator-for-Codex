@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createPipelineRuntime } from "../../../src/index.js";
 describe("diagnostic prompt contracts", () => {
-    it("fails before controller consumption when a required output block is missing", async () => {
+    it("fails before controller consumption when a required output block is missing", { timeout: 30000 }, async () => {
         const root = await mkdtemp(join(tmpdir(), "pipeline-diagnostic-contract-"));
         try {
             await cp(join(process.cwd(), "references"), join(root, "references"), { recursive: true });

@@ -31,6 +31,25 @@ describe("pipeline controller", () => {
       .toEqual(expect.arrayContaining(["yes", "adjust", "audit", "bugfix", "feature", "ux", "spec"]));
   });
 
+  it("records no-plan bypass semantics instead of silently skipping planning", async () => {
+    const mediaResult = await runtime.controller.start("/pipeline --no-plan add small feature flag copy");
+    expect(mediaResult.planModeStatus).toBe("skipped");
+    expect(mediaResult.proposal.planModeBypass).toMatchObject({
+      attempted: true,
+      honored: true,
+    });
+
+    const complexResult = await runtime.controller.start("/pipeline --no-plan implement complex workflow boundary");
+    expect(complexResult.planModeStatus).toBe("required");
+    expect(complexResult.proposal.planModeBypass).toMatchObject({
+      attempted: true,
+      honored: false,
+    });
+    expect(complexResult.proposal.planModeRequest).toMatchObject({
+      kind: "PLAN_MODE_REQUEST",
+    });
+  });
+
   it("lets the user switch the selected workflow before approving execution", async () => {
     let sessionState: Record<string, unknown> | undefined;
     const controller = createPipelineController({

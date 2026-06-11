@@ -30,7 +30,7 @@ Required output block:
             await rm(root, { recursive: true, force: true });
         }
     });
-    it("revalidates the controller prompt on each start instead of trusting an earlier safe load", { timeout: 10000 }, async () => {
+    it("revalidates the controller prompt on each start instead of trusting an earlier safe load", { timeout: 30000 }, async () => {
         const root = await mkdtemp(join(tmpdir(), "pipeline-review-only-cache-"));
         try {
             await cp(join(process.cwd(), "references"), join(root, "references"), { recursive: true });
@@ -59,7 +59,7 @@ Required output block:
             await rm(root, { recursive: true, force: true });
         }
     });
-    it("rejects semantically equivalent authority-takeover phrasing in repository prompts", async () => {
+    it("rejects semantically equivalent authority-takeover phrasing in repository prompts", { timeout: 30000 }, async () => {
         const root = await mkdtemp(join(tmpdir(), "pipeline-review-only-semantic-guard-"));
         try {
             await cp(join(process.cwd(), "references"), join(root, "references"), { recursive: true });

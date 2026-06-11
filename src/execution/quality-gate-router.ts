@@ -4,6 +4,8 @@ import { reductionPolicyForMode } from "../modes/mode-policy.js";
 export interface PlannedBatch {
   name: string;
   tasks: string[];
+  parallel_eligible?: boolean;
+  parallel_reason?: string;
 }
 
 export interface PlannedExecution {
@@ -17,9 +19,14 @@ function chunkTasks(tasks: string[], batchSize: number) {
   const batches: PlannedBatch[] = [];
 
   for (let index = 0; index < tasks.length; index += batchSize) {
+    const batchTasks = tasks.slice(index, index + batchSize);
     batches.push({
       name: `batch-${batches.length + 1}`,
-      tasks: tasks.slice(index, index + batchSize),
+      tasks: batchTasks,
+      parallel_eligible: false,
+      parallel_reason: batchTasks.length > 1
+        ? "No validated file-scope proof; serial execution is the safe default."
+        : "Single-task batch runs serially.",
     });
   }
 
@@ -51,6 +58,8 @@ export function planQualityGateBatches(input: {
           {
             name: "batch-1",
             tasks,
+            parallel_eligible: false,
+            parallel_reason: "SIMPLES runs as one serial batch.",
           },
         ]
       : chunkTasks(tasks, batchSize);

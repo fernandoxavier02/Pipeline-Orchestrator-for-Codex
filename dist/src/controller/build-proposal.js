@@ -1,4 +1,4 @@
-import { createPlanModeRequest, renderPlanModeRequestBlock } from "./plan-mode.js";
+import { createChangeContract, createPlanModeRequest, getPlanModeBypass, renderPlanModeRequestBlock, } from "./plan-mode.js";
 import { buildWorkflowSelection } from "./workflow-selection.js";
 function inferAffectedFiles(variant) {
     if (variant.startsWith("bugfix-")) {
@@ -34,6 +34,13 @@ export function buildProposal(input) {
         affectedFiles,
         batchSize: input.batchSize,
         validationIntent: input.validationIntent,
+        planModeBypass: input.mode
+            ? getPlanModeBypass(input.mode, input.classification.complexity)
+            : undefined,
+        CHANGE_CONTRACT: createChangeContract({
+            affectedFiles,
+            batchSize: input.batchSize,
+        }),
         workflowSelection: buildWorkflowSelection({
             request: input.request,
             classification: input.classification,

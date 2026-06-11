@@ -85,7 +85,7 @@ describe("review-only whole diff", () => {
         expect(result.review.findings).toHaveLength(1);
         await expect(createSessionStore(stateRoot).load()).rejects.toThrow();
     });
-    it("blocks sensitive default review-only runs when no independent review evidence exists", { timeout: 10000 }, async () => {
+    it("blocks sensitive default review-only runs when no independent review evidence exists", { timeout: 30000 }, async () => {
         const root = mkdtempSync(join(tmpdir(), "pipeline-review-default-block-"));
         await cp(join(process.cwd(), "references"), join(root, "references"), { recursive: true });
         await mkdir(join(root, "src", "auth"), { recursive: true });

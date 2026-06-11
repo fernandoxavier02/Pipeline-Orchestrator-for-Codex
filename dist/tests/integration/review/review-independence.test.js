@@ -17,6 +17,10 @@ describe("review independence", () => {
             },
             implementationSummary: "Fixed the auth leak by reworking session handling.",
             changedDomains: ["auth"],
+            changeContract: {
+                allowed_files: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
+                allowed_new_files: [],
+            },
         });
         expect(runRole).toHaveBeenCalledTimes(1);
         const request = runRole.mock.calls[0]?.[0];
@@ -41,6 +45,16 @@ describe("review independence", () => {
                 role: "quality-reviewer",
                 filesInScope: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
                 authorityLevel: "reviewer",
+            }),
+            expect.objectContaining({
+                role: "diff-discipline-reviewer",
+                filesInScope: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
+                authorityLevel: "reviewer",
+                input: expect.objectContaining({
+                    changeContract: expect.objectContaining({
+                        allowed_files: ["src/auth/session.ts", "src/review/adversarial-review.ts"],
+                    }),
+                }),
             }),
         ]);
         expect(request.input).not.toHaveProperty("implementationSummary");

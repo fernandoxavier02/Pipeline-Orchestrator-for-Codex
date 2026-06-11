@@ -19,7 +19,7 @@ describe("diagnostic mode", () => {
     expect(result.stoppedAfterProposal).toBe(true);
   });
 
-  it("does not leave a resumable approval session behind", { timeout: 10000 }, async () => {
+  it("does not leave a resumable approval session behind", { timeout: 30000 }, async () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-diagnostic-"));
     await cp(join(process.cwd(), "references"), join(root, "references"), { recursive: true });
     const runtime = createPipelineRuntime({

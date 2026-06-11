@@ -10,6 +10,11 @@ describe("plan mode", () => {
     expect(getPlanModeStatus("--plan", "MEDIA")).toBe("required");
   });
 
+  it("honors no-plan only for non-complex planning surfaces", () => {
+    expect(getPlanModeStatus("--no-plan", "MEDIA")).toBe("skipped");
+    expect(getPlanModeStatus("--no-plan", "COMPLEXA")).toBe("required");
+  });
+
   it("formats an implementation plan from controller-decided approval status", () => {
     const plan = createImplementationPlan({
       status: "APPROVED",
@@ -23,6 +28,9 @@ describe("plan mode", () => {
     expect(plan.status).toBe("APPROVED");
     expect(plan.summary).toBe("harden audit trail");
     expect(plan.affectedFiles).toEqual(["src/controller/pipeline-controller.ts"]);
+    expect(plan.CHANGE_CONTRACT.allowed_files).toEqual(["src/controller/pipeline-controller.ts"]);
+    expect(plan.CHANGE_CONTRACT.forbidden_change_types).toContain("unrelated_refactor");
+    expect(plan.CHANGE_CONTRACT.diff_budget.new_modules_allowed).toBe(false);
     expect(plan.tasks).toEqual(
       expect.arrayContaining([
         "Confirm the failing or review-driving scenarios before implementation.",

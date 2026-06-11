@@ -280,6 +280,25 @@ Per `docs/findings/achado-7-subagent-runtime.md`, your subagent runtime has `Ask
 
 **Audit trail:** every block emission and every response is logged to `gate-decisions.jsonl` per the protocol spec. The 22-gate registry is unchanged; protocol bookkeeping reuses the SOFT-hardness `gate` field with `decided_by: gate_request_protocol_parent_handler`.
 
+### PLAN_MODE_MANDATORY_AGENTS and PLAN_MODE_BYPASS (v7.10 parity)
+
+The following agents MUST emit `PLAN_MODE_REQUEST v1` as their first substantive action and wait for `PLAN_MODE_RESULTS` before producing diagnosis, planning, implementation, or review output:
+
+| Agent | Substantive output that indicates bypass |
+|---|---|
+| `plan-architect` | `IMPLEMENTATION_PLAN` |
+| `bugfix-diagnostic-agent` | `DIAGNOSTIC_REPORT` |
+| `bugfix-root-cause-analyzer` | `ROOT_CAUSE_RESULT` |
+| `audit-intake` | `AUDIT_INTAKE_RESULT` |
+| `audit-domain-analyzer` | `DOMAIN_ANALYSIS`, `DOMAIN_ANALYZER_RESULT` |
+| `design-interrogator` | `DESIGN_INTERROGATION` |
+| `feature-vertical-slice-planner` | `VSA_PLAN` |
+| `step-01-explore` | `ContextDiscovery`, `BrainstormSynthesis` |
+| `executor-implementer-task` | `IMPLEMENTER_RESULT` |
+| `feature-implementer` | `IMPLEMENTATION_RESULT` |
+
+If any mandatory agent returns one of those substantive outputs before a matching `PLAN_MODE_RESULTS` payload has been observed, record `PLAN_MODE_BYPASS` in the protocol trail, attach the offending output type, and re-dispatch that same agent once with a Step 0 reminder. A second bypass from the same agent is a hard block: stop the pipeline and preserve the evidence for adversarial review.
+
 ---
 
 ## STEP 1.7: PRE-EXECUTION ROUTING (mandatory for MEDIA/COMPLEXA/Spec)
@@ -770,6 +789,25 @@ Canonical rule: **Plan-mode runs automatically when (complexity in {MEDIA, COMPL
 - **Override blocked:** complexity == COMPLEXA — `--no-plan` is parsed but ignored. plan-architect runs anyway. The flag and the user-supplied justification are logged in TRACE.md (`plan_mode_skipped: false`, `plan_override_attempted: true`, `justification: <user input>`).
 
 If triggered, spawn `plan-architect` agent (model: gpt-4o).
+
+#### PLAN_MODE_MANDATORY_AGENTS
+
+The controller enforces `PLAN_MODE_BYPASS` for agents whose first substantive output would otherwise perform analysis, diagnosis, implementation, or review without an approved plan handoff. If any of these agents returns a substantive block without the expected Plan Mode result, the controller re-dispatches the same agent with the `PLAN_MODE_RESULTS` prepended instead of accepting the output.
+
+| Agent | Required result before substantive work |
+|---|---|
+| plan-architect | IMPLEMENTATION_PLAN |
+| bugfix-diagnostic-agent | DIAGNOSTIC_REPORT |
+| bugfix-root-cause-analyzer | ROOT_CAUSE_RESULT |
+| audit-intake | DIAGNOSTIC_REPORT |
+| audit-domain-analyzer | DIAGNOSTIC_REPORT |
+| design-interrogator | DIAGNOSTIC_REPORT |
+| feature-vertical-slice-planner | IMPLEMENTATION_PLAN |
+| step-01-explore | DIAGNOSTIC_REPORT |
+| executor-implementer-task | IMPLEMENTATION_RESULT |
+| feature-implementer | IMPLEMENTATION_RESULT |
+
+`PLAN_MODE_BYPASS` is logged when an agent in this table attempts to skip `PLAN_MODE_REQUEST v1`, `AWAITING_PLAN_MODE_RESULTS`, or the corresponding `PLAN_MODE_RESULTS` handoff. Recovery is always re-dispatch, never inline acceptance.
 
 **Pass:**
 - CLASSIFICATION from Phase 0a

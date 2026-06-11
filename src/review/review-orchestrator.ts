@@ -17,6 +17,7 @@ export interface ReviewBatchInput {
   changedDomains?: string[];
   changedFiles?: string[];
   mode?: string;
+  changeContract?: unknown;
   implementationSummary?: string;
   reviewLoop?: ReviewLoopContext;
 }
@@ -111,6 +112,7 @@ export function createReviewOrchestrator(dependencies: {
           files: [...files],
           changedDomains: [...(input.changedDomains ?? [])],
           mode: input.mode,
+          changeContract: input.changeContract,
           reviewLoop,
           reviewOnly: true,
         },
@@ -135,6 +137,7 @@ export function createReviewOrchestrator(dependencies: {
           files: [...files],
           changedDomains: [...(input.changedDomains ?? [])],
           mode: input.mode,
+          changeContract: input.changeContract,
           reviewLoop,
           reviewOnly: true,
         },
@@ -156,6 +159,7 @@ export function createReviewOrchestrator(dependencies: {
               files: [...files],
               changedDomains: [...(input.changedDomains ?? [])],
               mode: input.mode,
+              changeContract: input.changeContract,
               reviewLoop,
               reviewOnly: true,
             },
@@ -179,6 +183,7 @@ export function createReviewOrchestrator(dependencies: {
               files: [...files],
               changedDomains: [...(input.changedDomains ?? [])],
               mode: input.mode,
+              changeContract: input.changeContract,
               reviewLoop,
               reviewOnly: true,
             },
@@ -201,6 +206,32 @@ export function createReviewOrchestrator(dependencies: {
               files: [...files],
               changedDomains: [...(input.changedDomains ?? [])],
               mode: input.mode,
+              changeContract: input.changeContract,
+              reviewLoop,
+              reviewOnly: true,
+            },
+            filesInScope: [...files],
+            authorityLevel: "reviewer",
+            freshContext: true,
+            reviewOnly: true,
+          },
+          {
+            role: "diff-discipline-reviewer",
+            prompt: [
+              "review the current batch diff from fresh context.",
+              "Compare changed files to IMPLEMENTATION_PLAN.CHANGE_CONTRACT and references/implementation-discipline.md.",
+              "Do not run tests; checkpoint-validator owns command evidence.",
+            ].join(" "),
+            input: {
+              batch: {
+                name: input.batch.name,
+                files: [...files],
+              },
+              files: [...files],
+              changedFiles: [...(input.changedFiles ?? [])],
+              changedDomains: [...(input.changedDomains ?? [])],
+              mode: input.mode,
+              changeContract: input.changeContract,
               reviewLoop,
               reviewOnly: true,
             },

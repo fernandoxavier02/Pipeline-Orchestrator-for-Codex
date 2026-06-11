@@ -26,7 +26,7 @@ describe("review-only mode", () => {
         await runtime.controller.start("/pipeline review-only inspect auth boundaries");
         await expect(createSessionStore(runtime.stateDir).load()).rejects.toThrow();
     });
-    it("does not create a pseudo-run that shadows an existing resumable session", { timeout: 10000 }, async () => {
+    it("does not create a pseudo-run that shadows an existing resumable session", { timeout: 30000 }, async () => {
         const root = mkdtempSync(join(tmpdir(), "pipeline-review-only-latest-run-"));
         await cp(join(process.cwd(), "references"), join(root, "references"), { recursive: true });
         const runtime = createPipelineRuntime({

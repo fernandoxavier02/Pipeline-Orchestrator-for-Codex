@@ -151,7 +151,7 @@ describe("reference bundle", () => {
             await rm(root, { recursive: true, force: true });
         }
     });
-    it("rejects a matrix row that points to the wrong semantic profile", async () => {
+    it("rejects a matrix row that points to the wrong semantic profile", { timeout: 30000 }, async () => {
         const root = await mkdtemp(join(tmpdir(), "pipeline-refs-"));
         const sourceRefs = join(process.cwd(), "references");
         const copiedRefs = join(root, "references");

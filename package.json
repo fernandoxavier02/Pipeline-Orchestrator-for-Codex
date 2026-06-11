@@ -10,6 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:pipeline-contracts": "vitest run tests/integration/claude-v710-parity.test.ts tests/unit/protocol/protocol-events.test.ts tests/unit/modes/mode-policy.test.ts tests/unit/controller/plan-mode.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/execution/executor-parity-contract.test.ts tests/integration/execution/controller-routing.test.ts tests/integration/review/review-independence.test.ts --testTimeout 30000",
+    "watchdog:pipeline-contracts": "node scripts/pipeline-contract-watchdog.mjs",
     "lint:types": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

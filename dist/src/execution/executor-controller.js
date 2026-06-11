@@ -174,10 +174,19 @@ function parseQualityGatePlan(output) {
             && typeof entry.name === "string"
             && Array.isArray(entry.tasks)
             && entry.tasks.every((task) => typeof task === "string"))
-            .map((entry) => ({
-            name: entry.name,
-            tasks: entry.tasks,
-        }))
+            .map((entry) => {
+            const plannedBatch = entry;
+            return {
+                name: plannedBatch.name,
+                tasks: plannedBatch.tasks,
+                parallel_eligible: typeof plannedBatch.parallel_eligible === "boolean"
+                    ? plannedBatch.parallel_eligible
+                    : undefined,
+                parallel_reason: typeof plannedBatch.parallel_reason === "string"
+                    ? plannedBatch.parallel_reason
+                    : undefined,
+            };
+        })
         : undefined;
     if (typeof batchSize !== "number"
         || typeof regressionProofs !== "number"
@@ -206,6 +215,61 @@ function parseExecutorFixResult(output) {
         success: status === "fixed",
     };
 }
+function resolveBatchParallelMetadata(batch) {
+    if (typeof batch.parallel_eligible === "boolean") {
+        return {
+            parallel_eligible: batch.parallel_eligible,
+            parallel_execution_actual: false,
+            execution_mode: batch.parallel_eligible ? "parallel-eligible-serial-runtime" : "serial",
+            fallback_reason: batch.parallel_eligible
+                ? "Runtime preserved serial execution while exposing parallel eligibility for parent dispatchers."
+                : batch.parallel_reason ?? "Batch is not parallel eligible.",
+            warning: undefined,
+        };
+    }
+    return {
+        parallel_eligible: undefined,
+        parallel_execution_actual: false,
+        execution_mode: "serial-fallback",
+        fallback_reason: "parallel_eligible absent or undefined; executor used serial fallback observably.",
+        warning: "WARN parallel_eligible absent; serial fallback used.",
+    };
+}
+function buildBatchTaskProjection(input) {
+    const failed = input.checkpoint.status !== "passed";
+    return input.batch.tasks.map((task, index) => ({
+        task_id: task || `${input.batch.name}:task-${index + 1}`,
+        status: failed ? "BATCH_FAIL" : "BATCH_PASS",
+        first_failure: failed && index === 0
+            ? input.checkpoint.status
+            : null,
+        attribution: "batch_projection",
+    }));
+}
+function normalizeContractPath(path) {
+    return path.replace(/\\/g, "/");
+}
+function validateBatchAgainstChangeContract(input) {
+    if (!input.changeContract) {
+        return { ok: true };
+    }
+    const allowed = new Set([
+        ...input.changeContract.allowed_files,
+        ...input.changeContract.allowed_new_files,
+    ].map(normalizeContractPath));
+    const forbidden = new Set(input.changeContract.forbidden_files.map(normalizeContractPath));
+    const files = input.batch.tasks.map(normalizeContractPath);
+    const forbiddenTouched = files.filter((file) => forbidden.has(file));
+    const outsideAllowed = files.filter((file) => !allowed.has(file));
+    if (forbiddenTouched.length > 0 || outsideAllowed.length > 0) {
+        return {
+            ok: false,
+            forbiddenTouched,
+            outsideAllowed,
+        };
+    }
+    return { ok: true };
+}
 async function defaultRunBatch(batch, dependencies) {
     const executeRole = dependencies?.runRole ?? runRole;
     const adversarialReview = dependencies?.adversarialReview ?? runAdversarialReview;
@@ -213,7 +277,7 @@ async function defaultRunBatch(batch, dependencies) {
         mode: "single-agent",
         role: "executor-implementer",
         prompt: "Implement only the current batch.",
-        input: { batch },
+        input: { batch, changeContract: batch.changeContract },
         sessionRoot: dependencies?.sessionRoot,
         sessionId: dependencies?.sessionId,
     });
@@ -246,10 +310,11 @@ async function defaultRunBatch(batch, dependencies) {
             : undefined,
     };
 }
-function toExecutionBatch(batch) {
+function toExecutionBatch(batch, changeContract) {
     return {
         name: batch.name,
         files: [...("tasks" in batch ? batch.tasks : batch.files)],
+        changeContract: "changeContract" in batch ? batch.changeContract : changeContract,
     };
 }
 function toPlannedBatch(batch) {
@@ -514,6 +579,12 @@ export function createExecutorController(dependencies = {}) {
                 approvedScenarios: input.approvedScenarios ?? [],
                 cwd: input.workingDirectory,
             });
+            const changeContract = input.changeContract ?? input.proposal?.CHANGE_CONTRACT;
+            const batchMetadata = planned.batches.map((batch) => ({
+                batch: batch.name,
+                tasks: [...batch.tasks],
+                ...resolveBatchParallelMetadata(batch),
+            }));
             if (proof.tddApproval !== "APPROVED") {
                 return {
                     status: "blocked",
@@ -544,7 +615,25 @@ export function createExecutorController(dependencies = {}) {
             const appliedFixAttempts = [];
             let checkpointFailureCount = 0;
             for (const [index, batch] of planned.batches.entries()) {
-                const executionBatch = toExecutionBatch(batch);
+                const scopeValidation = validateBatchAgainstChangeContract({ batch, changeContract });
+                if (!scopeValidation.ok) {
+                    return {
+                        status: "blocked",
+                        blockedBy: "CHANGE_CONTRACT_SCOPE",
+                        batchSize: planned.batchSize,
+                        regressionProofs: planned.regressionProofs,
+                        planned,
+                        violation: scopeValidation,
+                        proof: {
+                            ...proof,
+                            checkpointEvidence,
+                            fixAttempts: appliedFixAttempts,
+                        },
+                        batches: planned.batches,
+                        results: batchResults,
+                    };
+                }
+                const executionBatch = toExecutionBatch(batch, changeContract);
                 const batchResult = await runBatch(executionBatch);
                 const actualChangedFiles = extractExecutionChangedFiles(batchResult);
                 const verificationEvidence = deriveControllerVerificationEvidence({
@@ -576,6 +665,7 @@ export function createExecutorController(dependencies = {}) {
                     checkpoint,
                 };
                 let activeCheckpoint = checkpoint;
+                const parallelMetadata = resolveBatchParallelMetadata(batch);
                 let activeBatchReview = await reviewOrchestrator.reviewBatch({
                     batch: {
                         name: batch.name,
@@ -584,6 +674,7 @@ export function createExecutorController(dependencies = {}) {
                     changedFiles: actualChangedFiles,
                     changedDomains,
                     mode: input.mode,
+                    changeContract,
                     reviewLoop: createBatchReviewLoopContext(0),
                 });
                 checkpointEvidence.push({
@@ -591,6 +682,15 @@ export function createExecutorController(dependencies = {}) {
                     requiredCheckpoints: checkpoint.requiredCheckpoints,
                     verifiedCheckpoints: checkpoint.verifiedCheckpoints,
                     evidence: verificationEvidence?.evidence ?? [],
+                    parallel_eligible: parallelMetadata.parallel_eligible,
+                    parallel_execution: parallelMetadata.parallel_execution_actual,
+                    parallel_execution_actual: parallelMetadata.parallel_execution_actual,
+                    execution_mode: parallelMetadata.execution_mode,
+                    per_task_status: [],
+                    batch_task_projection: buildBatchTaskProjection({
+                        batch,
+                        checkpoint,
+                    }),
                 });
                 currentBatchResult.batchReview = activeBatchReview;
                 if (actualChangedFiles.length === 0) {
@@ -650,6 +750,15 @@ export function createExecutorController(dependencies = {}) {
                         : checkpoint.status === "STOP_RULE"
                             ? "Checkpoint validation exhausted the stop rule"
                             : "Checkpoint validation failed",
+                    parallel_eligible: parallelMetadata.parallel_eligible,
+                    parallel_execution: parallelMetadata.parallel_execution_actual,
+                    parallel_execution_actual: parallelMetadata.parallel_execution_actual,
+                    execution_mode: parallelMetadata.execution_mode,
+                    per_task_status: [],
+                    batch_task_projection: buildBatchTaskProjection({
+                        batch,
+                        checkpoint,
+                    }),
                 });
                 if (activeBatchReview
                     && typeof activeBatchReview === "object"
@@ -698,6 +807,15 @@ export function createExecutorController(dependencies = {}) {
                                     requiredCheckpoints: activeCheckpoint.requiredCheckpoints,
                                     verifiedCheckpoints: activeCheckpoint.verifiedCheckpoints,
                                     evidence: loopVerificationEvidence.evidence,
+                                    parallel_eligible: parallelMetadata.parallel_eligible,
+                                    parallel_execution: parallelMetadata.parallel_execution_actual,
+                                    parallel_execution_actual: parallelMetadata.parallel_execution_actual,
+                                    execution_mode: parallelMetadata.execution_mode,
+                                    per_task_status: [],
+                                    batch_task_projection: buildBatchTaskProjection({
+                                        batch,
+                                        checkpoint: activeCheckpoint,
+                                    }),
                                 };
                                 currentBatchResult.checkpoint = activeCheckpoint;
                                 if (activeCheckpoint.status !== "passed") {
@@ -711,6 +829,7 @@ export function createExecutorController(dependencies = {}) {
                                     changedFiles: actualChangedFiles,
                                     changedDomains,
                                     mode: input.mode,
+                                    changeContract,
                                     reviewLoop: createBatchReviewLoopContext(attempt),
                                 });
                                 currentBatchResult.batchReview = activeBatchReview;
@@ -892,6 +1011,10 @@ export function createExecutorController(dependencies = {}) {
                     review: lastResult?.batchReview ?? lastResult?.review ?? null,
                     finalReview,
                     validation: lastResult?.checkpoint ?? null,
+                    executionPlan: {
+                        CHANGE_CONTRACT: changeContract,
+                        batch_metadata: batchMetadata,
+                    },
                     proof: {
                         ...proof,
                         checkpointEvidence,
@@ -917,6 +1040,10 @@ export function createExecutorController(dependencies = {}) {
                 review: lastResult?.batchReview ?? lastResult?.review ?? null,
                 finalReview,
                 validation: lastResult?.checkpoint ?? null,
+                executionPlan: {
+                    CHANGE_CONTRACT: changeContract,
+                    batch_metadata: batchMetadata,
+                },
                 proof: {
                     ...proof,
                     checkpointEvidence,

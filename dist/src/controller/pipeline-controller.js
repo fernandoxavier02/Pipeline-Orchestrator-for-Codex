@@ -1,3 +1,4 @@
+import { PIPELINE_MODES } from "../domain/pipeline-types.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -34,6 +35,12 @@ import { detectChangedDomains } from "../review/domain-checklists.js";
 import { deriveSpecIdFromRequest, isSpecLifecycleVariant, validateSpecAcceptanceTraceability, validateSpecContentReviewGate, validateSpecFormatGate, validateSpecLifecycleArtifacts, validateSpecPostImplementationGate, } from "../spec/spec-lifecycle.js";
 import { createBlockedPipelineArtifact, evaluateCapabilities, isExplicitPipelineRequest, } from "../governance/pipeline-contract.js";
 import ts from "typescript";
+function isPipelineMode(value) {
+    return typeof value === "string" && PIPELINE_MODES.includes(value);
+}
+function resolveSessionPipelineMode(sessionMode, fallback) {
+    return isPipelineMode(sessionMode) ? sessionMode : fallback;
+}
 function shouldAdvanceLegacyPlanningSession(session) {
     return session.currentPhase === "phase-1"
         && !session.proposal
@@ -158,6 +165,7 @@ async function executeApprovedContinuation(input) {
             }),
             variant: input.session.variant ?? input.session.proposal?.variant ?? "feature-light",
             proposal,
+            changeContract: input.session.proposal?.CHANGE_CONTRACT,
             tasks: input.session.proposal?.affectedFiles ?? input.session.touchedFiles ?? [],
             approvedScenarios: authoritativeExecutionProof.approvedScenarios,
             workingDirectory: getWorkspaceRoot(input.runtime),
@@ -800,10 +808,12 @@ export function createPipelineController(runtime) {
                             variant: session.proposal.variant ?? session.variant,
                         },
                     });
-                    const nextPlanModeStatus = getPlanModeStatus(session.mode ?? mode, nextClassification.complexity);
+                    const nextMode = resolveSessionPipelineMode(session.mode, mode);
+                    const nextPlanModeStatus = getPlanModeStatus(nextMode, nextClassification.complexity);
                     const nextProposal = buildProposal({
                         request: session.proposal.summary ?? normalizedRequest,
                         classification: nextClassification,
+                        mode: nextMode,
                         infoGateStatus: session.proposal.infoGateStatus ?? "partial",
                         designReviewStatus: session.proposal.designReviewStatus ?? "skipped",
                         planModeStatus: nextPlanModeStatus,
@@ -984,6 +994,7 @@ export function createPipelineController(runtime) {
                                 affectedFiles: session.proposal?.affectedFiles,
                                 variant: session.proposal?.variant,
                                 validationIntent: session.proposal?.validationIntent,
+                                changeContract: session.proposal?.CHANGE_CONTRACT,
                             }),
                         };
                     }
@@ -1099,6 +1110,7 @@ export function createPipelineController(runtime) {
                             affectedFiles: session.proposal?.affectedFiles,
                             variant: session.proposal?.variant,
                             validationIntent: session.proposal?.validationIntent,
+                            changeContract: session.proposal?.CHANGE_CONTRACT,
                         }),
                     };
                 }
@@ -1311,6 +1323,7 @@ export function createPipelineController(runtime) {
             const proposal = buildProposal({
                 request: normalizedRequest,
                 classification: classificationResult.classification,
+                mode,
                 infoGateStatus: infoGate.status,
                 designReviewStatus: designInterrogation.status,
                 planModeStatus,

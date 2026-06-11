@@ -102,7 +102,8 @@ export interface PipelineCapabilityRuntime {
 export function isExplicitPipelineRequest(input: string) {
   const trimmed = input.trim();
   return trimmed.startsWith("/pipeline-orchestrator-for-codex:pipeline")
-    || /^\/pipeline-orchestrator-for-codex:(audit|audit-light|audit-heavy|bugfix|bugfix-light|bugfix-heavy|feature|feature-light|feature-heavy|review|spec|spec-light|spec-heavy|spec-audit-only)(?:\s|$)/u.test(trimmed)
+    || /^\/pipeline-orchestrator-for-codex:(audit|audit-light|audit-heavy|bugfix|bugfix-light|bugfix-heavy|feature|feature-light|feature-heavy|review|spec|spec-light|spec-heavy|spec-audit-only|paperclip-audit|paperclip-bugfix|paperclip-feature|paperclip-hotfix|paperclip-review|paperclip-spec|paperclip-user-story|paperclip-ux|setup-paperclip)(?:\s|$)/u.test(trimmed)
+    || /^(paperclip-audit|paperclip-bugfix|paperclip-feature|paperclip-hotfix|paperclip-review|paperclip-spec|paperclip-user-story|paperclip-ux|setup-paperclip)(?:\s|$)/u.test(trimmed)
     || trimmed.startsWith("PRE_CLASSIFIED_TYPE=");
 }
 

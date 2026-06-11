@@ -6,6 +6,14 @@ import {
   type ProtocolBlock,
   type ProtocolDispatchMode,
 } from "./protocol-events.js";
+import {
+  buildPlanModeBypassRedispatchPrompt,
+  mandatoryPlanModeAgentForTarget,
+  outputCarriesPlanModeRequest,
+  outputContainsSubstantiveMarker,
+  promptCarriesPlanModeBypassRedispatch,
+  promptCarriesPlanModeResults,
+} from "./plan-mode-bypass.js";
 
 type DispatchLike = DispatchResult | RunRoleResult;
 
@@ -54,10 +62,93 @@ function blockIdentifier(block: ProtocolBlock) {
   return block.plan_id;
 }
 
+function collectStringValues(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectStringValues(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value).flatMap((item) => collectStringValues(item));
+  }
+  return [];
+}
+
 function outputText(output: Record<string, unknown>) {
-  return Object.values(output)
-    .filter((value): value is string => typeof value === "string")
-    .join("\n\n");
+  return collectStringValues(output).join("\n\n");
+}
+
+async function enforcePlanModeBypass(input: {
+  stateRoot: string;
+  request: ParentDispatchRequest;
+  output: Record<string, unknown>;
+  dispatchAgain: (request: ParentDispatchRequest) => Promise<Record<string, unknown>>;
+  source?: string;
+  dispatchMode?: ProtocolDispatchMode;
+}) {
+  const agent = mandatoryPlanModeAgentForTarget(input.request.targetName);
+  if (!agent || promptCarriesPlanModeResults(input.request.prompt)) {
+    return input.output;
+  }
+
+  const text = outputText(input.output);
+  if (!outputContainsSubstantiveMarker(text, agent) || outputCarriesPlanModeRequest(text)) {
+    return input.output;
+  }
+
+  const log = createProtocolEventLog(input.stateRoot);
+  const timestamp = new Date().toISOString();
+  await log.append({
+    event_id: `plan-mode-bypass-${input.request.dispatchId}`,
+    kind: "DISPATCH_REQUEST",
+    protocol_version: 1,
+    status: "failed",
+    source: input.source ?? "protocol-parent-handler",
+    timestamp,
+    payload: {
+      event: "PLAN_MODE_BYPASS",
+      dispatchId: input.request.dispatchId,
+      targetName: input.request.targetName,
+      markers: agent.outputMarkers,
+      redispatch: !promptCarriesPlanModeBypassRedispatch(input.request.prompt),
+    },
+    ...(input.dispatchMode ? { dispatchMode: input.dispatchMode } : {}),
+  });
+
+  if (promptCarriesPlanModeBypassRedispatch(input.request.prompt)) {
+    return {
+      ...input.output,
+      status: "blocked",
+      protocolStatus: "blocked-plan-mode-bypass",
+      blockedReason: `PLAN_MODE_BYPASS: ${input.request.targetName} emitted substantive output before PLAN_MODE_REQUEST twice.`,
+      attemptedOutputText: text,
+    };
+  }
+
+  const retryOutput = await input.dispatchAgain({
+    ...input.request,
+    prompt: buildPlanModeBypassRedispatchPrompt({
+      originalPrompt: input.request.prompt,
+      targetName: input.request.targetName,
+      markers: agent.outputMarkers,
+    }),
+  });
+  const retryText = outputText(retryOutput);
+  if (outputContainsSubstantiveMarker(retryText, agent) && !outputCarriesPlanModeRequest(retryText)) {
+    return {
+      ...retryOutput,
+      status: "blocked",
+      protocolStatus: "blocked-plan-mode-bypass",
+      blockedReason: `PLAN_MODE_BYPASS: ${input.request.targetName} emitted substantive output before PLAN_MODE_REQUEST twice.`,
+      attemptedOutputText: retryText,
+    };
+  }
+
+  return {
+    ...retryOutput,
+    planModeBypassRecovered: true,
+  };
 }
 
 export async function persistProtocolBlocksFromDispatch(input: {
@@ -112,6 +203,29 @@ export async function processProtocolBlocksForParent(input: {
   const gateResponses: Array<Record<string, unknown>> = [];
   const planModeResults: Array<Record<string, unknown>> = [];
 
+  async function fulfillPlanModeBlock(block: Extract<ProtocolBlock, { kind: "PLAN_MODE_REQUEST" }>) {
+    const planResult = await input.adapters.fulfillPlanMode({
+      planId: block.plan_id,
+      researchScope: block.research_scope,
+      expectedDeliverables: block.expected_deliverables,
+    });
+    const normalized = {
+      planId: planResult.planId ?? block.plan_id,
+      output: planResult.output,
+    };
+    planModeResults.push(normalized);
+    await log.append({
+      event_id: `plan-mode-request-${block.plan_id}-completed`,
+      kind: "PLAN_MODE_REQUEST",
+      protocol_version: 1,
+      status: "completed",
+      source: input.source ?? "protocol-parent-handler",
+      timestamp: new Date().toISOString(),
+      payload: normalized,
+    });
+    return normalized;
+  }
+
   for (const block of input.blocks) {
     if (block.kind === "DISPATCH_REQUEST") {
       const request: ParentDispatchRequest = {
@@ -132,19 +246,59 @@ export async function processProtocolBlocksForParent(input: {
         payload: request,
         ...(input.dispatchMode ? { dispatchMode: input.dispatchMode } : {}),
       });
-      const output = block.target_kind === "skill"
-        ? await input.adapters.dispatchSkill?.(request)
-        : await input.adapters.dispatchAgent(request);
+      const dispatchWithAdapters = async (nextRequest: ParentDispatchRequest) => (
+        nextRequest.targetKind === "skill"
+          ? await input.adapters.dispatchSkill?.(nextRequest)
+          : await input.adapters.dispatchAgent(nextRequest)
+      );
+      const rawOutput = await dispatchWithAdapters(request);
 
-      if (!output) {
+      if (!rawOutput) {
         throw new Error(`DISPATCH_REQUEST ${block.dispatch_id} could not be processed by the parent handler.`);
       }
+      const output = await enforcePlanModeBypass({
+        stateRoot: input.stateRoot,
+        request,
+        output: rawOutput,
+        dispatchAgain: async (nextRequest) => {
+          const retryOutput = await dispatchWithAdapters(nextRequest);
+          if (!retryOutput) {
+            throw new Error(`DISPATCH_REQUEST ${block.dispatch_id} retry could not be processed by the parent handler.`);
+          }
+          return retryOutput;
+        },
+        source: input.source,
+        dispatchMode: input.dispatchMode,
+      });
+      const nestedPlanModeBlocks = parseProtocolBlocks(outputText(output))
+        .filter((nestedBlock): nestedBlock is Extract<ProtocolBlock, { kind: "PLAN_MODE_REQUEST" }> =>
+          nestedBlock.kind === "PLAN_MODE_REQUEST"
+        );
+      const nestedPlanModeResults: Array<Record<string, unknown>> = [];
+      for (const nestedBlock of nestedPlanModeBlocks) {
+        await log.append({
+          event_id: `plan-mode-request-${nestedBlock.plan_id}-emitted-from-dispatch-${block.dispatch_id}`,
+          kind: "PLAN_MODE_REQUEST",
+          protocol_version: 1,
+          status: "emitted",
+          source: input.source ?? "protocol-parent-handler",
+          timestamp: new Date().toISOString(),
+          payload: nestedBlock,
+        });
+        nestedPlanModeResults.push(await fulfillPlanModeBlock(nestedBlock));
+      }
+      const completedOutput = nestedPlanModeResults.length > 0
+        ? {
+          ...output,
+          planModeResults: nestedPlanModeResults,
+        }
+        : output;
 
       const result = {
         dispatchId: block.dispatch_id,
         targetKind: block.target_kind,
         targetName: block.target_name,
-        output,
+        output: completedOutput,
       };
       dispatchResults.push(result);
       await log.append({
@@ -187,25 +341,7 @@ export async function processProtocolBlocksForParent(input: {
       continue;
     }
 
-    const planResult = await input.adapters.fulfillPlanMode({
-      planId: block.plan_id,
-      researchScope: block.research_scope,
-      expectedDeliverables: block.expected_deliverables,
-    });
-    const normalized = {
-      planId: planResult.planId ?? block.plan_id,
-      output: planResult.output,
-    };
-    planModeResults.push(normalized);
-    await log.append({
-      event_id: `plan-mode-request-${block.plan_id}-completed`,
-      kind: "PLAN_MODE_REQUEST",
-      protocol_version: 1,
-      status: "completed",
-      source: input.source ?? "protocol-parent-handler",
-      timestamp: new Date().toISOString(),
-      payload: normalized,
-    });
+    await fulfillPlanModeBlock(block);
   }
 
   return {

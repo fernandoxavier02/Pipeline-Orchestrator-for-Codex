@@ -31,6 +31,20 @@ describe("HOTFIX wiring is policy-driven", () => {
     expect(plan.regressionProofs).toBe(hotfixReductionPolicy().tdd.minimumTests);
   });
 
+  it("quality-gate-router does not mark MEDIA batches parallel without disjoint file-scope proof", () => {
+    const plan = planQualityGateBatches({
+      complexity: "MEDIA",
+      tasks: ["src/shared.ts", "src/shared.ts", "src/other.ts"],
+    });
+
+    expect(plan.batches[0]).toEqual(
+      expect.objectContaining({
+        parallel_eligible: false,
+        parallel_reason: expect.stringContaining("No validated file-scope proof"),
+      }),
+    );
+  });
+
   it("adversarial checklists in --hotfix are policy.adversarialChecklists", () => {
     const checklists = resolveAdversarialChecklists({
       files: ["src/billing/charge.ts"],

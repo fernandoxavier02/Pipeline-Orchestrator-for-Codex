@@ -4,6 +4,29 @@ import type { ProposalConfirmationStatus } from "./confirm-proposal.js";
 
 export type PlanModeStatus = "required" | "optional" | "skipped";
 
+export interface PlanModeBypass {
+  attempted: boolean;
+  honored: boolean;
+  reason: string;
+}
+
+export interface ChangeContract {
+  allowed_files: string[];
+  allowed_new_files: string[];
+  forbidden_files: string[];
+  forbidden_change_types: string[];
+  diff_budget: {
+    max_files_expected: number;
+    max_lines_expected: number;
+    new_abstractions_allowed: boolean;
+    new_modules_allowed: boolean;
+  };
+  escalation_required_if: string[];
+  bootstrap: {
+    active: boolean;
+  };
+}
+
 export interface PlanModeRequest {
   kind: "PLAN_MODE_REQUEST";
   protocol_version: 1;
@@ -18,6 +41,7 @@ export interface ImplementationPlan {
   status: ProposalConfirmationStatus;
   summary: string;
   affectedFiles: string[];
+  CHANGE_CONTRACT: ChangeContract;
   tasks: string[];
   risks: string[];
   approvalNotes: string;
@@ -28,11 +52,30 @@ export function getPlanModeStatus(mode: PipelineMode, complexity: PipelineComple
     return "required";
   }
 
+  if (mode === "--no-plan") {
+    return complexity === "COMPLEXA" ? "required" : "skipped";
+  }
+
   if (complexity === "COMPLEXA") {
     return "required";
   }
 
   return "skipped";
+}
+
+export function getPlanModeBypass(mode: PipelineMode, complexity: PipelineComplexity): PlanModeBypass | undefined {
+  if (mode !== "--no-plan") {
+    return undefined;
+  }
+
+  const honored = complexity !== "COMPLEXA";
+  return {
+    attempted: true,
+    honored,
+    reason: honored
+      ? "--no-plan honored for non-COMPLEXA workflow; bypass remains explicit in proposal/session state."
+      : "--no-plan ignored for COMPLEXA workflow; Plan Mode remains required.",
+  };
 }
 
 function slugify(value: string) {
@@ -88,14 +131,21 @@ export function createImplementationPlan(input: {
   affectedFiles?: string[];
   variant?: string;
   validationIntent?: "standard" | "reduced";
+  changeContract?: ChangeContract;
 }): ImplementationPlan {
   const variant = input.variant ?? "feature-light";
+  const affectedFiles = input.affectedFiles ?? [];
+  const changeContract = input.changeContract ?? createChangeContract({
+    affectedFiles,
+    batchSize: Math.max(1, affectedFiles.length),
+  });
 
   return {
     kind: "IMPLEMENTATION_PLAN",
     status: input.status,
     summary: input.summary ?? "Implementation plan ready for approval.",
-    affectedFiles: input.affectedFiles ?? [],
+    affectedFiles,
+    CHANGE_CONTRACT: changeContract,
     tasks: [
       "Confirm the failing or review-driving scenarios before implementation.",
       "Implement the scoped change in the affected files.",
@@ -115,6 +165,45 @@ export function createImplementationPlan(input: {
         ? "Controller-approved plan is ready for execution once RED proof exists."
         : input.status === "ADJUSTED"
           ? "Plan needs adjustment before execution can proceed."
-          : "Plan was rejected and must not proceed to execution.",
+        : "Plan was rejected and must not proceed to execution.",
+  };
+}
+
+export function createChangeContract(input: {
+  affectedFiles: string[];
+  batchSize: number;
+}): ChangeContract {
+  const allowedFiles = [...new Set(input.affectedFiles)].sort();
+  return {
+    allowed_files: allowedFiles,
+    allowed_new_files: [],
+    forbidden_files: [
+      "dist/**",
+      ".git/**",
+      "node_modules/**",
+    ],
+    forbidden_change_types: [
+      "unrequested_feature",
+      "unrelated_refactor",
+      "new_dependency_without_approval",
+      "public_api_contract_change_without_approval",
+      "schema_migration_without_approval",
+      "sensitive_config_change_without_approval",
+      "test_weakened_to_fit_implementation",
+    ],
+    diff_budget: {
+      max_files_expected: Math.max(1, allowedFiles.length || input.batchSize),
+      max_lines_expected: Math.max(30, Math.max(1, allowedFiles.length || input.batchSize) * 80),
+      new_abstractions_allowed: false,
+      new_modules_allowed: false,
+    },
+    escalation_required_if: [
+      "actual diff exceeds the declared budget by more than 20 percent",
+      "files outside allowed_files or allowed_new_files are touched",
+      "dependency, config, public API, schema, secret, or test-integrity changes appear",
+    ],
+    bootstrap: {
+      active: false,
+    },
   };
 }

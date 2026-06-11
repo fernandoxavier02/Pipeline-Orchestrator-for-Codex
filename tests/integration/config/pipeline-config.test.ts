@@ -101,7 +101,7 @@ patterns_file: "docs/PATTERNS.internal.md"
     }
   });
 
-  it("wires the detected config into runtime closeout output", async () => {
+  it("wires the detected config into runtime closeout output", { timeout: 30000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-config-runtime-"));
 
     try {

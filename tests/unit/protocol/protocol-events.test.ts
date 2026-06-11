@@ -269,6 +269,118 @@ expected_deliverables:
   });
 });
 
+describe("Plan Mode bypass enforcement", () => {
+  it("re-dispatches a mandatory agent once and fulfills Plan Mode when the retry emits PLAN_MODE_REQUEST", async () => {
+    const root = await mkdtemp(join(tmpdir(), "protocol-plan-bypass-"));
+    const blocks = parseProtocolBlocks(`
+=== DISPATCH_REQUEST v1 ===
+dispatch_id: bypass-1
+target_kind: agent
+target_name: pipeline-orchestrator-for-codex:executor:executor-implementer-task
+prompt: |
+  TASK_ID: "1.1"
+=== END DISPATCH_REQUEST ===`);
+    let calls = 0;
+    let planModeCalls = 0;
+
+    const result = await processProtocolBlocksForParent({
+      stateRoot: root,
+      blocks,
+      adapters: {
+        async dispatchAgent(request) {
+          calls += 1;
+          if (calls === 1) {
+            return { text: "IMPLEMENTER_RESULT:\n  status: PASS" };
+          }
+
+          expect(request.prompt).toContain("PLAN_MODE_BYPASS_REDISPATCH");
+          return {
+            text: `=== PLAN_MODE_REQUEST v1 ===
+plan_id: implementer-retry
+research_scope: Inspect task scope.
+expected_deliverables:
+  - Scope proof
+=== END PLAN_MODE_REQUEST ===
+STATUS: AWAITING_PLAN_MODE_RESULTS`,
+          };
+        },
+        async answerGate() {
+          throw new Error("not used");
+        },
+        async fulfillPlanMode(request) {
+          planModeCalls += 1;
+          expect(request.planId).toBe("implementer-retry");
+          return {
+            output: "Scope proof complete.",
+          };
+        },
+      },
+    });
+
+    expect(calls).toBe(2);
+    expect(planModeCalls).toBe(1);
+    expect(result.dispatchResults[0]).toMatchObject({
+      dispatchId: "bypass-1",
+      output: expect.objectContaining({
+        text: expect.stringContaining("PLAN_MODE_REQUEST v1"),
+        planModeBypassRecovered: true,
+        planModeResults: [
+          expect.objectContaining({
+            planId: "implementer-retry",
+            output: "Scope proof complete.",
+          }),
+        ],
+      }),
+    });
+    expect(result.planModeResults).toEqual([
+      expect.objectContaining({
+        planId: "implementer-retry",
+        output: "Scope proof complete.",
+      }),
+    ]);
+
+    const rawEvents = await readFile(join(root, "protocol-events.jsonl"), "utf8");
+    expect(rawEvents).toContain("PLAN_MODE_BYPASS");
+  });
+
+  it("blocks a mandatory agent that bypasses Plan Mode twice", async () => {
+    const root = await mkdtemp(join(tmpdir(), "protocol-plan-bypass-hard-"));
+    const blocks = parseProtocolBlocks(`
+=== DISPATCH_REQUEST v1 ===
+dispatch_id: bypass-2
+target_kind: agent
+target_name: pipeline-orchestrator-for-codex:executor:executor-implementer-task
+prompt: |
+  TASK_ID: "1.1"
+=== END DISPATCH_REQUEST ===`);
+
+    const result = await processProtocolBlocksForParent({
+      stateRoot: root,
+      blocks,
+      adapters: {
+        async dispatchAgent() {
+          return { text: "IMPLEMENTER_RESULT:\n  status: PASS" };
+        },
+        async answerGate() {
+          throw new Error("not used");
+        },
+        async fulfillPlanMode() {
+          throw new Error("not used");
+        },
+      },
+    });
+
+    expect(result.dispatchResults[0]).toMatchObject({
+      dispatchId: "bypass-2",
+      output: expect.objectContaining({
+        status: "blocked",
+        protocolStatus: "blocked-plan-mode-bypass",
+        blockedReason: expect.stringContaining("PLAN_MODE_BYPASS"),
+      }),
+    });
+  });
+});
+
 // Spec: pipeline-trust-restoration / R5 — Post-Mortem Distinguishability in Protocol Events
 describe("R5: protocol event dispatchMode field", () => {
   it("R5 AC 5.2: schema accepts dispatchMode='real'", () => {

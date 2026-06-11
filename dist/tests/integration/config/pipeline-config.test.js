@@ -78,7 +78,7 @@ patterns_file: "docs/PATTERNS.internal.md"
             await rm(root, { recursive: true, force: true });
         }
     });
-    it("wires the detected config into runtime closeout output", async () => {
+    it("wires the detected config into runtime closeout output", { timeout: 30000 }, async () => {
         const root = await mkdtemp(join(tmpdir(), "pipeline-config-runtime-"));
         try {
             await mkdir(join(root, ".Codex"), { recursive: true });

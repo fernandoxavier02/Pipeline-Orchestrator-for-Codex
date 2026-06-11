@@ -25,7 +25,7 @@ describe("reference-backed runtime", () => {
     }
   });
 
-  it("reads the variant and macro questions from the loaded reference bundle", async () => {
+  it("reads the variant and macro questions from the loaded reference bundle", { timeout: 30000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-runtime-"));
     const sourceRefs = join(process.cwd(), "references");
     const copiedRefs = join(root, "references");

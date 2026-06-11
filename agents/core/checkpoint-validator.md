@@ -151,6 +151,20 @@ STOP RULE TRIGGERED. Report consecutive failures, batch numbers, reasons, and es
 CHECKPOINT_RESULT:
   batch: [N]
   status: "[PASS | FAIL]"
+  parallel_eligible: true                  # true when planning proved disjoint file scope
+  parallel_execution: false                # true only when this batch actually used parallel dispatch
+  parallel_execution_actual: false         # explicit runtime fact; serial fallback keeps this false
+  execution_mode: "parallel-eligible-serial-runtime"
+  per_task_status: []                      # actual per-task attribution only; empty when not available
+  batch_task_projection:                   # batch-derived projection, not per-task proof
+    - task_id: "N.1"
+      status: "[BATCH_PASS | BATCH_FAIL]"
+      attribution: "batch_projection"
+      first_failure: null                  # or batch failure marker when BATCH_FAIL
+    - task_id: "N.2"
+      status: "[BATCH_PASS | BATCH_FAIL]"
+      attribution: "batch_projection"
+      first_failure: null
   build:
     status: "[PASS | FAIL]"
     command: "[exact command]"

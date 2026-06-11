@@ -147,6 +147,8 @@ describe("execution controller routing", () => {
             {
                 name: "batch-1",
                 tasks: ["a", "b", "c"],
+                parallel_eligible: false,
+                parallel_reason: "SIMPLES runs as one serial batch.",
             },
         ]);
         expect(router.planBatches({

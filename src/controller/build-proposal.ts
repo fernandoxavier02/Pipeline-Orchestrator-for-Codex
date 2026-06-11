@@ -1,5 +1,12 @@
+import type { PipelineMode } from "../domain/pipeline-types.js";
 import type { PipelineClassification, ValidationIntent } from "./classification-overrides.js";
-import { createPlanModeRequest, renderPlanModeRequestBlock, type PlanModeStatus } from "./plan-mode.js";
+import {
+  createChangeContract,
+  createPlanModeRequest,
+  getPlanModeBypass,
+  renderPlanModeRequestBlock,
+  type PlanModeStatus,
+} from "./plan-mode.js";
 import { buildWorkflowSelection } from "./workflow-selection.js";
 
 function inferAffectedFiles(variant: string) {
@@ -25,6 +32,7 @@ function inferAffectedFiles(variant: string) {
 export function buildProposal(input: {
   request: string;
   classification: PipelineClassification;
+  mode?: PipelineMode;
   infoGateStatus: "passed" | "blocked" | "partial";
   designReviewStatus: "passed" | "partial" | "skipped";
   planModeStatus: PlanModeStatus;
@@ -52,6 +60,13 @@ export function buildProposal(input: {
     affectedFiles,
     batchSize: input.batchSize,
     validationIntent: input.validationIntent,
+    planModeBypass: input.mode
+      ? getPlanModeBypass(input.mode, input.classification.complexity)
+      : undefined,
+    CHANGE_CONTRACT: createChangeContract({
+      affectedFiles,
+      batchSize: input.batchSize,
+    }),
     workflowSelection: buildWorkflowSelection({
       request: input.request,
       classification: input.classification,

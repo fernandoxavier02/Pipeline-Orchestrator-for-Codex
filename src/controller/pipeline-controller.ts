@@ -1,4 +1,4 @@
-import type { PipelinePhase } from "../domain/pipeline-types.js";
+import { PIPELINE_MODES, type PipelineMode, type PipelinePhase } from "../domain/pipeline-types.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -11,7 +11,7 @@ import { classifyRequest } from "./classify-request.js";
 import { applyClassificationOverrides } from "./classification-overrides.js";
 import { confirmProposal } from "./confirm-proposal.js";
 import { runDesignInterrogation } from "./design-interrogator.js";
-import { getPlanModeStatus, createImplementationPlan } from "./plan-mode.js";
+import { getPlanModeStatus, createImplementationPlan, type ChangeContract, type PlanModeBypass } from "./plan-mode.js";
 import { defaultBatchSizeForWorkflow, resolveWorkflowSwitch } from "./workflow-selection.js";
 import { parseMode } from "./parse-mode.js";
 import { deriveContinuationOutcome } from "./continuation-outcome.js";
@@ -79,6 +79,14 @@ type ConfidenceStore = {
   load?: () => Promise<unknown>;
 };
 
+function isPipelineMode(value: string | undefined): value is PipelineMode {
+  return typeof value === "string" && (PIPELINE_MODES as readonly string[]).includes(value);
+}
+
+function resolveSessionPipelineMode(sessionMode: string | undefined, fallback: PipelineMode): PipelineMode {
+  return isPipelineMode(sessionMode) ? sessionMode : fallback;
+}
+
 type SentinelStore = {
   root?: string;
   save: (state: unknown) => Promise<void>;
@@ -115,6 +123,8 @@ interface SessionProposalState {
   workflowSelection?: ReturnType<typeof buildProposal>["workflowSelection"];
   planModeRequest?: ReturnType<typeof buildProposal>["planModeRequest"];
   planModeRequestBlock?: string;
+  planModeBypass?: PlanModeBypass;
+  CHANGE_CONTRACT?: ChangeContract;
   infoGateStatus?: "passed" | "blocked" | "partial";
   designReviewStatus?: "passed" | "partial" | "skipped";
 }
@@ -342,6 +352,7 @@ async function executeApprovedContinuation(input: {
       }),
       variant: input.session.variant ?? input.session.proposal?.variant ?? "feature-light",
       proposal,
+      changeContract: input.session.proposal?.CHANGE_CONTRACT,
       tasks: input.session.proposal?.affectedFiles ?? input.session.touchedFiles ?? [],
       approvedScenarios: authoritativeExecutionProof.approvedScenarios,
       workingDirectory: getWorkspaceRoot(input.runtime),
@@ -1190,10 +1201,12 @@ export function createPipelineController(runtime?: {
               variant: session.proposal.variant ?? session.variant,
             },
           }) as PipelineClassification;
-          const nextPlanModeStatus = getPlanModeStatus(session.mode as any ?? mode, nextClassification.complexity);
+          const nextMode = resolveSessionPipelineMode(session.mode, mode);
+          const nextPlanModeStatus = getPlanModeStatus(nextMode, nextClassification.complexity);
           const nextProposal = buildProposal({
             request: session.proposal.summary ?? normalizedRequest,
             classification: nextClassification,
+            mode: nextMode,
             infoGateStatus: session.proposal.infoGateStatus ?? "partial",
             designReviewStatus: session.proposal.designReviewStatus ?? "skipped",
             planModeStatus: nextPlanModeStatus,
@@ -1390,6 +1403,7 @@ export function createPipelineController(runtime?: {
                 affectedFiles: session.proposal?.affectedFiles,
                 variant: session.proposal?.variant,
                 validationIntent: session.proposal?.validationIntent as ValidationIntent | undefined,
+                changeContract: session.proposal?.CHANGE_CONTRACT,
               }),
             };
           }
@@ -1512,6 +1526,7 @@ export function createPipelineController(runtime?: {
               affectedFiles: session.proposal?.affectedFiles,
               variant: session.proposal?.variant,
               validationIntent: session.proposal?.validationIntent as ValidationIntent | undefined,
+              changeContract: session.proposal?.CHANGE_CONTRACT,
             }),
           };
         }
@@ -1754,6 +1769,7 @@ export function createPipelineController(runtime?: {
       const proposal = buildProposal({
         request: normalizedRequest,
         classification: classificationResult.classification,
+        mode,
         infoGateStatus: infoGate.status,
         designReviewStatus: designInterrogation.status,
         planModeStatus,

@@ -59,6 +59,7 @@ Values at exact boundaries (e.g., exactly 3 files, exactly 30 lines) are classif
 |--------|---------|-------|----------|
 | **Pipeline** | DIRETO (no pipeline) | Light variant | Heavy variant |
 | **Batch size** | All at once | 2-3 tasks | 1 task |
+| **Parallel tasks** | No | Yes, only when file-scope disjoint via `batch_metadata.parallel_eligible: true` | No, serial by design |
 | **TDD tests** | 1 main + 1 edge | 1 main + 1 regression + 1 edge | 1+ main + 2+ regression + 2+ edge |
 | **Plan Mode** | Skip | Optional (--plan) | Automatic |
 | **Architecture review** | Skip | Per-batch | Per-batch (deep) |

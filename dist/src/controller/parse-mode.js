@@ -5,6 +5,10 @@ const directWorkflowCommands = {
     "bugfix-heavy": { type: "Bug Fix", complexity: "COMPLEXA", variant: "bugfix-heavy" },
     "feature-light": { type: "Feature", complexity: "MEDIA", variant: "feature-light" },
     "feature-heavy": { type: "Feature", complexity: "COMPLEXA", variant: "feature-heavy" },
+    "user-story-light": { type: "User Story", complexity: "MEDIA", variant: "user-story-light" },
+    "user-story-heavy": { type: "User Story", complexity: "COMPLEXA", variant: "user-story-heavy" },
+    "ux-sim-light": { type: "UX Simulation", complexity: "MEDIA", variant: "ux-sim-light" },
+    "ux-sim-heavy": { type: "UX Simulation", complexity: "COMPLEXA", variant: "ux-sim-heavy" },
     "spec-light": { type: "Spec", complexity: "MEDIA", variant: "spec-light" },
     "spec-heavy": { type: "Spec", complexity: "COMPLEXA", variant: "spec-heavy" },
     "spec-audit-only": { type: "Spec", complexity: "MEDIA", variant: "spec-audit-only" },
@@ -14,6 +18,15 @@ const workflowCommandDefaults = {
     bugfix: { light: "bugfix-light", heavy: "bugfix-heavy", defaultVariant: "bugfix-heavy" },
     feature: { light: "feature-light", heavy: "feature-heavy", defaultVariant: "feature-light" },
     spec: { light: "spec-light", heavy: "spec-heavy", defaultVariant: "spec-light" },
+};
+const paperclipWorkflowCommandDefaults = {
+    "paperclip-audit": { light: "audit-light", heavy: "audit-heavy", defaultVariant: "audit-heavy" },
+    "paperclip-bugfix": { light: "bugfix-light", heavy: "bugfix-heavy", defaultVariant: "bugfix-heavy" },
+    "paperclip-feature": { light: "feature-light", heavy: "feature-heavy", defaultVariant: "feature-light" },
+    "paperclip-spec": { light: "spec-light", heavy: "spec-heavy", defaultVariant: "spec-light" },
+    "paperclip-user-story": { light: "user-story-light", heavy: "user-story-heavy", defaultVariant: "user-story-heavy" },
+    "paperclip-ux": { light: "ux-sim-light", heavy: "ux-sim-heavy", defaultVariant: "ux-sim-heavy" },
+    "setup-paperclip": { light: "feature-light", heavy: "feature-heavy", defaultVariant: "feature-heavy" },
 };
 function consumeLeadingFlag(request) {
     const trimmed = request.trimStart();
@@ -27,12 +40,27 @@ function consumeLeadingFlag(request) {
     };
 }
 function parseDirectWorkflowCommand(input) {
-    const match = input.match(/^\/pipeline-orchestrator-for-codex:([a-z-]+)(?:\s+([\s\S]*))?$/u);
+    const directCommandMatch = input.match(/^\/pipeline-orchestrator-for-codex:([a-z-]+)(?:\s+([\s\S]*))?$/u);
+    const barePaperclipMatch = input.match(/^(paperclip-audit|paperclip-bugfix|paperclip-feature|paperclip-hotfix|paperclip-review|paperclip-spec|paperclip-user-story|paperclip-ux|setup-paperclip)(?:\s+([\s\S]*))?$/u);
+    const match = directCommandMatch ?? barePaperclipMatch;
     if (!match) {
         return undefined;
     }
     const command = match[1];
     const rawRequest = match[2] ?? "";
+    if (command === "paperclip-hotfix") {
+        return {
+            mode: "--hotfix",
+            normalizedRequest: rawRequest.trimStart(),
+            explicitClassification: directWorkflowCommands["bugfix-heavy"],
+        };
+    }
+    if (command === "paperclip-review") {
+        return {
+            mode: "review-only",
+            normalizedRequest: rawRequest.trimStart(),
+        };
+    }
     if (command === "review") {
         return {
             mode: "review-only",
@@ -47,14 +75,20 @@ function parseDirectWorkflowCommand(input) {
             explicitClassification: direct,
         };
     }
-    const workflowDefault = workflowCommandDefaults[command];
+    const workflowDefault = workflowCommandDefaults[command] ?? paperclipWorkflowCommandDefaults[command];
     if (!workflowDefault) {
         return undefined;
     }
     const { flag, request } = consumeLeadingFlag(rawRequest);
-    const variant = flag === "light"
+    if (command === "paperclip-audit" && flag === "simples") {
+        return {
+            mode: "diagnostic",
+            normalizedRequest: request,
+        };
+    }
+    const variant = flag === "light" || flag === "simples" || flag === "media"
         ? workflowDefault.light
-        : flag === "heavy"
+        : flag === "heavy" || flag === "complexa"
             ? workflowDefault.heavy
             : flag === "audit-only" && command === "spec"
                 ? "spec-audit-only"
@@ -81,6 +115,7 @@ export function parseMode(input) {
         { prefix: `${publicCommand} --media `, mode: "--media" },
         { prefix: `${publicCommand} --complexa `, mode: "--complexa" },
         { prefix: `${publicCommand} --plan `, mode: "--plan" },
+        { prefix: `${publicCommand} --no-plan `, mode: "--no-plan" },
         { prefix: `${publicCommand} --grill `, mode: "--grill" },
         { prefix: `${publicCommand} --hotfix `, mode: "--hotfix" },
         { prefix: "/pipeline diagnostic ", mode: "diagnostic" },
@@ -90,6 +125,7 @@ export function parseMode(input) {
         { prefix: "/pipeline --media ", mode: "--media" },
         { prefix: "/pipeline --complexa ", mode: "--complexa" },
         { prefix: "/pipeline --plan ", mode: "--plan" },
+        { prefix: "/pipeline --no-plan ", mode: "--no-plan" },
         { prefix: "/pipeline --grill ", mode: "--grill" },
         { prefix: "/pipeline --hotfix ", mode: "--hotfix" },
     ];

@@ -110,6 +110,45 @@ Grep: `Grep -A 2 "Batch size" references/complexity-matrix.md`
 
 For each batch:
 
+#### 1-PARALLEL: Parallel Dispatch for Eligible Batches
+
+When `batch_metadata` is present in the `IMPLEMENTATION_PLAN` and the current batch has `parallel_eligible: true`:
+
+1. Run micro-gate (Step 1a) for ALL tasks in the batch first. This remains serial because it is fast and read-only.
+2. If every micro-gate passes, emit one `DISPATCH_REQUEST v1` block per task in a single tool result, ending with `STATUS: AWAITING_DISPATCH_RESULTS` and listing every pending dispatch id.
+3. When all implementer results arrive, run each task's review chain as `spec-reviewer -> quality-reviewer`. The spec-reviewer and quality-reviewer sequence is SERIAL per task; quality review only runs after spec review passes.
+4. Proceed to checkpoint-validator as normal and include whether the batch used parallel execution in the checkpoint input.
+
+```yaml
+=== DISPATCH_REQUEST v1 ===
+dispatch_id: "batch-<N>-task-<M1>-implementer"
+target_kind: "agent"
+target_name: "pipeline-orchestrator-for-codex:executor:executor-implementer-task"
+prompt: |
+  TASK_ID: "<M1>"
+  TASK_DESCRIPTION: "<task text>"
+  FILES_TO_MODIFY: ["<file>"]
+=== END DISPATCH_REQUEST ===
+
+=== DISPATCH_REQUEST v1 ===
+dispatch_id: "batch-<N>-task-<M2>-implementer"
+target_kind: "agent"
+target_name: "pipeline-orchestrator-for-codex:executor:executor-implementer-task"
+prompt: |
+  TASK_ID: "<M2>"
+  TASK_DESCRIPTION: "<task text>"
+  FILES_TO_MODIFY: ["<file>"]
+=== END DISPATCH_REQUEST ===
+STATUS: AWAITING_DISPATCH_RESULTS ["batch-<N>-task-<M1>-implementer", "batch-<N>-task-<M2>-implementer"]
+```
+
+**Rules:**
+- Only use parallel dispatch when `parallel_eligible: true` is explicitly set for the current batch.
+- If `batch_metadata` is absent, `parallel_eligible: false`, or `parallel_eligible` is absent/undefined within a batch entry, default to the serial path below.
+- When `parallel_eligible` is absent/undefined, write this trace line before falling back: `WARN: parallel_eligible absent in batch <N> - defaulting to serial dispatch`.
+- Parallel dispatch never weakens review ordering. The spec-reviewer -> quality-reviewer chain stays serial for each task.
+- If one parallel implementer fails, preserve the other task results and let checkpoint-validator report `per_task_status` for attribution.
+
 #### 1a. Per-Task: Micro-Gate
 
 BEFORE dispatching the implementer, run the micro-gate check:

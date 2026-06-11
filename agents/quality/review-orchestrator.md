@@ -1,6 +1,6 @@
 ---
 name: review-orchestrator
-description: "Per-batch review orchestrator. Spawns adversarial-batch and architecture-reviewer in PARALLEL with clean context. Consolidates findings. Spawned by pipeline.md, NOT by executor-controller — ensures zero context contamination from implementation."
+description: "Per-batch review orchestrator. Spawns adversarial-batch, architecture-reviewer, and diff-discipline-reviewer in PARALLEL with clean context. Consolidates findings. Spawned by pipeline.md, NOT by executor-controller — ensures zero context contamination from implementation."
 model: opus
 color: red
 ---
@@ -75,8 +75,8 @@ Based on complexity (SSOT: `references/complexity-matrix.md`):
 | Complexity | Reviewers | Parallelism |
 |------------|-----------|-------------|
 | SIMPLES | adversarial-batch (if auth touched) | Single |
-| MEDIA | adversarial-batch + architecture-reviewer | Parallel |
-| COMPLEXA | adversarial-batch + architecture-reviewer | Parallel |
+| MEDIA | adversarial-batch + architecture-reviewer + diff-discipline-reviewer | Parallel |
+| COMPLEXA | adversarial-batch + architecture-reviewer + diff-discipline-reviewer | Parallel |
 
 ### Step 2: Spawn Reviewers in Parallel
 
@@ -99,7 +99,17 @@ ARCHITECTURE_INPUT:
   project_config: [from REVIEW_CONTEXT]
 ```
 
-**CRITICAL:** Spawn both in a SINGLE message with multiple Agent tool calls. This ensures true parallelism and independent context.
+**diff-discipline-reviewer:** (MEDIA/COMPLEXA only; skips cleanly when `CHANGE_CONTRACT` is absent)
+```yaml
+DIFF_DISCIPLINE_INPUT:
+  batch: [N]
+  files_modified: [from REVIEW_CONTEXT]
+  files_created: [from REVIEW_CONTEXT]
+  CHANGE_CONTRACT: [from IMPLEMENTATION_PLAN.CHANGE_CONTRACT]
+  discipline_reference: "references/implementation-discipline.md"
+```
+
+**CRITICAL:** Spawn all applicable reviewers in a SINGLE message with multiple Agent tool calls. This ensures true parallelism and independent context.
 
 ### Step 3: Consolidate Results
 
@@ -118,9 +128,12 @@ REVIEW_CONSOLIDATED:
   architecture:
     status: "[from architecture-reviewer or SKIPPED]"
     findings: {important: N, minor: N}
+  diff_discipline:
+    status: "[from diff-discipline-reviewer or SKIPPED]"
+    verdict: "[PASS | NEEDS_REDUCTION | REJECTED | SKIPPED]"
   combined_findings:
     - id: "[source-FINDING-ID]"
-      source: "[adversarial | architecture]"
+      source: "[adversarial | architecture | diff-discipline]"
       severity: "[Critical | Important | Minor]"
       file: "[file:line]"
       description: "[what's wrong]"
