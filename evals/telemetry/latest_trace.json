@@ -1,15 +1,21 @@
 {
   "added_unrequested_features": false,
   "changed_files": [
+    "dist/src/cli/pipeline-cli.js",
+    "evals/outputs/latest_output.md",
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
-    "evals/telemetry/latest_trace.json"
+    "evals/telemetry/latest_trace.json",
+    "src/cli/pipeline-cli.ts",
+    "tests/integration/kimi/exec-window-scripts.test.ts",
+    "tests/unit/cli/pipeline-cli.test.ts",
+    "evals/outputs/workflow-gate-decisions.jsonl"
   ],
   "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
     "hook_event": "PostToolUse",
-    "session_id": "019ebc85-9c87-7763-9bd3-c1fa0cb71d7d",
+    "session_id": "019ec0ce-56f0-7703-ac8f-a9221c61732e",
     "tool_name": "Bash"
   },
   "execution_observed": true,
@@ -59,6 +65,7 @@
       ".gitignore": "Packaging hygiene required so runtime governance module ships and local audit/telemetry artifacts stay out of plugin package.",
       ".npmignore": "In-scope package hygiene for Paperclip bugfix; prevents scratch hotfix/browser artifacts from shipping in npm package.",
       ".paperclip-hotfix/": "Pre-existing scratch evidence directory; intentionally excluded from package and not promoted as runtime source.",
+      ".pipeline/gate-decisions.jsonl": "In-scope workflow audit artifact required by bugfix-heavy gate steps; records step 04, repeated step 08 adversarial decisions, and step 10 GO/NO-GO evidence.",
       ".pipeline/sessions/audit.log": "In-scope plugin cleanup and global-readiness change requested by user.",
       ".playwright-mcp/": "Pre-existing local browser artifact directory; explicitly excluded from package and not product source.",
       "agents/core/pipeline-controller.md": "Workflow contract documentation aligned with runtime fail-closed behavior.",
@@ -156,8 +163,10 @@
     },
     "unexpected_files": []
   },
-  "timestamp": "2026-06-13T03:00:03.483980+00:00",
-  "untracked_files_included": [],
+  "timestamp": "2026-06-13T15:21:24.945137+00:00",
+  "untracked_files_included": [
+    "evals/outputs/workflow-gate-decisions.jsonl"
+  ],
   "untracked_files_omitted_from_diff": [],
   "validation_evidence": {
     "commands": {

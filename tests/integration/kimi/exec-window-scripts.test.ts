@@ -1,17 +1,19 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "node:child_process";
-import { existsSync, readdirSync, rmSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const scriptsDir = ".kimi/skills/pipeline/scripts";
-const sessionsDir = ".pipeline/sessions";
+const scriptsDir = resolve(".kimi/skills/pipeline/scripts");
+let workspaceDir = "";
+let sessionsDir = "";
 
 function runScript(name: string, args: string): { stdout: string; stderr: string; exitCode: number } {
   const scriptPath = resolve(scriptsDir, name);
   try {
     const stdout = execSync(`node "${scriptPath}" ${args}`, {
       encoding: "utf8",
-      cwd: process.cwd(),
+      cwd: workspaceDir,
     });
     return { stdout, stderr: "", exitCode: 0 };
   } catch (e: any) {
@@ -39,6 +41,10 @@ describe("Exec-window scripts — runtime contract", () => {
   const sessionId = `test-session-${Date.now()}`;
 
   beforeAll(() => {
+    workspaceDir = join(tmpdir(), `pipeline-kimi-exec-window-${Date.now()}`);
+    sessionsDir = join(workspaceDir, ".pipeline", "sessions");
+    mkdirSync(sessionsDir, { recursive: true });
+
     // Clean up any stale test sessions
     if (existsSync(sessionsDir)) {
       for (const file of readdirSync(sessionsDir)) {
@@ -54,6 +60,9 @@ describe("Exec-window scripts — runtime contract", () => {
     const sessionFile = resolve(sessionsDir, `${sessionId}.exec-window`);
     if (existsSync(sessionFile)) {
       rmSync(sessionFile);
+    }
+    if (workspaceDir) {
+      rmSync(workspaceDir, { recursive: true, force: true });
     }
   });
 

@@ -1,3 +1,9 @@
+dist/src/cli/pipeline-cli.js
+evals/outputs/latest_output.md
 evals/telemetry/changed_files.txt
 evals/telemetry/git_diff.patch
 evals/telemetry/latest_trace.json
+src/cli/pipeline-cli.ts
+tests/integration/kimi/exec-window-scripts.test.ts
+tests/unit/cli/pipeline-cli.test.ts
+evals/outputs/workflow-gate-decisions.jsonl

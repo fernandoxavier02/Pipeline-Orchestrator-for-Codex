@@ -1,316 +1,1413 @@
+diff --git a/dist/src/cli/pipeline-cli.js b/dist/src/cli/pipeline-cli.js
+index 40424f5..ac773ee 100755
+--- a/dist/src/cli/pipeline-cli.js
++++ b/dist/src/cli/pipeline-cli.js
+@@ -8,9 +8,12 @@
+  *   node dist/src/cli/pipeline-cli.js --continue
+  */
+ import { createPipelineRuntime } from "../index.js";
++import { createHmac, timingSafeEqual } from "node:crypto";
++import { existsSync, readFileSync } from "node:fs";
+ import { pathToFileURL } from "node:url";
+ import { join } from "node:path";
+ import { loadAgentRuntimeAdapter } from "./agent-runtime-loader.js";
++import { sentinelStateSchema, sessionStateSchema } from "../domain/pipeline-schemas.js";
+ export function resolveCliExitCode(result) {
+     if (!result || typeof result !== "object") {
+         return 1;
+@@ -24,6 +27,8 @@ export function resolveCliExitCode(result) {
+     }
+     return 0;
+ }
++const SENTINEL_HMAC_ENV = "PIPELINE_SENTINEL_HMAC_KEY";
++const SENTINEL_STALE_THRESHOLD_MS = 300_000;
+ function parseArgs(argv) {
+     const args = argv.slice(2);
+     const options = {
+@@ -54,7 +59,172 @@ function parseArgs(argv) {
+     options.task = taskParts.join(" ").trim() || undefined;
+     return options;
+ }
++function blockedPendingGateState(detail) {
++    return {
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        pipeline_valid: false,
++        blockedBy: "CLI_PENDING_GATE_STATE",
++        detail,
++    };
++}
++function readJsonFile(path) {
++    try {
++        if (!existsSync(path))
++            return { kind: "missing" };
++        return { kind: "loaded", value: JSON.parse(readFileSync(path, "utf8")) };
++    }
++    catch {
++        return { kind: "invalid" };
++    }
++}
++function isGateResponse(task) {
++    return task === "yes" || task === "no" || task === "adjust";
++}
++function canonicalize(value) {
++    if (Array.isArray(value)) {
++        return `[${value.map((entry) => canonicalize(entry)).join(",")}]`;
++    }
++    if (value && typeof value === "object") {
++        const entries = Object.entries(value)
++            .filter(([, entry]) => entry !== undefined)
++            .sort(([left], [right]) => left.localeCompare(right));
++        return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`).join(",")}}`;
++    }
++    return JSON.stringify(value);
++}
++function sentinelIntegrityVerified(rawSentinel) {
++    const key = process.env[SENTINEL_HMAC_ENV];
++    if (!key)
++        return true;
++    if (!rawSentinel || typeof rawSentinel !== "object" || Array.isArray(rawSentinel)) {
++        return false;
++    }
++    const integrity = rawSentinel._integrity;
++    if (!integrity || typeof integrity !== "object" || Array.isArray(integrity)) {
++        return false;
++    }
++    const algorithm = integrity.algorithm;
++    const signature = integrity.signature;
++    if (algorithm !== "hmac-sha256" || typeof signature !== "string") {
++        return false;
++    }
++    const unsignedState = { ...rawSentinel };
++    delete unsignedState._integrity;
++    const expected = createHmac("sha256", key).update(canonicalize(unsignedState)).digest("hex");
++    const expectedBytes = Buffer.from(expected, "hex");
++    const actualBytes = Buffer.from(signature, "hex");
++    return actualBytes.length > 0
++        && expectedBytes.length === actualBytes.length
++        && timingSafeEqual(expectedBytes, actualBytes);
++}
++function sentinelIsFresh(updatedAt) {
++    const updatedAtMs = new Date(updatedAt).getTime();
++    return Number.isFinite(updatedAtMs)
++        && Date.now() - updatedAtMs <= SENTINEL_STALE_THRESHOLD_MS;
++}
++function expectedGateShape(session) {
++    const hasPendingProposal = session.proposal?.awaitingUserConfirmation === true
++        && session.proposal.affectedFiles.length > 0;
++    if (session.currentPhase === "phase-1"
++        && session.pendingDecision === "proposal-confirmation"
++        && hasPendingProposal) {
++        return {
++            expectedToken: "proposal-response",
++            expectedBatchStatus: "awaiting-proposal-confirmation",
++        };
++    }
++    if (session.currentPhase === "phase-1.5"
++        && session.pendingDecision === "phase-1.5-approval-required"
++        && hasPendingProposal
++        && session.approvalProof?.kind === "controller-managed-transition"
++        && session.approvalProof.from === "phase-1"
++        && session.approvalProof.to === "phase-1.5") {
++        return {
++            expectedToken: "phase-1.5-response",
++            expectedBatchStatus: "awaiting-plan-approval",
++        };
++    }
++    if (session.currentPhase === "phase-1.5"
++        && session.pendingDecision === "phase-1.5-reapproval-required"
++        && hasPendingProposal
++        && session.approvalProof?.kind === "controller-managed-transition"
++        && session.approvalProof.from === "phase-1"
++        && session.approvalProof.to === "phase-1.5") {
++        return {
++            expectedToken: "phase-1.5-response",
++            expectedBatchStatus: "awaiting-plan-reapproval",
++        };
++    }
++    return undefined;
++}
++function pendingGateResponse(options) {
++    if (options.continue || options.mode || !options.task)
++        return { kind: "none" };
++    const response = options.task.trim().toLowerCase();
++    if (!isGateResponse(response))
++        return { kind: "none" };
++    const stateDir = join(options.cwd ?? process.cwd(), ".codex", "pipeline");
++    const session = readJsonFile(join(stateDir, "session.json"));
++    const sentinel = readJsonFile(join(stateDir, "sentinel-state.json"));
++    if (session.kind === "missing" && sentinel.kind === "missing") {
++        return { kind: "none" };
++    }
++    if (session.kind !== "loaded" || sentinel.kind !== "loaded") {
++        return {
++            kind: "blocked",
++            result: blockedPendingGateState("Bare yes/no/adjust received with missing or unreadable pipeline state."),
++        };
++    }
++    if (!sentinelIntegrityVerified(sentinel.value)) {
++        return {
++            kind: "blocked",
++            result: blockedPendingGateState("Bare yes/no/adjust received with unsigned or invalid sentinel integrity metadata."),
++        };
++    }
++    const parsedSession = sessionStateSchema.safeParse(session.value);
++    const parsedSentinel = sentinelStateSchema.safeParse(sentinel.value);
++    if (!parsedSession.success || !parsedSentinel.success) {
++        return {
++            kind: "blocked",
++            result: blockedPendingGateState("Bare yes/no/adjust received with invalid pending pipeline state."),
++        };
++    }
++    if (!sentinelIsFresh(parsedSentinel.data.updatedAt)) {
++        return {
++            kind: "blocked",
++            result: blockedPendingGateState("Bare yes/no/adjust received with stale pending gate sentinel state."),
++        };
++    }
++    const gateShape = expectedGateShape(parsedSession.data);
++    const phaseAliasMatches = parsedSession.data.phase === undefined
++        || parsedSession.data.phase === parsedSession.data.currentPhase;
++    if (!gateShape || !phaseAliasMatches) {
++        return {
++            kind: "blocked",
++            result: blockedPendingGateState("Bare yes/no/adjust received, but no pending response gate is active."),
++        };
++    }
++    const sentinelMatchesGate = parsedSentinel.data.pipelineActive
++        && parsedSentinel.data.currentPhase === parsedSession.data.currentPhase
++        && parsedSentinel.data.currentAgent === "pipeline-controller"
++        && parsedSentinel.data.expectedNext.length === 1
++        && parsedSentinel.data.expectedNext[0] === gateShape.expectedToken
++        && parsedSentinel.data.batchState.batchIndex === parsedSession.data.batchIndex
++        && parsedSentinel.data.batchState.status === gateShape.expectedBatchStatus;
++    if (!sentinelMatchesGate) {
++        return {
++            kind: "blocked",
++            result: blockedPendingGateState("Bare yes/no/adjust received with inconsistent pending gate sentinel state."),
++        };
++    }
++    return { kind: "response", response };
++}
+ export async function runPipelineCli(options) {
++    const gateResponse = pendingGateResponse(options);
++    if (gateResponse.kind === "blocked") {
++        return gateResponse.result;
++    }
+     const agentRuntime = options.agentRuntime
+         ?? await loadAgentRuntimeAdapter(options.agentRuntimeAdapter ?? process.env.CODEX_AGENT_RUNTIME_ADAPTER);
+     // R6 AC 6.2 — on continue, if the caller did not pass --strict-agents,
+@@ -82,11 +252,13 @@ export async function runPipelineCli(options) {
+         strictAgents: effectiveStrictAgents,
+         agentRuntime,
+     });
+-    const input = options.continue
+-        ? "/pipeline-orchestrator-for-codex:pipeline continue"
+-        : options.mode
+-            ? `/pipeline-orchestrator-for-codex:pipeline ${options.mode} ${options.task}`
+-            : `/pipeline-orchestrator-for-codex:pipeline ${options.task}`;
++    const input = gateResponse.kind === "response"
++        ? gateResponse.response
++        : (options.continue
++            ? "/pipeline-orchestrator-for-codex:pipeline continue"
++            : options.mode
++                ? `/pipeline-orchestrator-for-codex:pipeline ${options.mode} ${options.task}`
++                : `/pipeline-orchestrator-for-codex:pipeline ${options.task}`);
+     return runtime.controller.start(input);
+ }
+ async function main() {
+diff --git a/evals/outputs/latest_output.md b/evals/outputs/latest_output.md
+index 156a383..5457b36 100644
+--- a/evals/outputs/latest_output.md
++++ b/evals/outputs/latest_output.md
+@@ -3,60 +3,61 @@
+ ## What was inspected
+
+ - Canonical repository: `D:\Pipeline Orchestrator for Codex`.
+-- Paperclip/Pipeline Orchestrator drift across local repo, VPS working tree, installed cache, and package surface.
+-- Runtime surfaces touched by the Paperclip implementation: executor controller, sentinel hook, session cleanup hook, workflow next-step routing, Paperclip provisioner, fidelity skill, and generated `dist/**`.
+-- Governance evidence from the delayed audit subagent: `PIP-58` was marked done by Paperclip while the post-implementation validator still reported `FAIL` and the earlier audit-heavy run blocked on timeout.
++- CLI gate-response path for `yes`, `no`, and `adjust` in `src/cli/pipeline-cli.ts`.
++- Compiled executable path in `dist/src/cli/pipeline-cli.js`.
++- Regression coverage in `tests/unit/cli/pipeline-cli.test.ts`.
++- Pipeline workflow gate audit in `.pipeline/gate-decisions.jsonl`.
+ - Eval Gate local contract in `evals/README.md`.
+ - behavior_cases: 5
+
+ ## What was changed
+
+-- Merged the useful VPS/Paperclip implementation back into the local repository instead of accepting a split-brain repo/cache state.
+-- Added active `CHANGE_CONTRACT` exposure while executor batches and executor-fix loops run, so edit guards can enforce the approved scope during actual execution.
+-- Added a dedicated five-attempt fix loop for `diff-discipline-reviewer` rejections and preserved the normal three-attempt loop for other rework.
+-- Added `measure-paperclip-fidelity` to the public workflow next-step surface.
+-- Made the Paperclip provisioner export and test the full 47-cargo roster and 11-skill inventory, while preserving safe API timeout/retry behavior.
+-- Added idempotent stop-hook fidelity reports under `.codex/pipeline/fidelity-reports`, keyed by run id and protected against symlinked report directories.
+-- Added optional HMAC integrity verification for `sentinel-state.json` when `PIPELINE_SENTINEL_HMAC_KEY` is configured.
+-- Added canonical `BOOTSTRAP_EXEMPTION_USED` gate logging when stale phase-1 proposal-response state is allowed to bootstrap a fresh `pipeline-controller`.
+-- Rebuilt TypeScript output in `dist/**`.
++- Hardened the CLI so bare `yes/no/adjust` is treated as a response to an existing pending gate only when persisted session and sentinel state are both valid and coherent.
++- Required a real pending proposal with affected files for both phase 1 proposal confirmation and phase 1.5 plan approval.
++- Required controller-managed phase 1.5 approval proof before accepting phase 1.5 responses.
++- Changed ambiguous, corrupt, one-sided, stale, or incoherent pending gate state to fail closed with `blocked-invalid-pending-gate-state` instead of starting a new `full:yes` style task.
++- Updated CLI regression tests for valid phase 1, valid phase 1.5, missing/corrupt state, schema invalid state, sentinel mismatches, phase alias mismatch, missing proposal, missing proof, and no-state fallback.
++- Rebuilt generated `dist/**` through `npm run build`; `dist/src/cli/pipeline-cli.js` now contains the same pending-gate protection as `src`.
+
+ ## What was not changed
+
+-- I did not accept Paperclip board status as authoritative completion evidence.
+ - I did not manually edit `dist/**`; generated files came from `npm run build`.
+-- I did not treat this local Eval Gate as a globally trusted hook activation. Telemetry is refreshed manually in this run unless active hook trust is separately proven.
+-- I did not shut down the computer after the later user message said `nao`.
++- I did not change the controller mutation path; the CLI pre-check remains read-only and the controller still applies the state transition.
++- I did not claim that the installed Codex plugin cache or marketplace runtime has adopted this repository build.
++- I did not remove unrelated existing telemetry/audit churn from the working tree.
+
+ ## Validation evidence collected
+
+-- `npm test -- --run tests/unit/hooks/sentinel-hook.test.ts tests/unit/hooks/session-cleanup-hook.test.ts tests/unit/paperclip/provisioner-contract.test.ts tests/integration/execution/fix-loop-cap.test.ts tests/integration/plugin/paperclip-fidelity-skill-surface.test.ts`
+-  - PASS: 39 tests.
+ - `npm run lint:types`
+   - PASS.
+ - `npm run build`
+   - PASS.
+-- `npm test -- --run`
+-  - PASS for the full Vitest repository suite.
+-- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`
+-  - PASS: 53 tests.
++- `npx vitest run tests/unit/cli/pipeline-cli.test.ts tests/integration/scenarios/continue-mode.test.ts tests/integration/sentinel/sentinel-controller.test.ts`
++  - PASS: 36 tests.
++- `npm test -- --testTimeout=30000`
++  - PASS: full Vitest repository suite.
++- Direct `dist` E2E smoke in temporary roots:
++  - PASS: no active state treats bare `yes` as a normal task.
++  - PASS: valid pending phase 1 state routes bare `yes` to `PROPOSAL_CONFIRMATION` and advances to `phase-2`.
+ - `git diff --check`
++  - PASS; only Windows LF/CRLF warnings were emitted.
++- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`
+   - PASS.
+ - `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`
+-  - PASS after telemetry scope justifications were refreshed.
++  - PASS after telemetry scope justification for `.pipeline/gate-decisions.jsonl`.
+
+ ## Remaining risks
+
+-- Cache/global/marketplace sync still must be performed and verified from packaged output, not by assuming the working tree is active.
+-- The VPS and local cache must be re-compared after package extraction because the original failure mode was split-brain between repo and installed runtime.
+-- Final publication should not be claimed until `npm pack --dry-run`, cache parity, smoke usage from another local project, and remote/VPS verification all pass.
++- This PASS covers the local repository and generated `dist`; it does not prove adoption by the installed Codex cache/runtime.
++- The blocking error message is safe but still coarse; a future UX improvement could identify which pending-state field failed validation.
++- The CLI contains a small duplicated gate-shape guard. It is covered by tests and fail-closed, but a future refactor could extract this contract for shared use with the controller.
+
+ ## Eval result
+
+ Eval Gate result: PASS.
+
+-This PASS covers the repository, package-surface, local telemetry, and deterministic Eval Gate evidence. It does not yet prove cache/global/marketplace activation; those are the next verification targets.
++This PASS covers the repository code, generated CLI executable, focused regression tests, full test suite, local telemetry, and deterministic Eval Gate evidence. It does not yet prove cache/global/marketplace activation.
+
+ ## Next safest step
+
+-Continue to package/cache parity and global Codex plugin sync, then verify usage from a different local project and compare the VPS/cache state again.
++Proceed with the workflow closeout, then verify package/cache/runtime parity before claiming the fix is active in the installed Codex plugin.
 diff --git a/evals/telemetry/changed_files.txt b/evals/telemetry/changed_files.txt
-index bdad37f..915c95d 100644
+index 915c95d..fab10f5 100644
 --- a/evals/telemetry/changed_files.txt
 +++ b/evals/telemetry/changed_files.txt
-@@ -1,108 +1,3 @@
--.codex/config.toml
--.npmignore
--.pipeline/sessions/audit.log
--agents/core/brainstorm-controller.md
--agents/core/pipeline-controller.md
--dist/src/adapters/codex-cli-process-runtime.js
--dist/src/controller/parse-mode.js
--dist/src/controller/pipeline-controller.js
--dist/src/domain/pipeline-schemas.js
--dist/src/execution/executor-controller.js
--dist/src/gates/gate-registry.js
--dist/src/index.js
--dist/src/protocol/protocol-handler.js
--dist/src/state/gate-log.js
--dist/src/validation/final-validator.js
--dist/src/workflow/next-step.js
--dist/tests/integration/closeout/closeout-confirm.test.js
--dist/tests/integration/execution/fix-loop-cap.test.js
--dist/tests/integration/validation/final-validator-gate-log.test.js
--dist/tests/unit/controller/pipeline-controller.test.js
--dist/tests/unit/state/gate-log.test.js
--docs/pipeline-orchestrator-codex/06-references-and-variants.md
--docs/pipeline-orchestrator-codex/10-source-inventory.md
--evals/outputs/latest_output.md
+@@ -1,3 +1,9 @@
++dist/src/cli/pipeline-cli.js
++evals/outputs/latest_output.md
  evals/telemetry/changed_files.txt
  evals/telemetry/git_diff.patch
  evals/telemetry/latest_trace.json
--hooks/edit-guard-hook.cjs
--hooks/sentinel-hook.cjs
--hooks/session-cleanup-hook.cjs
--references/gate-request-protocol.md
--references/paperclip/PAPERCLIP-AXIOMS.md
--references/paperclip/scripts/provision-pipeline-company.cjs
--references/paperclip/skills/pipeline-orchestrator-contracts/SKILL.md
--references/paperclip/spec/lib/grow-tree.cjs
--references/paperclip/spec/lib/grow-tree.test.cjs
--references/paperclip/spec/lib/measure-fidelity.cjs
--references/paperclip/spec/lib/tree-factory.cjs
--references/paperclip/spec/lib/tree-factory.test.cjs
--skills/help/SKILL.md
--src/adapters/codex-cli-process-runtime.ts
--src/controller/continue-state.ts
--src/controller/parse-mode.ts
--src/controller/pipeline-controller.ts
--src/dispatcher/single-agent-runner.ts
--src/domain/pipeline-schemas.ts
--src/execution/executor-controller.ts
--src/gates/gate-registry.ts
--src/gates/gate-types.ts
--src/index.ts
--src/protocol/protocol-handler.ts
--src/security/dispatch-contract.ts
--src/state/gate-log.ts
--src/validation/final-validator.ts
--src/workflow/next-step.ts
--tests/integration/closeout/closeout-confirm.test.ts
--tests/integration/execution/fix-loop-cap.test.ts
--tests/integration/plugin/paperclip-command-surface.test.ts
--tests/integration/plugin/paperclip-package-surface.test.ts
--tests/integration/plugin/workflow-runtime-routing.test.ts
--tests/integration/v52-parity/protocol-hoisting-runtime.test.ts
--tests/integration/v52-parity/surface-contract.test.ts
--tests/integration/validation/final-validator-gate-log.test.ts
--tests/unit/controller/paperclip-parse-mode.test.ts
--tests/unit/controller/pipeline-controller.test.ts
--tests/unit/execution/executor-parity-contract.test.ts
--tests/unit/gates/gate-hardness-consistency.test.ts
--tests/unit/hooks/edit-guard-hook.test.ts
--tests/unit/hooks/sentinel-hook.test.ts
--tests/unit/hooks/session-cleanup-hook.test.ts
--tests/unit/paperclip/provisioner-contract.test.ts
--tests/unit/protocol/protocol-events.test.ts
--tests/unit/security/dispatch-contract.test.ts
--tests/unit/state/gate-log-truncated-line.test.ts
--tests/unit/state/gate-log.test.ts
--.agents/plugins/
--.kiro/specs/canonical-v7-portability-closeout/
--.kiro/specs/paperclip-task-tree-factory/
--agents/brainstorm/step-01b-alternatives.md
--docs/PORTABILITY_CLOSEOUT_V7_12.md
--docs/adapter-guide.md
--docs/audits/2026-06-13-pip-72-final-specialized-codex-harness-review.md
--docs/diagrams/
--docs/examples/
--docs/migrations/
--references/gates.md
--references/paperclip/spec/lib/measure-fidelity.test.cjs
--reviews/
--skills/measure-paperclip-fidelity/
--skills/paperclip-audit/
--skills/paperclip-bugfix/
--skills/paperclip-feature/
--skills/paperclip-hotfix/
--skills/paperclip-overview/
--skills/paperclip-review/
--skills/paperclip-spec/
--skills/paperclip-user-story/
--skills/paperclip-ux/
--skills/setup-paperclip/
--tests/bdd/wave6b-paperclip-parity.feature.test.ts
--tests/compat/
--tests/integration/plugin/paperclip-fidelity-skill-surface.test.ts
--tests/regression/
--tests/unit/docs/
--tests/unit/gates/gate-registry-reference.test.ts
--tests/unit/lint/gate-log-writer-centralization.test.ts
--tests/unit/paperclip/flow-mirror-inventory.test.ts
--tests/unit/paperclip/task-tree-factory-spec.test.ts
++src/cli/pipeline-cli.ts
++tests/integration/kimi/exec-window-scripts.test.ts
++tests/unit/cli/pipeline-cli.test.ts
++evals/outputs/workflow-gate-decisions.jsonl
 diff --git a/evals/telemetry/latest_trace.json b/evals/telemetry/latest_trace.json
-index e3e44a0..681df87 100644
+index dfc2345..736e7b0 100644
 --- a/evals/telemetry/latest_trace.json
 +++ b/evals/telemetry/latest_trace.json
-@@ -1,114 +1,9 @@
+@@ -1,15 +1,21 @@
  {
    "added_unrequested_features": false,
    "changed_files": [
--    ".codex/config.toml",
--    ".npmignore",
--    ".pipeline/sessions/audit.log",
--    "agents/core/brainstorm-controller.md",
--    "agents/core/pipeline-controller.md",
--    "dist/src/adapters/codex-cli-process-runtime.js",
--    "dist/src/controller/parse-mode.js",
--    "dist/src/controller/pipeline-controller.js",
--    "dist/src/domain/pipeline-schemas.js",
--    "dist/src/execution/executor-controller.js",
--    "dist/src/gates/gate-registry.js",
--    "dist/src/index.js",
--    "dist/src/protocol/protocol-handler.js",
--    "dist/src/state/gate-log.js",
--    "dist/src/validation/final-validator.js",
--    "dist/src/workflow/next-step.js",
--    "dist/tests/integration/closeout/closeout-confirm.test.js",
--    "dist/tests/integration/execution/fix-loop-cap.test.js",
--    "dist/tests/integration/validation/final-validator-gate-log.test.js",
--    "dist/tests/unit/controller/pipeline-controller.test.js",
--    "dist/tests/unit/state/gate-log.test.js",
--    "docs/pipeline-orchestrator-codex/06-references-and-variants.md",
--    "docs/pipeline-orchestrator-codex/10-source-inventory.md",
--    "evals/outputs/latest_output.md",
++    "dist/src/cli/pipeline-cli.js",
++    "evals/outputs/latest_output.md",
      "evals/telemetry/changed_files.txt",
      "evals/telemetry/git_diff.patch",
--    "evals/telemetry/latest_trace.json",
--    "hooks/edit-guard-hook.cjs",
--    "hooks/sentinel-hook.cjs",
--    "hooks/session-cleanup-hook.cjs",
--    "references/gate-request-protocol.md",
--    "references/paperclip/PAPERCLIP-AXIOMS.md",
--    "references/paperclip/scripts/provision-pipeline-company.cjs",
--    "references/paperclip/skills/pipeline-orchestrator-contracts/SKILL.md",
--    "references/paperclip/spec/lib/grow-tree.cjs",
--    "references/paperclip/spec/lib/grow-tree.test.cjs",
--    "references/paperclip/spec/lib/measure-fidelity.cjs",
--    "references/paperclip/spec/lib/tree-factory.cjs",
--    "references/paperclip/spec/lib/tree-factory.test.cjs",
--    "skills/help/SKILL.md",
--    "src/adapters/codex-cli-process-runtime.ts",
--    "src/controller/continue-state.ts",
--    "src/controller/parse-mode.ts",
--    "src/controller/pipeline-controller.ts",
--    "src/dispatcher/single-agent-runner.ts",
--    "src/domain/pipeline-schemas.ts",
--    "src/execution/executor-controller.ts",
--    "src/gates/gate-registry.ts",
--    "src/gates/gate-types.ts",
--    "src/index.ts",
--    "src/protocol/protocol-handler.ts",
--    "src/security/dispatch-contract.ts",
--    "src/state/gate-log.ts",
--    "src/validation/final-validator.ts",
--    "src/workflow/next-step.ts",
--    "tests/integration/closeout/closeout-confirm.test.ts",
--    "tests/integration/execution/fix-loop-cap.test.ts",
--    "tests/integration/plugin/paperclip-command-surface.test.ts",
--    "tests/integration/plugin/paperclip-package-surface.test.ts",
--    "tests/integration/plugin/workflow-runtime-routing.test.ts",
--    "tests/integration/v52-parity/protocol-hoisting-runtime.test.ts",
--    "tests/integration/v52-parity/surface-contract.test.ts",
--    "tests/integration/validation/final-validator-gate-log.test.ts",
--    "tests/unit/controller/paperclip-parse-mode.test.ts",
--    "tests/unit/controller/pipeline-controller.test.ts",
--    "tests/unit/execution/executor-parity-contract.test.ts",
--    "tests/unit/gates/gate-hardness-consistency.test.ts",
--    "tests/unit/hooks/edit-guard-hook.test.ts",
--    "tests/unit/hooks/sentinel-hook.test.ts",
--    "tests/unit/hooks/session-cleanup-hook.test.ts",
--    "tests/unit/paperclip/provisioner-contract.test.ts",
--    "tests/unit/protocol/protocol-events.test.ts",
--    "tests/unit/security/dispatch-contract.test.ts",
--    "tests/unit/state/gate-log-truncated-line.test.ts",
--    "tests/unit/state/gate-log.test.ts",
--    ".agents/plugins/",
--    ".kiro/specs/canonical-v7-portability-closeout/",
--    ".kiro/specs/paperclip-task-tree-factory/",
--    "agents/brainstorm/step-01b-alternatives.md",
--    "docs/PORTABILITY_CLOSEOUT_V7_12.md",
--    "docs/adapter-guide.md",
--    "docs/audits/2026-06-13-pip-72-final-specialized-codex-harness-review.md",
--    "docs/diagrams/",
--    "docs/examples/",
--    "docs/migrations/",
--    "references/gates.md",
--    "references/paperclip/spec/lib/measure-fidelity.test.cjs",
--    "reviews/",
--    "skills/measure-paperclip-fidelity/",
--    "skills/paperclip-audit/",
--    "skills/paperclip-bugfix/",
--    "skills/paperclip-feature/",
--    "skills/paperclip-hotfix/",
--    "skills/paperclip-overview/",
--    "skills/paperclip-review/",
--    "skills/paperclip-spec/",
--    "skills/paperclip-user-story/",
--    "skills/paperclip-ux/",
--    "skills/setup-paperclip/",
--    "tests/bdd/wave6b-paperclip-parity.feature.test.ts",
--    "tests/compat/",
--    "tests/integration/plugin/paperclip-fidelity-skill-surface.test.ts",
--    "tests/regression/",
--    "tests/unit/docs/",
--    "tests/unit/gates/gate-registry-reference.test.ts",
--    "tests/unit/lint/gate-log-writer-centralization.test.ts",
--    "tests/unit/paperclip/flow-mirror-inventory.test.ts",
--    "tests/unit/paperclip/task-tree-factory-spec.test.ts"
-+    "evals/telemetry/latest_trace.json"
+-    "evals/telemetry/latest_trace.json"
++    "evals/telemetry/latest_trace.json",
++    "src/cli/pipeline-cli.ts",
++    "tests/integration/kimi/exec-window-scripts.test.ts",
++    "tests/unit/cli/pipeline-cli.test.ts",
++    "evals/outputs/workflow-gate-decisions.jsonl"
    ],
    "eval_result": "PASS",
    "execution_event": "PostToolUse",
-@@ -259,79 +154,10 @@
-       "tests/unit/security/exec-window.test.ts": "Regression coverage for pipeline governance, package surface, hook routing, and session-lock behavior.",
-       "tests/unit/validation/post-final-validator-checkpoint.test.ts": "Regression coverage for pipeline governance, package surface, hook routing, and session-lock behavior."
-     },
--    "unexpected_files": [
--      "docs/pipeline-orchestrator-codex/06-references-and-variants.md",
--      "docs/pipeline-orchestrator-codex/10-source-inventory.md",
--      "references/gate-request-protocol.md",
--      ".agents/plugins/",
--      "docs/PORTABILITY_CLOSEOUT_V7_12.md",
--      "docs/adapter-guide.md",
--      "docs/audits/2026-06-13-pip-72-final-specialized-codex-harness-review.md",
--      "docs/diagrams/",
--      "docs/examples/",
--      "docs/migrations/",
--      "references/gates.md",
--      "reviews/"
--    ]
-+    "unexpected_files": []
+   "execution_identity": {
+     "hook_event": "PostToolUse",
+-    "session_id": "019ebc85-9c87-7763-9bd3-c1fa0cb71d7d",
++    "session_id": "019ec0ce-56f0-7703-ac8f-a9221c61732e",
+     "tool_name": "Bash"
    },
--  "timestamp": "2026-06-13T02:57:36.327971+00:00",
--  "untracked_files_included": [
--    ".agents/plugins/marketplace.json",
--    ".kiro/specs/canonical-v7-portability-closeout/adversarial-review.md",
--    ".kiro/specs/canonical-v7-portability-closeout/design.md",
--    ".kiro/specs/canonical-v7-portability-closeout/paperclip-monitor-log.md",
--    ".kiro/specs/canonical-v7-portability-closeout/requirements.md",
--    ".kiro/specs/canonical-v7-portability-closeout/research.md",
--    ".kiro/specs/canonical-v7-portability-closeout/reviews/format-gate-report.yaml",
--    ".kiro/specs/canonical-v7-portability-closeout/reviews/implementation-readiness-gate.md",
--    ".kiro/specs/canonical-v7-portability-closeout/reviews/spec-content-reviewer.json",
--    ".kiro/specs/canonical-v7-portability-closeout/reviews/spec-content-reviewer.md",
--    ".kiro/specs/canonical-v7-portability-closeout/reviews/spec-post-impl-validator.json",
--    ".kiro/specs/canonical-v7-portability-closeout/reviews/spec-post-impl-validator.md",
--    ".kiro/specs/canonical-v7-portability-closeout/spec.json",
--    ".kiro/specs/canonical-v7-portability-closeout/tasks.md",
--    ".kiro/specs/paperclip-task-tree-factory/design.md",
--    ".kiro/specs/paperclip-task-tree-factory/requirements.md",
--    ".kiro/specs/paperclip-task-tree-factory/spec.json",
--    ".kiro/specs/paperclip-task-tree-factory/tasks.md",
--    "agents/brainstorm/step-01b-alternatives.md",
--    "docs/PORTABILITY_CLOSEOUT_V7_12.md",
--    "docs/adapter-guide.md",
--    "docs/audits/2026-06-13-pip-72-final-specialized-codex-harness-review.md",
--    "docs/diagrams/runtime-surfaces.html",
--    "docs/diagrams/runtime-surfaces.md",
--    "docs/examples/audit-flow.md",
--    "docs/examples/feature-flow.md",
--    "docs/examples/spec-flow.md",
--    "docs/migrations/claude-to-codex.md",
--    "references/gates.md",
--    "references/paperclip/spec/lib/measure-fidelity.test.cjs",
--    "reviews/executive-report.md",
--    "reviews/technical-report.md",
--    "skills/measure-paperclip-fidelity/SKILL.md",
--    "skills/paperclip-audit/SKILL.md",
--    "skills/paperclip-bugfix/SKILL.md",
--    "skills/paperclip-feature/SKILL.md",
--    "skills/paperclip-hotfix/SKILL.md",
--    "skills/paperclip-overview/SKILL.md",
--    "skills/paperclip-review/SKILL.md",
--    "skills/paperclip-spec/SKILL.md",
--    "skills/paperclip-user-story/SKILL.md",
--    "skills/paperclip-ux/SKILL.md",
--    "skills/setup-paperclip/SKILL.md",
--    "tests/bdd/wave6b-paperclip-parity.feature.test.ts",
--    "tests/compat/wave6b-paperclip-scenarios.json",
--    "tests/compat/wave6b-paperclip-scenarios.test.ts",
--    "tests/integration/plugin/paperclip-fidelity-skill-surface.test.ts",
--    "tests/regression/canonical-version-invariants.test.ts",
--    "tests/regression/canonical-version-manifest.json",
--    "tests/regression/canonical-version-manifest.test.ts",
--    "tests/unit/docs/documentation-surface.test.ts",
--    "tests/unit/gates/gate-registry-reference.test.ts",
--    "tests/unit/lint/gate-log-writer-centralization.test.ts",
--    "tests/unit/paperclip/flow-mirror-inventory.test.ts",
--    "tests/unit/paperclip/task-tree-factory-spec.test.ts"
--  ],
-+  "timestamp": "2026-06-13T03:00:03.350342+00:00",
-+  "untracked_files_included": [],
+   "execution_observed": true,
+@@ -59,6 +65,7 @@
+       ".gitignore": "Packaging hygiene required so runtime governance module ships and local audit/telemetry artifacts stay out of plugin package.",
+       ".npmignore": "In-scope package hygiene for Paperclip bugfix; prevents scratch hotfix/browser artifacts from shipping in npm package.",
+       ".paperclip-hotfix/": "Pre-existing scratch evidence directory; intentionally excluded from package and not promoted as runtime source.",
++      ".pipeline/gate-decisions.jsonl": "In-scope workflow audit artifact required by bugfix-heavy gate steps; records step 04, repeated step 08 adversarial decisions, and step 10 GO/NO-GO evidence.",
+       ".pipeline/sessions/audit.log": "In-scope plugin cleanup and global-readiness change requested by user.",
+       ".playwright-mcp/": "Pre-existing local browser artifact directory; explicitly excluded from package and not product source.",
+       "agents/core/pipeline-controller.md": "Workflow contract documentation aligned with runtime fail-closed behavior.",
+@@ -156,8 +163,10 @@
+     },
+     "unexpected_files": []
+   },
+-  "timestamp": "2026-06-13T03:00:03.483980+00:00",
+-  "untracked_files_included": [],
++  "timestamp": "2026-06-13T15:21:08.893097+00:00",
++  "untracked_files_included": [
++    "evals/outputs/workflow-gate-decisions.jsonl"
++  ],
    "untracked_files_omitted_from_diff": [],
    "validation_evidence": {
      "commands": {
+diff --git a/src/cli/pipeline-cli.ts b/src/cli/pipeline-cli.ts
+index 71a5a1e..9e661da 100644
+--- a/src/cli/pipeline-cli.ts
++++ b/src/cli/pipeline-cli.ts
+@@ -10,9 +10,12 @@
+
+ import { createPipelineRuntime } from "../index.js";
+ import type { RuntimeOptions } from "../domain/pipeline-types.js";
++import { createHmac, timingSafeEqual } from "node:crypto";
++import { existsSync, readFileSync } from "node:fs";
+ import { pathToFileURL } from "node:url";
+ import { join } from "node:path";
+ import { loadAgentRuntimeAdapter } from "./agent-runtime-loader.js";
++import { sentinelStateSchema, sessionStateSchema } from "../domain/pipeline-schemas.js";
+
+ export function resolveCliExitCode(result: unknown) {
+   if (!result || typeof result !== "object") {
+@@ -38,6 +41,16 @@ type PipelineCliOptions = RuntimeOptions & {
+   agentRuntimeAdapter?: string;
+ };
+
++type GateResponse = "yes" | "no" | "adjust";
++
++type PendingGateResolution =
++  | { kind: "none" }
++  | { kind: "response"; response: GateResponse }
++  | { kind: "blocked"; result: Record<string, unknown> };
++
++const SENTINEL_HMAC_ENV = "PIPELINE_SENTINEL_HMAC_KEY";
++const SENTINEL_STALE_THRESHOLD_MS = 300_000;
++
+ function parseArgs(argv: string[]) {
+   const args = argv.slice(2);
+   const options: PipelineCliOptions = {
+@@ -67,7 +80,206 @@ function parseArgs(argv: string[]) {
+   return options;
+ }
+
++function blockedPendingGateState(detail: string) {
++  return {
++    status: "BLOCKED",
++    reason: "blocked-invalid-pending-gate-state",
++    pipeline_valid: false,
++    blockedBy: "CLI_PENDING_GATE_STATE",
++    detail,
++  };
++}
++
++function readJsonFile(path: string) {
++  try {
++    if (!existsSync(path)) return { kind: "missing" as const };
++    return { kind: "loaded" as const, value: JSON.parse(readFileSync(path, "utf8")) as unknown };
++  } catch {
++    return { kind: "invalid" as const };
++  }
++}
++
++function isGateResponse(task: string): task is GateResponse {
++  return task === "yes" || task === "no" || task === "adjust";
++}
++
++function canonicalize(value: unknown): string {
++  if (Array.isArray(value)) {
++    return `[${value.map((entry) => canonicalize(entry)).join(",")}]`;
++  }
++
++  if (value && typeof value === "object") {
++    const entries = Object.entries(value as Record<string, unknown>)
++      .filter(([, entry]) => entry !== undefined)
++      .sort(([left], [right]) => left.localeCompare(right));
++    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`).join(",")}}`;
++  }
++
++  return JSON.stringify(value);
++}
++
++function sentinelIntegrityVerified(rawSentinel: unknown) {
++  const key = process.env[SENTINEL_HMAC_ENV];
++  if (!key) return true;
++  if (!rawSentinel || typeof rawSentinel !== "object" || Array.isArray(rawSentinel)) {
++    return false;
++  }
++
++  const integrity = (rawSentinel as { _integrity?: unknown })._integrity;
++  if (!integrity || typeof integrity !== "object" || Array.isArray(integrity)) {
++    return false;
++  }
++
++  const algorithm = (integrity as { algorithm?: unknown }).algorithm;
++  const signature = (integrity as { signature?: unknown }).signature;
++  if (algorithm !== "hmac-sha256" || typeof signature !== "string") {
++    return false;
++  }
++
++  const unsignedState = { ...(rawSentinel as Record<string, unknown>) };
++  delete unsignedState._integrity;
++  const expected = createHmac("sha256", key).update(canonicalize(unsignedState)).digest("hex");
++  const expectedBytes = Buffer.from(expected, "hex");
++  const actualBytes = Buffer.from(signature, "hex");
++  return actualBytes.length > 0
++    && expectedBytes.length === actualBytes.length
++    && timingSafeEqual(expectedBytes, actualBytes);
++}
++
++function sentinelIsFresh(updatedAt: string) {
++  const updatedAtMs = new Date(updatedAt).getTime();
++  return Number.isFinite(updatedAtMs)
++    && Date.now() - updatedAtMs <= SENTINEL_STALE_THRESHOLD_MS;
++}
++
++function expectedGateShape(session: ReturnType<typeof sessionStateSchema.parse>) {
++  const hasPendingProposal =
++    session.proposal?.awaitingUserConfirmation === true
++    && session.proposal.affectedFiles.length > 0;
++
++  if (
++    session.currentPhase === "phase-1"
++    && session.pendingDecision === "proposal-confirmation"
++    && hasPendingProposal
++  ) {
++    return {
++      expectedToken: "proposal-response",
++      expectedBatchStatus: "awaiting-proposal-confirmation",
++    };
++  }
++
++  if (
++    session.currentPhase === "phase-1.5"
++    && session.pendingDecision === "phase-1.5-approval-required"
++    && hasPendingProposal
++    && session.approvalProof?.kind === "controller-managed-transition"
++    && session.approvalProof.from === "phase-1"
++    && session.approvalProof.to === "phase-1.5"
++  ) {
++    return {
++      expectedToken: "phase-1.5-response",
++      expectedBatchStatus: "awaiting-plan-approval",
++    };
++  }
++
++  if (
++    session.currentPhase === "phase-1.5"
++    && session.pendingDecision === "phase-1.5-reapproval-required"
++    && hasPendingProposal
++    && session.approvalProof?.kind === "controller-managed-transition"
++    && session.approvalProof.from === "phase-1"
++    && session.approvalProof.to === "phase-1.5"
++  ) {
++    return {
++      expectedToken: "phase-1.5-response",
++      expectedBatchStatus: "awaiting-plan-reapproval",
++    };
++  }
++
++  return undefined;
++}
++
++function pendingGateResponse(options: PipelineCliOptions): PendingGateResolution {
++  if (options.continue || options.mode || !options.task) return { kind: "none" };
++
++  const response = options.task.trim().toLowerCase();
++  if (!isGateResponse(response)) return { kind: "none" };
++
++  const stateDir = join(options.cwd ?? process.cwd(), ".codex", "pipeline");
++  const session = readJsonFile(join(stateDir, "session.json"));
++  const sentinel = readJsonFile(join(stateDir, "sentinel-state.json"));
++
++  if (session.kind === "missing" && sentinel.kind === "missing") {
++    return { kind: "none" };
++  }
++
++  if (session.kind !== "loaded" || sentinel.kind !== "loaded") {
++    return {
++      kind: "blocked",
++      result: blockedPendingGateState("Bare yes/no/adjust received with missing or unreadable pipeline state."),
++    };
++  }
++
++  if (!sentinelIntegrityVerified(sentinel.value)) {
++    return {
++      kind: "blocked",
++      result: blockedPendingGateState("Bare yes/no/adjust received with unsigned or invalid sentinel integrity metadata."),
++    };
++  }
++
++  const parsedSession = sessionStateSchema.safeParse(session.value);
++  const parsedSentinel = sentinelStateSchema.safeParse(sentinel.value);
++  if (!parsedSession.success || !parsedSentinel.success) {
++    return {
++      kind: "blocked",
++      result: blockedPendingGateState("Bare yes/no/adjust received with invalid pending pipeline state."),
++    };
++  }
++
++  if (!sentinelIsFresh(parsedSentinel.data.updatedAt)) {
++    return {
++      kind: "blocked",
++      result: blockedPendingGateState("Bare yes/no/adjust received with stale pending gate sentinel state."),
++    };
++  }
++
++  const gateShape = expectedGateShape(parsedSession.data);
++  const phaseAliasMatches =
++    parsedSession.data.phase === undefined
++    || parsedSession.data.phase === parsedSession.data.currentPhase;
++
++  if (!gateShape || !phaseAliasMatches) {
++    return {
++      kind: "blocked",
++      result: blockedPendingGateState("Bare yes/no/adjust received, but no pending response gate is active."),
++    };
++  }
++
++  const sentinelMatchesGate =
++    parsedSentinel.data.pipelineActive
++    && parsedSentinel.data.currentPhase === parsedSession.data.currentPhase
++    && parsedSentinel.data.currentAgent === "pipeline-controller"
++    && parsedSentinel.data.expectedNext.length === 1
++    && parsedSentinel.data.expectedNext[0] === gateShape.expectedToken
++    && parsedSentinel.data.batchState.batchIndex === parsedSession.data.batchIndex
++    && parsedSentinel.data.batchState.status === gateShape.expectedBatchStatus;
++
++  if (!sentinelMatchesGate) {
++    return {
++      kind: "blocked",
++      result: blockedPendingGateState("Bare yes/no/adjust received with inconsistent pending gate sentinel state."),
++    };
++  }
++
++  return { kind: "response", response };
++}
++
+ export async function runPipelineCli(options: PipelineCliOptions) {
++  const gateResponse = pendingGateResponse(options);
++  if (gateResponse.kind === "blocked") {
++    return gateResponse.result;
++  }
++
+   const agentRuntime = options.agentRuntime
+     ?? await loadAgentRuntimeAdapter(options.agentRuntimeAdapter ?? process.env.CODEX_AGENT_RUNTIME_ADAPTER);
+
+@@ -97,11 +309,13 @@ export async function runPipelineCli(options: PipelineCliOptions) {
+     agentRuntime,
+   });
+
+-  const input = options.continue
++  const input = gateResponse.kind === "response"
++    ? gateResponse.response
++    : (options.continue
+     ? "/pipeline-orchestrator-for-codex:pipeline continue"
+     : options.mode
+       ? `/pipeline-orchestrator-for-codex:pipeline ${options.mode} ${options.task}`
+-      : `/pipeline-orchestrator-for-codex:pipeline ${options.task}`;
++      : `/pipeline-orchestrator-for-codex:pipeline ${options.task}`);
+
+   return runtime.controller.start(input);
+ }
+diff --git a/tests/integration/kimi/exec-window-scripts.test.ts b/tests/integration/kimi/exec-window-scripts.test.ts
+index cd7d7fd..280d5ed 100644
+--- a/tests/integration/kimi/exec-window-scripts.test.ts
++++ b/tests/integration/kimi/exec-window-scripts.test.ts
+@@ -1,17 +1,19 @@
+ import { describe, it, expect, beforeAll, afterAll } from "vitest";
+ import { execSync } from "node:child_process";
+-import { existsSync, readdirSync, rmSync, readFileSync } from "node:fs";
++import { existsSync, mkdirSync, readdirSync, rmSync, readFileSync } from "node:fs";
++import { tmpdir } from "node:os";
+ import { join, resolve } from "node:path";
+
+-const scriptsDir = ".kimi/skills/pipeline/scripts";
+-const sessionsDir = ".pipeline/sessions";
++const scriptsDir = resolve(".kimi/skills/pipeline/scripts");
++let workspaceDir = "";
++let sessionsDir = "";
+
+ function runScript(name: string, args: string): { stdout: string; stderr: string; exitCode: number } {
+   const scriptPath = resolve(scriptsDir, name);
+   try {
+     const stdout = execSync(`node "${scriptPath}" ${args}`, {
+       encoding: "utf8",
+-      cwd: process.cwd(),
++      cwd: workspaceDir,
+     });
+     return { stdout, stderr: "", exitCode: 0 };
+   } catch (e: any) {
+@@ -39,6 +41,10 @@ describe("Exec-window scripts — runtime contract", () => {
+   const sessionId = `test-session-${Date.now()}`;
+
+   beforeAll(() => {
++    workspaceDir = join(tmpdir(), `pipeline-kimi-exec-window-${Date.now()}`);
++    sessionsDir = join(workspaceDir, ".pipeline", "sessions");
++    mkdirSync(sessionsDir, { recursive: true });
++
+     // Clean up any stale test sessions
+     if (existsSync(sessionsDir)) {
+       for (const file of readdirSync(sessionsDir)) {
+@@ -55,6 +61,9 @@ describe("Exec-window scripts — runtime contract", () => {
+     if (existsSync(sessionFile)) {
+       rmSync(sessionFile);
+     }
++    if (workspaceDir) {
++      rmSync(workspaceDir, { recursive: true, force: true });
++    }
+   });
+
+   describe("open-exec-window.cjs", () => {
+diff --git a/tests/unit/cli/pipeline-cli.test.ts b/tests/unit/cli/pipeline-cli.test.ts
+index 0ce08cb..0734b90 100644
+--- a/tests/unit/cli/pipeline-cli.test.ts
++++ b/tests/unit/cli/pipeline-cli.test.ts
+@@ -1,5 +1,207 @@
+ import { describe, expect, it } from "vitest";
++import { createHmac } from "node:crypto";
++import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
+ import { resolveCliExitCode, runPipelineCli } from "../../../src/cli/pipeline-cli.js";
++import type { AgentRuntimeAdapter, DispatchResult } from "../../../src/dispatcher/dispatcher-types.js";
++import { createSessionStore } from "../../../src/state/session-store.js";
++import { createSentinelStateStore } from "../../../src/sentinel/sentinel-state.js";
++
++function completeAgentRuntime(): AgentRuntimeAdapter {
++  return {
++    capabilities: {
++      spawnAgent: true,
++      waitAgent: true,
++      collectArtifacts: true,
++      recordGates: true,
++      recordCheckpoints: true,
++      structuredFinalState: true,
++    },
++    async spawnAgent(request: { role: string }) {
++      return {
++        mode: "single-agent",
++        role: request.role,
++        output: {
++          status: "approved",
++          dispatchMode: "real-agent",
++        },
++      };
++    },
++    async waitAgent(dispatch: DispatchResult) {
++      return dispatch;
++    },
++    async collectArtifacts(dispatches: DispatchResult[]) {
++      return dispatches.map((dispatch) => dispatch.output);
++    },
++  };
++}
++
++async function seedPendingProposal(
++  root: string,
++  response: string,
++  overrides: {
++    currentPhase?: "phase-1" | "phase-1.5";
++    phaseAlias?: "phase-1" | "phase-1.5" | "phase-2";
++    pendingDecision?: string;
++    pipelineActive?: boolean;
++    sentinelPhase?: "phase-1" | "phase-1.5" | "phase-2";
++    currentAgent?: string;
++    expectedNext?: string[];
++    batchIndex?: number;
++    sentinelBatchIndex?: number;
++    batchStatus?: string;
++    includeApprovalProof?: boolean;
++    omitProposal?: boolean;
++    proposalAwaiting?: boolean;
++    affectedFiles?: string[];
++    sentinelUpdatedAt?: string;
++  } = {},
++) {
++  const stateRoot = join(root, ".codex", "pipeline");
++  const sessionStore = createSessionStore(stateRoot, { strictAgents: true });
++  const sentinelStore = createSentinelStateStore(stateRoot);
++  const currentPhase = overrides.currentPhase ?? "phase-1";
++  const pendingDecision = overrides.pendingDecision ?? "proposal-confirmation";
++  const includeApprovalProof = overrides.includeApprovalProof ?? currentPhase === "phase-1.5";
++
++  await sessionStore.save({
++    sessionId: `pending-proposal-${response}`,
++    runStartedAt: "2026-06-13T10:00:00.000Z",
++    currentPhase,
++    phase: overrides.phaseAlias ?? currentPhase,
++    batchIndex: overrides.batchIndex ?? 0,
++    mode: "full",
++    variant: "bugfix-light",
++    confidenceScore: 1,
++    proposal: overrides.omitProposal
++      ? undefined
++      : {
++          summary: "fix pending proposal answer routing",
++          variant: "bugfix-light",
++          awaitingUserConfirmation: overrides.proposalAwaiting ?? true,
++          infoGateStatus: "passed",
++          designReviewStatus: "skipped",
++          planModeStatus: "skipped",
++          affectedFiles: overrides.affectedFiles ?? ["src/cli/pipeline-cli.ts"],
++          batchSize: 1,
++          validationIntent: "standard",
++        },
++    unresolvedBlockers: [],
++    pendingDecision,
++    touchedFiles: ["src/cli/pipeline-cli.ts"],
++    approvalProof: includeApprovalProof
++      ? {
++          kind: "controller-managed-transition",
++          from: "phase-1",
++          to: "phase-1.5",
++        }
++      : undefined,
++    executionProof: currentPhase === "phase-1.5"
++      ? {
++          approvedScenarios: [],
++          tddApproval: "REJECTED",
++          redValidation: {
++            status: "blocked",
++            reasons: ["awaiting phase-1.5 approval"],
++          },
++          checkpointEvidence: [],
++          fixAttempts: [],
++        }
++      : undefined,
++  });
++
++  await sentinelStore.save({
++    pipelineActive: overrides.pipelineActive ?? true,
++    currentPhase: overrides.sentinelPhase ?? currentPhase,
++    currentAgent: overrides.currentAgent ?? "pipeline-controller",
++    expectedNext: overrides.expectedNext ?? [currentPhase === "phase-1.5" ? "phase-1.5-response" : "proposal-response"],
++    completedPhases: currentPhase === "phase-1.5" ? ["phase-0", "phase-1"] : ["phase-0"],
++    gateSummary: ["INFO_GATE_OK"],
++    batchState: {
++      batchIndex: overrides.sentinelBatchIndex ?? overrides.batchIndex ?? 0,
++      status: overrides.batchStatus
++        ?? (currentPhase === "phase-1.5" ? "awaiting-plan-approval" : "awaiting-proposal-confirmation"),
++    },
++    consecutiveCorrections: 0,
++    lastCheckpoint: currentPhase === "phase-1.5" ? "phase_0_to_1" : "post_orchestrator",
++    updatedAt: overrides.sentinelUpdatedAt ?? new Date().toISOString(),
++  });
++
++  return {
++    stateRoot,
++    sessionStore,
++  };
++}
++
++function canonicalize(value: unknown): string {
++  if (Array.isArray(value)) {
++    return `[${value.map((entry) => canonicalize(entry)).join(",")}]`;
++  }
++
++  if (value && typeof value === "object") {
++    const entries = Object.entries(value as Record<string, unknown>)
++      .filter(([, entry]) => entry !== undefined)
++      .sort(([left], [right]) => left.localeCompare(right));
++    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`).join(",")}}`;
++  }
++
++  return JSON.stringify(value);
++}
++
++async function signSentinelState(root: string, key: string) {
++  const file = join(root, ".codex", "pipeline", "sentinel-state.json");
++  const state = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
++  const signature = createHmac("sha256", key).update(canonicalize(state)).digest("hex");
++  await writeFile(
++    file,
++    JSON.stringify({
++      ...state,
++      _integrity: {
++        algorithm: "hmac-sha256",
++        signature,
++      },
++    }),
++    "utf8",
++  );
++}
++
++async function withSentinelHmac<T>(key: string, callback: () => Promise<T>) {
++  const previous = process.env.PIPELINE_SENTINEL_HMAC_KEY;
++  process.env.PIPELINE_SENTINEL_HMAC_KEY = key;
++  try {
++    return await callback();
++  } finally {
++    if (previous === undefined) {
++      delete process.env.PIPELINE_SENTINEL_HMAC_KEY;
++    } else {
++      process.env.PIPELINE_SENTINEL_HMAC_KEY = previous;
++    }
++  }
++}
++
++async function withAgentRuntimeAdapter<T>(adapterPath: string, callback: () => Promise<T>) {
++  const previous = process.env.CODEX_AGENT_RUNTIME_ADAPTER;
++  process.env.CODEX_AGENT_RUNTIME_ADAPTER = adapterPath;
++  try {
++    return await callback();
++  } finally {
++    if (previous === undefined) {
++      delete process.env.CODEX_AGENT_RUNTIME_ADAPTER;
++    } else {
++      process.env.CODEX_AGENT_RUNTIME_ADAPTER = previous;
++    }
++  }
++}
++
++async function withTempRoot<T>(callback: (root: string) => Promise<T>) {
++  const root = await mkdtemp(join(tmpdir(), "pipeline-cli-test-"));
++  try {
++    return await callback(root);
++  } finally {
++    await rm(root, { recursive: true, force: true });
++  }
++}
+
+ describe("pipeline CLI exit code", () => {
+   it("treats every blocked status as a failed execution", () => {
+@@ -15,12 +217,12 @@ describe("pipeline CLI exit code", () => {
+   });
+
+   it("blocks strict CLI execution before pretending a missing adapter can spawn agents", async () => {
+-    const result = await runPipelineCli({
+-      cwd: process.cwd(),
+-      codexHome: process.cwd(),
++    const result = await withTempRoot((root) => runPipelineCli({
++      cwd: root,
++      codexHome: root,
+       strictAgents: true,
+       task: "audit current workflow execution",
+-    });
++    }));
+
+     expect(result).toMatchObject({
+       status: "BLOCKED",
+@@ -28,14 +230,15 @@ describe("pipeline CLI exit code", () => {
+       pipeline_valid: false,
+       blockedBy: "CAPABILITY_GATE",
+     });
++
+     expect(result.missing_capabilities).toContain("spawn_agent");
+     expect(resolveCliExitCode(result)).toBe(1);
+   });
+
+   it("blocks an injected adapter that cannot wait for agents or collect artifacts", async () => {
+-    const result = await runPipelineCli({
+-      cwd: process.cwd(),
+-      codexHome: process.cwd(),
++    const result = await withTempRoot((root) => runPipelineCli({
++      cwd: root,
++      codexHome: root,
+       strictAgents: true,
+       task: "audit current workflow execution",
+       agentRuntime: {
+@@ -50,7 +253,7 @@ describe("pipeline CLI exit code", () => {
+           };
+         },
+       },
+-    });
++    }));
+
+     expect(result.status).toBe("BLOCKED");
+     expect(result.missing_capabilities).toContain("wait_agent");
+@@ -58,9 +261,9 @@ describe("pipeline CLI exit code", () => {
+   });
+
+   it("uses the operational runtime when a complete agent adapter is explicitly injected", async () => {
+-    const result = await runPipelineCli({
+-      cwd: process.cwd(),
+-      codexHome: process.cwd(),
++    const result = await withTempRoot((root) => runPipelineCli({
++      cwd: root,
++      codexHome: root,
+       strictAgents: true,
+       task: "audit current workflow execution",
+       agentRuntime: {
+@@ -89,9 +292,450 @@ describe("pipeline CLI exit code", () => {
+           return dispatches.map((dispatch) => dispatch.output);
+         },
+       },
+-    });
++    }));
+
+     expect(result.status).not.toBe("BLOCKED");
+     expect(result.proposal.awaitingUserConfirmation).toBe(true);
+   });
++
++  it.each([
++    ["yes", "phase-2", "APPROVED", "phase-2-ready"],
++    ["no", "phase-1", "REJECTED", "proposal-confirmation"],
++    ["adjust", "phase-1", "ADJUSTED", "proposal-confirmation"],
++  ])(
++    "routes bare %s to the pending proposal instead of starting a new full task",
++    async (response, expectedPhase, expectedStatus, expectedPendingDecision) => {
++      const root = await mkdtemp(join(tmpdir(), "pipeline-cli-pending-proposal-"));
++
++      try {
++        const { sessionStore } = await seedPendingProposal(root, response);
++
++        const result = await runPipelineCli({
++          cwd: root,
++          codexHome: root,
++          strictAgents: true,
++          task: response,
++          agentRuntime: completeAgentRuntime(),
++        });
++        const savedSession = await sessionStore.load();
++
++        expect(result).toMatchObject({
++          phase: expectedPhase,
++          confirmation: {
++            kind: "PROPOSAL_CONFIRMATION",
++            status: expectedStatus,
++            response,
++          },
++        });
++        expect(savedSession).toMatchObject({
++          sessionId: `pending-proposal-${response}`,
++          currentPhase: expectedPhase,
++          pendingDecision: expectedPendingDecision,
++        });
++        expect(savedSession.sessionId).not.toBe(`full:${response}`);
++      } finally {
++        await rm(root, { recursive: true, force: true });
++      }
++    },
++  );
++
++  it.each([
++    ["phase-1.5-approval-required", "awaiting-plan-approval"],
++    ["phase-1.5-reapproval-required", "awaiting-plan-reapproval"],
++  ])("routes bare yes through the pending phase-1.5 gate for %s", async (pendingDecision, batchStatus) => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-pending-plan-"));
++
++    try {
++      const { sessionStore } = await seedPendingProposal(root, "yes", {
++        currentPhase: "phase-1.5",
++        pendingDecision,
++        batchStatus,
++      });
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++      const savedSession = await sessionStore.load();
++
++      expect(result).toMatchObject({
++        phase: "phase-1.5",
++        implementationPlan: {
++          status: "APPROVED",
++        },
++      });
++      expect(savedSession).toMatchObject({
++        sessionId: "pending-proposal-yes",
++        currentPhase: "phase-1.5",
++      });
++      expect(savedSession.pendingDecision).toBeUndefined();
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it.each([
++    ["missing proposal", { omitProposal: true }],
++    ["proposal not awaiting confirmation", { proposalAwaiting: false }],
++    ["empty affected files", { affectedFiles: [] }],
++  ])("blocks bare yes when phase-1 has %s", async (_label, overrides) => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-invalid-proposal-"));
++
++    try {
++      await seedPendingProposal(root, "yes", overrides);
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it.each([
++    ["missing proposal", { omitProposal: true }],
++    ["empty affected files", { affectedFiles: [] }],
++  ])("blocks bare yes when phase-1.5 has %s", async (_label, overrides) => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-invalid-plan-"));
++
++    try {
++      await seedPendingProposal(root, "yes", {
++        currentPhase: "phase-1.5",
++        pendingDecision: "phase-1.5-approval-required",
++        ...overrides,
++      });
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it.each([
++    ["inactive sentinel", { pipelineActive: false }],
++    ["phase mismatch", { sentinelPhase: "phase-2" as const }],
++    ["agent mismatch", { currentAgent: "executor" }],
++    ["missing expected token", { expectedNext: ["continue"] }],
++    ["extra expected token", { expectedNext: ["proposal-response", "continue"] }],
++    ["batch index mismatch", { sentinelBatchIndex: 1 }],
++    ["batch status mismatch", { batchStatus: "execution-approved" }],
++  ])("blocks bare yes when pending gate state has %s", async (_label, overrides) => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-invalid-gate-"));
++
++    try {
++      await seedPendingProposal(root, "yes", overrides);
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it("blocks bare yes when the pending gate sentinel is stale", async () => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-stale-gate-"));
++
++    try {
++      await seedPendingProposal(root, "yes", {
++        sentinelUpdatedAt: new Date(Date.now() - 301_000).toISOString(),
++      });
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it("blocks bare yes when sentinel HMAC is required but state is unsigned", async () => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-unsigned-sentinel-"));
++
++    try {
++      await seedPendingProposal(root, "yes");
++
++      const result = await withSentinelHmac("test-key", () => runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      }));
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it("routes bare yes when sentinel HMAC is required and state is signed", async () => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-signed-sentinel-"));
++
++    try {
++      await seedPendingProposal(root, "yes");
++      await signSentinelState(root, "test-key");
++
++      const result = await withSentinelHmac("test-key", () => runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      }));
++
++      expect(result).toMatchObject({
++        phase: "phase-2",
++        confirmation: {
++          status: "APPROVED",
++          response: "yes",
++        },
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it("blocks bare yes when phase-1.5 is missing controller approval proof", async () => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-missing-proof-"));
++
++    try {
++      await seedPendingProposal(root, "yes", {
++        currentPhase: "phase-1.5",
++        pendingDecision: "phase-1.5-approval-required",
++        includeApprovalProof: false,
++      });
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it("blocks bare yes when the session phase alias conflicts with currentPhase", async () => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-phase-mismatch-"));
++
++    try {
++      await seedPendingProposal(root, "yes", {
++        phaseAlias: "phase-2",
++      });
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it("blocks bare yes when pending state JSON is invalid instead of starting full:yes", async () => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-corrupt-gate-"));
++    const stateRoot = join(root, ".codex", "pipeline");
++
++    try {
++      await mkdir(stateRoot, { recursive: true });
++      await writeFile(join(stateRoot, "session.json"), "{", "utf8");
++      await writeFile(join(stateRoot, "sentinel-state.json"), "{}", "utf8");
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it("blocks invalid pending state before loading an external agent adapter", async () => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-corrupt-before-adapter-"));
++    const stateRoot = join(root, ".codex", "pipeline");
++
++    try {
++      await mkdir(stateRoot, { recursive: true });
++      await writeFile(join(stateRoot, "session.json"), "{", "utf8");
++      await writeFile(join(stateRoot, "sentinel-state.json"), "{}", "utf8");
++
++      const result = await withAgentRuntimeAdapter("Z:/definitely/missing/adapter.mjs", () => runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++      }));
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it.each([
++    ["session only", { session: true, sentinel: false }],
++    ["sentinel only", { session: false, sentinel: true }],
++  ])("blocks bare yes with one-sided pending state: %s", async (_label, files) => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-one-sided-state-"));
++    const stateRoot = join(root, ".codex", "pipeline");
++
++    try {
++      await mkdir(stateRoot, { recursive: true });
++
++      if (files.session) {
++        const seedRoot = await mkdtemp(join(tmpdir(), "pipeline-cli-seed-session-"));
++        const { sessionStore } = await seedPendingProposal(seedRoot, "yes");
++        const session = await sessionStore.load();
++        await writeFile(join(stateRoot, "session.json"), JSON.stringify(session), "utf8");
++        await rm(seedRoot, { recursive: true, force: true });
++      }
++
++      if (files.sentinel) {
++        const seedRoot = await mkdtemp(join(tmpdir(), "pipeline-cli-seed-sentinel-"));
++        await seedPendingProposal(seedRoot, "yes");
++        const sentinelRaw = await readFile(join(seedRoot, ".codex", "pipeline", "sentinel-state.json"), "utf8");
++        await writeFile(join(stateRoot, "sentinel-state.json"), sentinelRaw, "utf8");
++        await rm(seedRoot, { recursive: true, force: true });
++      }
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
++
++  it("keeps bare yes as a normal CLI task when no pending state exists", async () => {
++    const result = await withTempRoot((root) => runPipelineCli({
++      cwd: root,
++      codexHome: root,
++      strictAgents: true,
++      task: "yes",
++      agentRuntime: completeAgentRuntime(),
++    }));
++
++    expect(result).toMatchObject({
++      proposal: {
++        summary: "yes",
++      },
++    });
++  });
++
++  it("blocks bare yes when pending state is valid JSON but invalid by schema", async () => {
++    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-invalid-schema-"));
++    const stateRoot = join(root, ".codex", "pipeline");
++
++    try {
++      await mkdir(stateRoot, { recursive: true });
++      await writeFile(join(stateRoot, "session.json"), JSON.stringify({ currentPhase: "phase-1" }), "utf8");
++      await writeFile(join(stateRoot, "sentinel-state.json"), JSON.stringify({ pipelineActive: true }), "utf8");
++
++      const result = await runPipelineCli({
++        cwd: root,
++        codexHome: root,
++        strictAgents: true,
++        task: "yes",
++        agentRuntime: completeAgentRuntime(),
++      });
++
++      expect(result).toMatchObject({
++        status: "BLOCKED",
++        reason: "blocked-invalid-pending-gate-state",
++        blockedBy: "CLI_PENDING_GATE_STATE",
++      });
++    } finally {
++      await rm(root, { recursive: true, force: true });
++    }
++  });
+ });
+diff --git a/evals/outputs/workflow-gate-decisions.jsonl b/evals/outputs/workflow-gate-decisions.jsonl
+new file mode 100644
+--- /dev/null
++++ b/evals/outputs/workflow-gate-decisions.jsonl
+@@
+{"gate":"BUGFIX_HEAVY_STEP_04_CONTROLLED_CHANGE_PROPOSAL","hardness":"HARD","phase":"step-04","decision":"approved","decided_by":"user","timestamp":"2026-06-13T09:22:01.8347218-03:00","detail":"Blanket approval applied to minimal CLI pending gate-response fix","confidence_impact":0}
+{"gate":"BUGFIX_HEAVY_STEP_08_ADVERSARIAL_UX_TECH_REVIEW","hardness":"HARD","phase":"step-08","decision":"block-and-fix","decided_by":"workflow-adversarial-review","timestamp":"2026-06-13T09:35:47.6055739-03:00","detail":"1 BLOCKER and multiple MAJOR findings: fail-open ambiguous state and incomplete sentinel validation; re-enter step 06 with minimal additional fix","confidence_impact":-0.2}
+{"gate":"BUGFIX_HEAVY_STEP_08_ADVERSARIAL_UX_TECH_REVIEW_RERUN_1","hardness":"HARD","phase":"step-08","decision":"block-and-fix","decided_by":"workflow-adversarial-review","timestamp":"2026-06-13T09:45:24.3461148-03:00","detail":"Rerun found typecheck BLOCKER and phase-1 missing proposal MAJOR; re-enter step 06 with narrow fix and added coverage","confidence_impact":-0.2}
+{"gate":"BUGFIX_HEAVY_STEP_08_ADVERSARIAL_UX_TECH_REVIEW_RERUN_2","hardness":"HARD","phase":"step-08","decision":"block-and-fix","decided_by":"workflow-adversarial-review","timestamp":"2026-06-13T09:53:49.4140621-03:00","detail":"Rerun found phase-1.5 missing proposal MAJOR, stale dist BLOCKER, and phase alias MAJOR; re-enter step 06 again","confidence_impact":-0.2}
+{"gate":"BUGFIX_HEAVY_STEP_08_ADVERSARIAL_UX_TECH_REVIEW_RERUN_3","hardness":"HARD","phase":"step-08","decision":"proceed","decided_by":"workflow-adversarial-review","timestamp":"2026-06-13T10:00:30.3892774-03:00","detail":"Three adversarial reviewers returned no blockers/majors after hardened CLI gate routing and dist build","confidence_impact":0}
+{"gate":"BUGFIX_HEAVY_STEP_10_PA_DE_CAL","hardness":"HARD","phase":"step-10","decision":"GO","decided_by":"user-authorized-workflow","timestamp":"2026-06-13T10:07:05.4414201-03:00","detail":"GO local: lint, build, focused tests, full npm test, direct dist E2E, adversarial rerun, python eval tests, git diff --check, and Eval Gate passed. Scope excludes installed Codex cache/runtime adoption.","confidence_impact":0}
