@@ -54,14 +54,29 @@ VALID_TELEMETRY = {
         "unexpected_files": [],
         "scope_justifications": {},
     },
+    "validated_target": {
+        "ref": "working-tree",
+        "commit": "fixture",
+        "changed_files": ["evals/outputs/latest_output.md"],
+    },
     "validation_evidence": {
         "commands": {
-            "npm run lint:types": {"status": "PASS"},
-            "npm run build": {"status": "PASS"},
-            "npm test": {"status": "PASS"},
-            "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {"status": "PASS"},
-            "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {"status": "PASS"},
-            "git diff --check": {"status": "PASS"},
+            "npm run lint:types": {"status": "PASS", "command": "npm run lint:types", "observed_at": "2026-06-13T15:00:00Z", "target": "working-tree"},
+            "npm run build": {"status": "PASS", "command": "npm run build", "observed_at": "2026-06-13T15:00:00Z", "target": "working-tree"},
+            "npm test": {"status": "PASS", "command": "npm test -- --testTimeout=30000", "observed_at": "2026-06-13T15:00:00Z", "target": "working-tree"},
+            "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
+                "status": "PASS",
+                "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
+                "observed_at": "2026-06-13T15:00:00Z",
+                "target": "working-tree",
+            },
+            "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {
+                "status": "PASS",
+                "command": "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
+                "observed_at": "2026-06-13T15:00:00Z",
+                "target": "working-tree",
+            },
+            "git diff --check": {"status": "PASS", "command": "git diff --check", "observed_at": "2026-06-13T15:00:00Z", "target": "working-tree"},
         }
     },
 }
@@ -339,10 +354,87 @@ class EvalGateRunnerTests(unittest.TestCase):
 
         self.assert_fails_with("missing telemetry validation_evidence")
 
+    def test_validation_command_requires_observed_at(self) -> None:
+        telemetry = json.loads(json.dumps(VALID_TELEMETRY))
+        del telemetry["validation_evidence"]["commands"]["npm run build"]["observed_at"]
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("validation command missing observed_at: npm run build")
+
+    def test_validation_command_requires_command_text(self) -> None:
+        telemetry = json.loads(json.dumps(VALID_TELEMETRY))
+        del telemetry["validation_evidence"]["commands"]["npm run build"]["command"]
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("validation command missing command text: npm run build")
+
+    def test_dirty_validation_requires_validated_target(self) -> None:
+        telemetry = {key: value for key, value in VALID_TELEMETRY.items() if key != "validated_target"}
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("telemetry validated_target is required for dirty validation evidence")
+
+    def test_validation_command_target_must_match_validated_target(self) -> None:
+        telemetry = json.loads(json.dumps(VALID_TELEMETRY))
+        telemetry["validation_evidence"]["commands"]["npm run build"]["target"] = "old-working-tree"
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("validation command target does not match validated_target.ref: npm run build")
+
+    def test_report_claimed_paths_must_have_diff_or_validated_target_evidence(self) -> None:
+        report = VALID_REPORT.replace(
+            "Eval Gate files only.",
+            "Changed `src/cli/pipeline-cli.ts`, `dist/src/cli/pipeline-cli.js`, and `tests/unit/cli/pipeline-cli.test.ts`.",
+        )
+        (self.root / "evals" / "outputs" / "latest_output.md").write_text(report, encoding="utf-8")
+        (self.root / "evals" / "telemetry" / "changed_files.txt").write_text(
+            "evals/telemetry/latest_trace.json\n",
+            encoding="utf-8",
+        )
+        telemetry = {
+            **VALID_TELEMETRY,
+            "changed_files": ["evals/telemetry/latest_trace.json"],
+            "validated_target": {
+                "ref": "working-tree",
+                "commit": "fixture",
+                "changed_files": ["evals/telemetry/latest_trace.json"],
+            },
+        }
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("final report references path without telemetry or validated target evidence: src/cli/pipeline-cli.ts")
+
+    def test_report_behavior_claims_must_have_matching_evidence(self) -> None:
+        report = VALID_REPORT.replace(
+            "Eval Gate files only.",
+            "Added optional sentinel HMAC verification.",
+        )
+        (self.root / "evals" / "outputs" / "latest_output.md").write_text(report, encoding="utf-8")
+
+        self.assert_fails_with("final report claims HMAC change without matching telemetry evidence")
+
     def test_npm_test_timeout_can_pass_with_focused_evidence(self) -> None:
         telemetry = json.loads(json.dumps(VALID_TELEMETRY))
         telemetry["validation_evidence"]["commands"]["npm test"] = {
             "status": "PASS_FOCUSED_AFTER_TIMEOUT",
+            "command": "npm test -- --testTimeout=30000",
+            "observed_at": "2026-06-13T15:00:00Z",
+            "target": "working-tree",
             "focused_evidence": "Full Vitest timed out in Windows IPC; failing files passed in focused reruns.",
         }
         (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
@@ -358,6 +450,9 @@ class EvalGateRunnerTests(unittest.TestCase):
         telemetry = json.loads(json.dumps(VALID_TELEMETRY))
         telemetry["validation_evidence"]["commands"]["npm test"] = {
             "status": "PASS_FOCUSED_AFTER_UNRELATED_FAILURE",
+            "command": "npm test -- --testTimeout=30000",
+            "observed_at": "2026-06-13T15:00:00Z",
+            "target": "working-tree",
             "focused_evidence": "Full Vitest failed on pre-existing untracked skills; bugfix-focused Vitest and Python suites passed.",
         }
         (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(

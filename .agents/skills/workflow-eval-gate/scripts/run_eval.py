@@ -59,6 +59,8 @@ REQUIRED_VALIDATION_COMMANDS = (
     ("git diff --check",),
 )
 
+REPORT_PATH_RE = re.compile(r"`?((?:src|dist|tests|evals|\.codex|\.agents)/[A-Za-z0-9_./-]+)`?")
+
 DEFAULT_SCOPE_PREFIXES = (
     ".codex/",
     ".agents/skills/workflow-eval-gate/",
@@ -274,6 +276,32 @@ def missing_scope_justifications(scope_review: object) -> list[str]:
     return missing
 
 
+def validated_target_ref(telemetry: dict[str, object]) -> str | None:
+    validated_target = telemetry.get("validated_target")
+    if not isinstance(validated_target, dict):
+        return None
+    value = validated_target.get("ref")
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def validate_validated_target(telemetry: dict[str, object]) -> list[str]:
+    if telemetry.get("git_state") != "dirty":
+        return []
+    validated_target = telemetry.get("validated_target")
+    if not isinstance(validated_target, dict):
+        return ["telemetry validated_target is required for dirty validation evidence"]
+
+    errors: list[str] = []
+    if not str(validated_target.get("ref", "")).strip():
+        errors.append("telemetry validated_target.ref is required")
+    if not (str(validated_target.get("base_commit", "")).strip() or str(validated_target.get("commit", "")).strip()):
+        errors.append("telemetry validated_target.base_commit or commit is required")
+    changed_files = validated_target.get("changed_files")
+    if not isinstance(changed_files, list) or not any(isinstance(item, str) and item.strip() for item in changed_files):
+        errors.append("telemetry validated_target.changed_files must not be empty")
+    return errors
+
+
 def validate_command_evidence(telemetry: dict[str, object]) -> list[str]:
     validation_evidence = telemetry.get("validation_evidence")
     if not isinstance(validation_evidence, dict):
@@ -284,6 +312,7 @@ def validate_command_evidence(telemetry: dict[str, object]) -> list[str]:
     if not isinstance(commands, dict):
         return ["telemetry validation_evidence.commands must be an object"]
 
+    target_ref = validated_target_ref(telemetry)
     for command_options in REQUIRED_VALIDATION_COMMANDS:
         command = command_options[0]
         evidence = next((commands.get(option) for option in command_options if isinstance(commands.get(option), dict)), None)
@@ -296,12 +325,75 @@ def validate_command_evidence(telemetry: dict[str, object]) -> list[str]:
             allowed_statuses.add("PASS_FOCUSED_AFTER_UNRELATED_FAILURE")
         if evidence.get("status") not in allowed_statuses:
             errors.append(f"validation command did not pass: {' or '.join(command_options)}")
+        if not str(evidence.get("observed_at", "")).strip():
+            errors.append(f"validation command missing observed_at: {command}")
+        if not str(evidence.get("command", "")).strip():
+            errors.append(f"validation command missing command text: {command}")
+        if target_ref and str(evidence.get("target", "")).strip() != target_ref:
+            errors.append(f"validation command target does not match validated_target.ref: {command}")
         if (
             evidence.get("status") in {"PASS_FOCUSED_AFTER_TIMEOUT", "PASS_FOCUSED_AFTER_UNRELATED_FAILURE"}
             and not str(evidence.get("focused_evidence", "")).strip()
         ):
             errors.append(f"validation command needs focused evidence for npm test fallback: {' or '.join(command_options)}")
     return errors
+
+
+def telemetry_evidence_paths(changed_files: Iterable[str], telemetry: dict[str, object]) -> set[str]:
+    paths = {normalize_path(path) for path in changed_files}
+    trace_changed_files = telemetry.get("changed_files")
+    if isinstance(trace_changed_files, list):
+        paths.update(normalize_path(str(path)) for path in trace_changed_files if isinstance(path, str))
+
+    validated_target = telemetry.get("validated_target")
+    if isinstance(validated_target, dict):
+        target_files = validated_target.get("changed_files")
+        if isinstance(target_files, list):
+            paths.update(normalize_path(str(path)) for path in target_files if isinstance(path, str))
+    return paths
+
+
+def validate_report_path_evidence(report_text: str, changed_files: Iterable[str], telemetry: dict[str, object]) -> list[str]:
+    changed_section_match = re.search(
+        r"^#{1,6}\s+what was changed\s*$([\s\S]*?)(?=^#{1,6}\s+|\Z)",
+        report_text,
+        flags=re.MULTILINE | re.IGNORECASE,
+    )
+    report_section = changed_section_match.group(1) if changed_section_match else report_text
+    evidence_paths = telemetry_evidence_paths(changed_files, telemetry)
+    errors: list[str] = []
+    for raw_path in sorted(set(REPORT_PATH_RE.findall(report_section))):
+        path = normalize_path(raw_path)
+        if path.startswith("evals/telemetry/"):
+            continue
+        if path in evidence_paths or any(evidence.startswith(path.rstrip("/") + "/") for evidence in evidence_paths):
+            continue
+        errors.append(f"final report references path without telemetry or validated target evidence: {path}")
+    return errors
+
+
+def validate_report_behavior_claims(report_text: str, changed_files: Iterable[str], telemetry: dict[str, object]) -> list[str]:
+    changed_section_match = re.search(
+        r"^#{1,6}\s+what was changed\s*$([\s\S]*?)(?=^#{1,6}\s+|\Z)",
+        report_text,
+        flags=re.MULTILINE | re.IGNORECASE,
+    )
+    report_section = changed_section_match.group(1).lower() if changed_section_match else ""
+    if "hmac" not in report_section:
+        return []
+
+    evidence_paths = telemetry_evidence_paths(changed_files, telemetry)
+    has_hmac_surface = any(
+        path in {
+            "src/cli/pipeline-cli.ts",
+            "dist/src/cli/pipeline-cli.js",
+            "tests/unit/cli/pipeline-cli.test.ts",
+        }
+        for path in evidence_paths
+    )
+    if has_hmac_surface:
+        return []
+    return ["final report claims HMAC change without matching telemetry evidence"]
 
 
 def validate_plugin_execution_evidence(telemetry: dict[str, object], report_text: str) -> list[str]:
@@ -373,6 +465,7 @@ def validate(repo_root: Path) -> list[str]:
         if telemetry.get("added_unrequested_features") is True:
             errors.append("telemetry added_unrequested_features must not be true")
         errors.extend(missing_scope_justifications(telemetry.get("scope_review")))
+        errors.extend(validate_validated_target(telemetry))
         errors.extend(validate_command_evidence(telemetry))
         errors.extend(validate_plugin_execution_evidence(telemetry, report_text))
     elif telemetry is not None:
@@ -413,6 +506,8 @@ def validate(repo_root: Path) -> list[str]:
                 normalized_reported = sorted(normalize_path(str(item)) for item in reported_unexpected)
                 if sorted(expected_unexpected) != normalized_reported:
                     errors.append("telemetry scope_review.unexpected_files must match changed_files outside allowed_prefixes")
+        errors.extend(validate_report_path_evidence(report_text, changed_files, telemetry))
+        errors.extend(validate_report_behavior_claims(report_text, changed_files, telemetry))
 
     if not diff_path.exists():
         errors.append("missing evals/telemetry/git_diff.patch")

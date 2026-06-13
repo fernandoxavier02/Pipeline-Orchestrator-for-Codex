@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -11,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+
+sys.dont_write_bytecode = True
 
 MAX_UNTRACKED_DIFF_BYTES = 200_000
 OMITTED_UNTRACKED_PATHS = {
@@ -47,6 +50,21 @@ DEFAULT_SCOPE_PREFIXES = (
     ".kiro/",
 )
 PIPELINE_AGENT_FQN_RE = re.compile(r"PIPELINE_AGENT_FQN:\s*([A-Za-z0-9:_-]+)")
+READ_ONLY_COMMAND_RE = re.compile(
+    r"^\s*(?:"
+    r"git\s+(?:status|diff|show|log|rev-parse|ls-files)\b"
+    r"|rg\b"
+    r"|grep\b"
+    r"|findstr\b"
+    r"|Get-Content\b"
+    r"|Get-ChildItem\b"
+    r"|Select-String\b"
+    r"|Test-Path\b"
+    r"|Resolve-Path\b"
+    r"|python(?:3)?\s+\.agents/skills/workflow-eval-gate/scripts/run_eval\.py\b"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def resolve_repo_root(start: Path) -> Path:
@@ -104,6 +122,10 @@ def read_trace(path: Path) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def changed_files(repo_root: Path) -> list[str]:
     lines = run_git(repo_root, ["status", "--short"]).splitlines()
     files: list[str] = []
@@ -115,6 +137,11 @@ def changed_files(repo_root: Path) -> list[str]:
             path_text = path_text.split(" -> ", 1)[1]
         files.append(path_text.strip().replace("\\", "/"))
     return files
+
+
+def git_ref(repo_root: Path, *args: str) -> str | None:
+    value = run_git(repo_root, list(args)).strip()
+    return value or None
 
 
 def untracked_files(repo_root: Path) -> list[str]:
@@ -188,6 +215,27 @@ def payload_text(payload: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def payload_command(payload: dict[str, Any]) -> str:
+    value = payload.get("command")
+    if isinstance(value, str):
+        return value
+    tool_input = payload.get("tool_input")
+    if isinstance(tool_input, dict):
+        for key in ("command", "cmd"):
+            value = tool_input.get(key)
+            if isinstance(value, str):
+                return value
+    return ""
+
+
+def is_read_only_payload(payload: dict[str, Any]) -> bool:
+    tool_name = str(payload.get("tool_name", ""))
+    if tool_name in {"Read", "Glob", "Grep", "LS"}:
+        return True
+    command = payload_command(payload)
+    return bool(command and READ_ONLY_COMMAND_RE.search(command))
+
+
 def resolve_pipeline_agent_fqn(payload: dict[str, Any], observed_text: str, existing: Any) -> str | None:
     value = payload.get("pipeline_agent_fqn")
     if isinstance(value, str) and value.strip():
@@ -234,7 +282,6 @@ def main() -> int:
     payload = load_payload()
     repo_root = resolve_repo_root(Path(payload.get("cwd") if isinstance(payload.get("cwd"), str) else Path.cwd()))
     telemetry_dir = repo_root / "evals" / "telemetry"
-    telemetry_dir.mkdir(parents=True, exist_ok=True)
 
     files = changed_files(repo_root)
     untracked = untracked_files(repo_root)
@@ -277,12 +324,6 @@ def main() -> int:
             diff_text = "\n".join(section for section in sections if section)
     diff_text = trim_trailing_whitespace(diff_text)
 
-    (telemetry_dir / "changed_files.txt").write_text(
-        "\n".join(files) + ("\n" if files else ""),
-        encoding="utf-8",
-    )
-    (telemetry_dir / "git_diff.patch").write_text(diff_text, encoding="utf-8")
-
     trace_path = telemetry_dir / "latest_trace.json"
     trace = read_trace(trace_path)
     existing_scope_review = trace.get("scope_review") if isinstance(trace.get("scope_review"), dict) else {}
@@ -323,6 +364,23 @@ def main() -> int:
     trace["untracked_files_included"] = untracked
     trace["untracked_files_omitted_from_diff"] = omitted_untracked
     trace["last_hook_event"] = payload.get("hook_event_name", "PostToolUse")
+    trace["validated_target"] = {
+        "ref": "HEAD+working-tree" if has_git_changes else "HEAD",
+        "base_commit": git_ref(repo_root, "rev-parse", "HEAD"),
+        "changed_files": files,
+        "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
+    }
+
+    if env_flag("EVAL_GATE_READ_ONLY") or is_read_only_payload(payload):
+        sys.stdout.write(json.dumps(trace, indent=2, sort_keys=True) + "\n")
+        return 0
+
+    telemetry_dir.mkdir(parents=True, exist_ok=True)
+    (telemetry_dir / "changed_files.txt").write_text(
+        "\n".join(files) + ("\n" if files else ""),
+        encoding="utf-8",
+    )
+    (telemetry_dir / "git_diff.patch").write_text(diff_text, encoding="utf-8")
     trace_path.write_text(json.dumps(trace, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
 

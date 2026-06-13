@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import sys
@@ -80,19 +81,35 @@ class TelemetryHookTests(unittest.TestCase):
                     "unexpected_files": [],
                     "scope_justifications": {},
                 },
+                "validated_target": {
+                    "ref": "HEAD+working-tree",
+                    "base_commit": "fixture",
+                    "changed_files": ["changed.txt"],
+                },
                 "validation_evidence": {
                     "commands": {
-                        "npm run lint:types": {"status": "PASS"},
-                        "npm run build": {"status": "PASS"},
-                        "npm test": {"status": "PASS"},
-                        "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {"status": "PASS"},
-                        "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {"status": "PASS"},
-                        "git diff --check": {"status": "PASS"},
+                        "npm run lint:types": {"status": "PASS", "command": "npm run lint:types", "observed_at": "2026-06-13T15:00:00Z", "target": "HEAD+working-tree"},
+                        "npm run build": {"status": "PASS", "command": "npm run build", "observed_at": "2026-06-13T15:00:00Z", "target": "HEAD+working-tree"},
+                        "npm test": {"status": "PASS", "command": "npm test -- --testTimeout=30000", "observed_at": "2026-06-13T15:00:00Z", "target": "HEAD+working-tree"},
+                        "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
+                            "status": "PASS",
+                            "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
+                            "observed_at": "2026-06-13T15:00:00Z",
+                            "target": "HEAD+working-tree",
+                        },
+                        "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {
+                            "status": "PASS",
+                            "command": "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
+                            "observed_at": "2026-06-13T15:00:00Z",
+                            "target": "HEAD+working-tree",
+                        },
+                        "git diff --check": {"status": "PASS", "command": "git diff --check", "observed_at": "2026-06-13T15:00:00Z", "target": "HEAD+working-tree"},
                     }
                 },
             }),
             encoding="utf-8",
         )
+        (self.root / "evals" / "telemetry" / "changed_files.txt").write_text("", encoding="utf-8")
         (self.root / "evals" / "telemetry" / "git_diff.patch").write_text(
             "diff --git a/evals/outputs/latest_output.md b/evals/outputs/latest_output.md\n",
             encoding="utf-8",
@@ -110,6 +127,30 @@ class TelemetryHookTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
+        )
+
+    def run_telemetry_hook_payload(self, payload: dict[str, object]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(TELEMETRY_HOOK)],
+            cwd=self.root,
+            input=json.dumps({"hook_event_name": "PostToolUse", "cwd": str(self.root), **payload}),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+    def run_telemetry_hook_read_only(self) -> subprocess.CompletedProcess[str]:
+        env = {**os.environ, "EVAL_GATE_READ_ONLY": "1"}
+        return subprocess.run(
+            [sys.executable, str(TELEMETRY_HOOK)],
+            cwd=self.root,
+            input=json.dumps({"hook_event_name": "PostToolUse", "cwd": str(self.root)}),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            env=env,
         )
 
     def commit_all(self) -> None:
@@ -161,6 +202,41 @@ class TelemetryHookTests(unittest.TestCase):
         self.assertEqual(trace["changed_files"], [])
         self.assertEqual(trace["untracked_files_included"], [])
         self.assertEqual(trace["git_diff_captured"], False)
+
+    def test_read_only_telemetry_does_not_overwrite_files(self) -> None:
+        self.commit_all()
+        (self.root / "changed.txt").write_text("changed", encoding="utf-8")
+        before_changed = (self.root / "evals" / "telemetry" / "changed_files.txt").read_text(encoding="utf-8")
+        before_patch = (self.root / "evals" / "telemetry" / "git_diff.patch").read_text(encoding="utf-8")
+        before_trace = (self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8")
+
+        result = self.run_telemetry_hook_read_only()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        emitted = json.loads(result.stdout)
+        self.assertIn("changed.txt", emitted["changed_files"])
+        self.assertEqual((self.root / "evals" / "telemetry" / "changed_files.txt").read_text(encoding="utf-8"), before_changed)
+        self.assertEqual((self.root / "evals" / "telemetry" / "git_diff.patch").read_text(encoding="utf-8"), before_patch)
+        self.assertEqual((self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8"), before_trace)
+
+    def test_registered_read_only_command_does_not_overwrite_files(self) -> None:
+        self.commit_all()
+        (self.root / "changed.txt").write_text("changed", encoding="utf-8")
+        before_changed = (self.root / "evals" / "telemetry" / "changed_files.txt").read_text(encoding="utf-8")
+        before_patch = (self.root / "evals" / "telemetry" / "git_diff.patch").read_text(encoding="utf-8")
+        before_trace = (self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8")
+
+        result = self.run_telemetry_hook_payload({
+            "tool_name": "Bash",
+            "tool_input": {"command": "git diff --check"},
+        })
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        emitted = json.loads(result.stdout)
+        self.assertIn("changed.txt", emitted["changed_files"])
+        self.assertEqual((self.root / "evals" / "telemetry" / "changed_files.txt").read_text(encoding="utf-8"), before_changed)
+        self.assertEqual((self.root / "evals" / "telemetry" / "git_diff.patch").read_text(encoding="utf-8"), before_patch)
+        self.assertEqual((self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8"), before_trace)
 
     def test_telemetry_marks_pipeline_command_when_payload_contains_command(self) -> None:
         result = subprocess.run(
