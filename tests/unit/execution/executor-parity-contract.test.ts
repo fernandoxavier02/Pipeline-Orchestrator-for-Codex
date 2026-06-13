@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createChangeContract } from "../../../src/controller/plan-mode.js";
 import { createExecutorController } from "../../../src/execution/executor-controller.js";
@@ -200,5 +203,87 @@ describe("executor parity contract", () => {
         outsideAllowed: ["src/controller/pipeline-controller.ts"],
       },
     });
+  });
+
+  it("persists the active CHANGE_CONTRACT for hook scope-lock while executing a batch", async () => {
+    const sessionRoot = mkdtempSync(join(tmpdir(), "pipeline-change-contract-"));
+    const contractPath = join(sessionRoot, "change-contract.json");
+    const changeContract = createChangeContract({
+      affectedFiles: ["src/controller/plan-mode.ts"],
+      batchSize: 1,
+    });
+    let contractDuringRun: unknown;
+    const controller = createExecutorController({
+      preTester: {
+        deriveExecutionProof: () => ({
+          approvedScenarios: ["tests/unit/controller/plan-mode.test.ts"],
+          tddApproval: "APPROVED",
+          redValidation: { status: "approved", reasons: [] },
+        }),
+      } as any,
+      qualityGateRouter: {
+        planBatches: () => ({
+          batchSize: 1,
+          regressionProofs: 1,
+          approvedScenarios: ["tests/unit/controller/plan-mode.test.ts"],
+          batches: [
+            {
+              name: "batch-contract-persistence",
+              tasks: ["src/controller/plan-mode.ts"],
+            },
+          ],
+        }),
+      },
+      runBatch: async (batch) => {
+        expect(existsSync(contractPath)).toBe(true);
+        contractDuringRun = JSON.parse(readFileSync(contractPath, "utf8"));
+        return {
+          execution: { changedFiles: batch.files },
+          review: { status: "approved", findings: [] },
+          changedFiles: batch.files,
+          verificationEvidence: {
+            requiredCheckpoints: 1,
+            verifiedCheckpoints: 1,
+            evidence: ["tests/unit/controller/plan-mode.test.ts"],
+          },
+        } as any;
+      },
+      checkpointValidator: {
+        validateCheckpoints: ({ checkpointName }) => ({
+          status: "passed",
+          checkpointName,
+          consecutiveFailures: 0,
+          requiredCheckpoints: 1,
+          verifiedCheckpoints: 1,
+          coverage: 1,
+        }),
+      },
+      reviewOrchestrator: {
+        reviewBatch: async () => ({ status: "approved", findings: [] }),
+      },
+      finalAdversarialOrchestrator: async () => ({
+        status: "approved",
+        finalDecision: "approved",
+      }),
+    });
+
+    const result = await controller.executeApprovedWork({
+      mode: "full",
+      complexity: "MEDIA",
+      variant: "feature-light",
+      tasks: ["src/controller/plan-mode.ts"],
+      approvedScenarios: ["tests/unit/controller/plan-mode.test.ts"],
+      changeContract,
+      sessionRoot,
+      sessionId: "session-contract-persistence",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(contractDuringRun).toMatchObject({
+      allowed_files: ["src/controller/plan-mode.ts"],
+      allowed_new_files: [],
+      bootstrap: { active: false },
+    });
+    expect(existsSync(contractPath)).toBe(false);
   });
 });

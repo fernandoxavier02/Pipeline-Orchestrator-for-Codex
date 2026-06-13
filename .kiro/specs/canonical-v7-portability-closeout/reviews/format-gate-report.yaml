@@ -1,0 +1,126 @@
+generated_at: "2026-06-12T04:30:00Z"
+agent: "spec-format-gate"
+workflow: "paperclip-spec-format-gate"
+spec_path: "/root/projetos/pipeline-orchestrator-for-codex/repo/.kiro/specs/canonical-v7-portability-closeout"
+source_of_truth:
+  workflow: "references/paperclip/PAPERCLIP-SPEC-WORKFLOW.md"
+  protocol: "references/paperclip/skills/pipeline-orchestrator-spec-protocol/SKILL.md#2-fase-0-format-gate-spec-format-gate"
+  note: "This rerun was executed against the repo SSOT checkout required by PIP-77, not the plugin cache checkout."
+reruns:
+  - generated_at: "2026-06-12T04:16:33Z"
+    result: "unchanged_no_go"
+    evidence: "After PIP-76 completed, the repo checkout still lacked REQ-### IDs, TASK-### IDs, owners, and a valid spec.json status. PIP-76 comments showed edits were applied under the plugin cache path instead of the repo checkout."
+  - generated_at: "2026-06-12T04:30:00Z"
+    result: "go"
+    evidence: "requirements.md, design.md, tasks.md, and spec.json were corrected in /root/projetos/pipeline-orchestrator-for-codex/repo and rerun through the deterministic 25-check Paperclip format gate."
+verdict: "GO"
+disposition: "done"
+checks_passed: 25
+checks_warning: []
+checks_failed: []
+critical_failures: []
+summary:
+  status: "passed"
+  reason: "Spec satisfies all 25 Paperclip format-gate checks in the repo SSOT checkout."
+checks:
+  - id: 1
+    category: "requirements.md"
+    status: "PASS"
+    evidence: "requirements.md exists and is non-empty."
+  - id: 2
+    category: "requirements.md"
+    status: "PASS"
+    evidence: "Sequential REQ-001 through REQ-009 identifiers are present."
+  - id: 3
+    category: "requirements.md"
+    status: "PASS"
+    evidence: "Acceptance criteria use EARS-style WHEN/IF ... SHALL patterns."
+  - id: 4
+    category: "requirements.md"
+    status: "PASS"
+    evidence: "Each requirement includes testable acceptance criteria."
+  - id: 5
+    category: "requirements.md"
+    status: "PASS"
+    evidence: "No TODO, FIXME, or TBD markers found."
+  - id: 6
+    category: "design.md"
+    status: "PASS"
+    evidence: "design.md exists and is non-empty."
+  - id: 7
+    category: "design.md"
+    status: "PASS"
+    evidence: "Architecture Overview section is present."
+  - id: 8
+    category: "design.md"
+    status: "PASS"
+    evidence: "Decisions section includes ADR-001 and later ADR entries."
+  - id: 9
+    category: "design.md"
+    status: "PASS"
+    evidence: "Contracts/Interfaces section is present."
+  - id: 10
+    category: "design.md"
+    status: "PASS"
+    evidence: "Alternatives considered are documented for the ADR set."
+  - id: 11
+    category: "design.md"
+    status: "PASS"
+    evidence: "No obvious Portuguese ambiguity markers from the protocol check were found."
+  - id: 12
+    category: "tasks.md"
+    status: "PASS"
+    evidence: "tasks.md exists and is non-empty."
+  - id: 13
+    category: "tasks.md"
+    status: "PASS"
+    evidence: "Sequential TASK-001 through TASK-010 identifiers are present."
+  - id: 14
+    category: "tasks.md"
+    status: "PASS"
+    evidence: "Each top-level task declares an owner."
+  - id: 15
+    category: "tasks.md"
+    status: "PASS"
+    evidence: "Each task includes Done means criteria."
+  - id: 16
+    category: "tasks.md"
+    status: "PASS"
+    evidence: "Wave order and dependencies are declared."
+  - id: 17
+    category: "tasks.md"
+    status: "PASS"
+    evidence: "Each task references at least one REQ-### identifier."
+  - id: 18
+    category: "spec.json"
+    status: "PASS"
+    evidence: "spec.json exists and parses as valid JSON."
+  - id: 19
+    category: "spec.json"
+    status: "PASS"
+    evidence: "spec.json status is approved, which is in the allowed lifecycle vocabulary."
+  - id: 20
+    category: "spec.json"
+    status: "PASS"
+    evidence: "Top-level owners object is non-empty."
+  - id: 21
+    category: "traceability"
+    status: "PASS"
+    evidence: "Each REQ-### identifier is referenced from design.md."
+  - id: 22
+    category: "traceability"
+    status: "PASS"
+    evidence: "Each REQ-### identifier maps to at least one task."
+  - id: 23
+    category: "traceability"
+    status: "PASS"
+    evidence: "Every task requirement reference points to an existing REQ-### identifier."
+  - id: 24
+    category: "versioning"
+    status: "PASS"
+    evidence: "requirements.md, design.md, and tasks.md include Version and Date headers."
+  - id: 25
+    category: "size"
+    status: "PASS"
+    evidence: "All audited files are under 2000 lines."
+next_action: "Proceed to the next approved wave gate; PIP-77 repo-checkout remediation is complete."

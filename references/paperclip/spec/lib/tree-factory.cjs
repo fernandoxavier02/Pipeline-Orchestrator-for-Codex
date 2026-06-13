@@ -13,6 +13,15 @@ const { TEMPLATES, getTemplate } = require('./tree-template.cjs');
 const LOOP_INTERNAL_INSTRUCTION =
   'maximo 3 tentativas, itere por dentro deste cartao, NAO crie cartoes novos por tentativa';
 
+const PAPERCLIP_CONTINUATION_DISPOSITION_INSTRUCTION = [
+  'Ao encerrar este heartbeat, registre uma disposicao que o Paperclip consiga detectar:',
+  '- se a etapa terminou, atualize a issue para done, blocked ou in_review conforme o caso;',
+  '- se ainda ha trabalho nesta mesma issue, poste comment com header "### CONTINUATION_DISPOSITION v1"',
+  '  e YAML contendo status: in_progress, resumeIntent: true, resumeFromRunId: "<run id atual>", next_step: "<acao concreta>".',
+  '  Depois do comment, mantenha a issue em in_progress via PATCH se ela ainda nao terminou.',
+  'Resumo narrativo sozinho nao conta como continuidade.',
+].join('\n');
+
 // Devolve o array de nós do template.
 //   - Aceita complexidade legada (SIMPLES, COMPLEXA, hotfix, review-only) → array direto.
 //   - Aceita tipo hierárquico com variante (ex.: 'feature', 'light') → getTemplate(type, variant).
@@ -113,6 +122,8 @@ function buildBody(node) {
   }
   lines.push('');
   lines.push(`NEXT_STEP: ${node.next === null ? 'FIM' : node.next}`);
+  lines.push('');
+  lines.push(PAPERCLIP_CONTINUATION_DISPOSITION_INSTRUCTION);
   if (Array.isArray(node.parallel) && node.parallel.length > 0) {
     lines.push(`PARALLEL_SIBLINGS: ${node.parallel.join(', ')}`);
   }
@@ -379,4 +390,13 @@ function expandSlices(complexity, n, prevIssueId, variant) {
   return { slices, intermediaries, junction };
 }
 
-module.exports = { nextStep, nodeSpec, nodeSpecFanIn, allParallelSteps, templateFor, expandSlices, LOOP_INTERNAL_INSTRUCTION };
+module.exports = {
+  nextStep,
+  nodeSpec,
+  nodeSpecFanIn,
+  allParallelSteps,
+  templateFor,
+  expandSlices,
+  LOOP_INTERNAL_INSTRUCTION,
+  PAPERCLIP_CONTINUATION_DISPOSITION_INSTRUCTION,
+};

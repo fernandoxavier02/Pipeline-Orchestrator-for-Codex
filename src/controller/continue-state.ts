@@ -11,7 +11,7 @@ export type PersistedGateLogEntry = {
   decision: "pass" | "block" | "skip" | "partial";
   detail: string;
   timestamp: string;
-  hardness?: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT";
+  hardness?: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT" | "AUDIT";
   decided_by?: "controller" | "user" | "system" | "resume-router";
   confidence_impact?: number;
 };

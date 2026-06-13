@@ -76,6 +76,42 @@ describe("workflow runtime routing", () => {
     });
   });
 
+  it("routes direct user-story commands by workflow identity instead of generic feature inference", async () => {
+    await withTempWorkspace(async (root) => {
+      const controller = createPipelineController({
+        workspaceRoot: root,
+        stores: stores(),
+        agentRuntime: completeAgentRuntime(),
+      });
+
+      const result = await controller.start(
+        "/pipeline-orchestrator-for-codex:user-story --simples as a renter I want clearer lease alerts",
+      );
+
+      expect(result.type).toBe("User Story");
+      expect(result.variant).toBe("user-story-light");
+      expect(result.blockedBy).not.toBe("SPEC_ARTIFACT_MISSING");
+    });
+  });
+
+  it("routes direct ux-sim commands by workflow identity instead of generic task classification", async () => {
+    await withTempWorkspace(async (root) => {
+      const controller = createPipelineController({
+        workspaceRoot: root,
+        stores: stores(),
+        agentRuntime: completeAgentRuntime(),
+      });
+
+      const result = await controller.start(
+        "/pipeline-orchestrator-for-codex:ux-sim --complexa onboarding accessibility journey",
+      );
+
+      expect(result.type).toBe("UX Simulation");
+      expect(result.variant).toBe("ux-sim-heavy");
+      expect(result.blockedBy).not.toBe("SPEC_ARTIFACT_MISSING");
+    });
+  });
+
   it("routes spec --audit-only commands without contaminating the spec id with the flag", async () => {
     await withTempWorkspace(async (root) => {
       const controller = createPipelineController({

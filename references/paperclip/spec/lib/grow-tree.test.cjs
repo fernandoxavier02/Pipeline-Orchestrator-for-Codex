@@ -14,7 +14,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 // Import do CLI como módulo testável
-const { runCli } = require('./grow-tree.cjs');
+const { runCli, makeHttpTransport, parsePositiveInt } = require('./grow-tree.cjs');
 
 // ─── FAKE TRANSPORT ───────────────────────────────────────────────────────────
 
@@ -546,4 +546,30 @@ test('T-CLI-58: grow-tree CLI — stepMapJson inválido (não-JSON) retorna exit
     output.stderr.includes('stepMapJson'),
     `stderr deve mencionar "stepMapJson". Recebido: "${output.stderr}"`,
   );
+});
+
+test('T-CLI-59: grow-tree HttpTransport — request pendurado falha com timeout acionável', async () => {
+  const http = require('http');
+  const server = http.createServer((_req, _res) => {
+    // Intencionalmente nao responde; prova que o transport nao fica pendurado.
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const transport = makeHttpTransport(`http://127.0.0.1:${port}`, { timeoutMs: 25 });
+
+  try {
+    await assert.rejects(
+      transport.request({ method: 'GET', path: '/api/companies/PIP-CO/agents', body: null }),
+      /grow-tree\/http-timeout: GET \/api\/companies\/PIP-CO\/agents timed out after 25ms/,
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('T-CLI-60: grow-tree HttpTransport — timeout invalido cai para fallback seguro', () => {
+  assert.strictEqual(parsePositiveInt('125', 30_000), 125);
+  assert.strictEqual(parsePositiveInt('0', 30_000), 30_000);
+  assert.strictEqual(parsePositiveInt('not-a-number', 30_000), 30_000);
 });

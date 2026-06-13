@@ -1,0 +1,70 @@
+{
+  "feature_name": "canonical-v7-portability-closeout",
+  "version": "0.1.1",
+  "created_at": "2026-06-11T00:00:00-03:00",
+  "status": "approved",
+  "phase": "tasks",
+  "next_phase": "wave-gate",
+  "type": "feature",
+  "complexity": "COMPLEXA",
+  "variant": "spec-heavy",
+  "language": "pt-BR",
+  "title": "Canonical v7 Portability Closeout",
+  "summary": "Planejar a portabilidade completa do canônico Claude Code v7.12 para o plugin pipeline-orchestrator-for-codex, preservando o runtime TypeScript, as extensoes exclusivas Codex e a obrigacao de evidencias reais antes de qualquer claim de paridade.",
+  "source_audit": "docs/GAP_ANALYSIS_CANONICAL_VS_CODEX.md",
+  "target_canonical_version": "v7.12.0",
+  "codex_baseline_version": "v0.5.0",
+  "previous_parity_target": "v5.2.0",
+  "requirements_count": 9,
+  "design_components": 9,
+  "tasks_count": 10,
+  "waves_count": 6,
+  "estimated_effort": "10-16 weeks, executed wave-by-wave",
+  "owners": {
+    "requirements": "plan-architect",
+    "design": "plan-architect",
+    "tasks": "plan-architect",
+    "review": "quality-reviewer",
+    "final_validation": "final-validator"
+  },
+  "task_owners": {
+    "TASK-001": "plan-architect",
+    "TASK-002": "executor-controller",
+    "TASK-003": "executor-controller",
+    "TASK-004": "executor-controller",
+    "TASK-005": "executor-controller",
+    "TASK-006": "executor-controller",
+    "TASK-007": "plan-architect",
+    "TASK-008": "quality-reviewer",
+    "TASK-009": "final-validator",
+    "TASK-010": "final-adversarial-orchestrator"
+  },
+  "scope": {
+    "P0": 2,
+    "P1": 4,
+    "P2": 2,
+    "total_goals": 9
+  },
+  "sources": {
+    "gap_analysis": "docs/GAP_ANALYSIS_CANONICAL_VS_CODEX.md",
+    "steering": [
+      ".kiro/CONSTITUTION.md",
+      ".kiro/steering/product.md",
+      ".kiro/steering/tech.md",
+      ".kiro/steering/structure.md",
+      "AGENTS.md"
+    ],
+    "existing_specs": [
+      ".kiro/specs/codex-v5.2-parity",
+      ".kiro/specs/pipeline-trust-restoration"
+    ]
+  },
+  "approvals": {
+    "init": true,
+    "requirements": true,
+    "design": true,
+    "tasks": true,
+    "auto_approved_by_user_request": true,
+    "auto_approved_scope": "spec-artifact-generation-only; every implementation wave still requires its own workflow/method gate"
+  }
+}

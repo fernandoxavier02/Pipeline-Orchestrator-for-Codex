@@ -58,7 +58,7 @@ Toda vez que o cargo precisa decidir o que fazer, consulta nesta ordem:
 
 ---
 
-## 3. Os 4 Axiomas Universais (validos para TODOS workflows)
+## 3. Os 5 Axiomas Universais (validos para TODOS workflows)
 
 ### Axioma 1 — Ambiguidade recorre a canonicos, nunca a Board (salvo ultimo recurso)
 
@@ -93,6 +93,31 @@ Quando final-validator emite `PA_DE_CAL = GO`:
 - Auditoria post-hoc eh permitida (Board pode revisar e abrir issue de correcao depois)
 - Para mudancas que afetam producao (deploy, migration, prod config), o workflow especifico pode override esse axioma e exigir Board approval — declarar isso na spec do workflow.
 
+### Axioma 5 — Todo heartbeat termina com disposicao detectavel
+
+Todo heartbeat que toca uma issue Paperclip deve terminar com uma disposicao que o monitor consiga reconhecer. Resumo narrativo, lista de arquivos, output de teste ou "vou continuar depois" nao bastam.
+
+Use exatamente uma das saidas abaixo:
+
+1. **Etapa concluida:** `PATCH /api/issues/{id}` para `done`, `blocked` ou `in_review`, conforme a realidade.
+2. **Ainda ha trabalho na mesma issue:** poste comment estruturado na issue com header `### CONTINUATION_DISPOSITION v1` e YAML contendo:
+
+   ```yaml
+   status: in_progress
+   resumeIntent: true
+   resumeFromRunId: "{{PAPERCLIP_RUN_ID ou run id atual}}"
+   next_step: "acao concreta que o proximo heartbeat deve executar"
+   remaining_scope:
+     - "item restante ainda dentro desta issue"
+   evidence:
+     - "comment, arquivo, teste ou run que prova o progresso feito"
+   not_done_reason: "por que ainda nao pode marcar done"
+   ```
+
+3. **Trabalho delegado:** crie/linke a follow-up issue e registre o blocker real via `blockedByIssueIds`.
+
+Anti-padrao critico: terminar um heartbeat bem-sucedido deixando a issue em `in_progress` sem `CONTINUATION_DISPOSITION v1`. O Paperclip classificara isso como `successful_run_missing_state`, criara recuperacoes como "Recover missing next step" e a execucao deixara de ser continua.
+
 ---
 
 ## 4. Canal de Comunicacao (substitui AskUserQuestion)
@@ -114,6 +139,7 @@ Quando final-validator emite `PA_DE_CAL = GO`:
 - Postar comment "aguardando confirmacao" em status=in_progress
 - Marcar issue como blocked sem evidence concreta de bloqueio
 - Tentar invocar AskUserQuestion como tool
+- Encerrar run bem-sucedida com progresso e sem `done`, `blocked`, `in_review`, `cancelled`, delegacao real ou `CONTINUATION_DISPOSITION v1`
 
 ---
 

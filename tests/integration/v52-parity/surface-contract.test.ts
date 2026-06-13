@@ -11,6 +11,7 @@ describe("v5.2 parity public surface", () => {
     expect(existsSync(join(ROOT, "agents", "core", "brainstorm-controller.md"))).toBe(true);
     expect(existsSync(join(ROOT, "agents", "brainstorm", "step-00-intake.md"))).toBe(true);
     expect(existsSync(join(ROOT, "agents", "brainstorm", "step-01-explore.md"))).toBe(true);
+    expect(existsSync(join(ROOT, "agents", "brainstorm", "step-01b-alternatives.md"))).toBe(true);
   });
 
   it("ships prescriptive workflow skills beyond the single generic pipeline skill", () => {
@@ -61,6 +62,7 @@ describe("v5.2 parity public surface", () => {
 
   it("makes brainstorm exploration interactive before synthesis", () => {
     const explore = readFileSync(join(ROOT, "agents", "brainstorm", "step-01-explore.md"), "utf8");
+    const alternatives = readFileSync(join(ROOT, "agents", "brainstorm", "step-01b-alternatives.md"), "utf8");
     const controller = readFileSync(join(ROOT, "agents", "core", "brainstorm-controller.md"), "utf8");
     const command = readFileSync(join(ROOT, "commands", "brainstorm.md"), "utf8");
 
@@ -71,6 +73,10 @@ describe("v5.2 parity public surface", () => {
     expect(explore).toContain("STATUS: AWAITING_GATE_RESPONSES");
     expect(explore).not.toContain("Fallback if AskUserQuestion unavailable");
     expect(explore).not.toMatch(/numbered options as plain text/i);
+    expect(alternatives).toContain("brainstorm-alternatives-choice");
+    expect(alternatives).toContain("ALTERNATIVES_SKIPPED");
+    expect(alternatives).toContain("2-4");
+    expect(controller).toContain("01b-alternatives");
     expect(controller).toContain("brainstorm-explore-no-gaps");
     expect(controller).toContain("no synthesis, spec, report, or handoff may proceed");
     expect(command).toContain("guided exchange");

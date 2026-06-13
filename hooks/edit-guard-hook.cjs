@@ -120,6 +120,10 @@ function sessionLockPath(cwd) {
   return path.join(cwd, '.codex', 'pipeline', 'session-lock.json');
 }
 
+function changeContractPath(cwd) {
+  return path.join(cwd, '.codex', 'pipeline', 'change-contract.json');
+}
+
 function nowEpochSeconds() {
   return Math.floor(Date.now() / 1000);
 }
@@ -140,6 +144,22 @@ function readSessionLock(cwd) {
     return parsed;
   } catch {
     return null;
+  }
+}
+
+function readChangeContract(cwd) {
+  try {
+    const p = changeContractPath(cwd);
+    if (!fs.existsSync(p)) return null;
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      allowed_files: Array.isArray(parsed.allowed_files) ? parsed.allowed_files.filter((entry) => typeof entry === 'string') : [],
+      allowed_new_files: Array.isArray(parsed.allowed_new_files) ? parsed.allowed_new_files.filter((entry) => typeof entry === 'string') : [],
+      forbidden_files: Array.isArray(parsed.forbidden_files) ? parsed.forbidden_files.filter((entry) => typeof entry === 'string') : [],
+    };
+  } catch {
+    return { corrupted: true };
   }
 }
 
@@ -205,6 +225,74 @@ function isAllowedPath(cwd, filePath) {
   const normalized = relative.replace(/\\/g, '/');
   const firstPart = normalized.split('/')[0];
   return ALLOWED_PATHS.includes(firstPart);
+}
+
+function normalizeRelativePath(cwd, filePath) {
+  const resolved = realpathWithExistingAncestor(path.resolve(cwd, filePath));
+  let workspaceRoot = path.resolve(cwd);
+  try {
+    workspaceRoot = fs.realpathSync(workspaceRoot);
+  } catch {
+    // Keep the resolved cwd fallback if the temporary workspace disappeared.
+  }
+  return path.relative(workspaceRoot, resolved).replace(/\\/g, '/');
+}
+
+function contractPatternMatches(pattern, filePath) {
+  const normalizedPattern = String(pattern).replace(/\\/g, '/');
+  if (normalizedPattern.endsWith('/**')) {
+    const prefix = normalizedPattern.slice(0, -3);
+    return filePath === prefix || filePath.startsWith(`${prefix}/`);
+  }
+  return filePath === normalizedPattern;
+}
+
+function validateScopeLock(cwd, contract, paths) {
+  if (!contract) {
+    return { ok: true };
+  }
+
+  if (contract.corrupted) {
+    return {
+      ok: false,
+      reason: 'change-contract file is corrupted',
+      outsideAllowed: [],
+      forbiddenTouched: [],
+    };
+  }
+
+  const outsideAllowed = [];
+  const forbiddenTouched = [];
+  for (const filePath of paths) {
+    if (isAllowedPath(cwd, filePath)) continue;
+    const relative = normalizeRelativePath(cwd, filePath);
+    if (relative.startsWith('..')) {
+      outsideAllowed.push(relative);
+      continue;
+    }
+
+    if (contract.forbidden_files.some((pattern) => contractPatternMatches(pattern, relative))) {
+      forbiddenTouched.push(relative);
+      continue;
+    }
+
+    const exists = fs.existsSync(path.resolve(cwd, relative));
+    const allowlist = exists ? contract.allowed_files : contract.allowed_new_files;
+    if (!allowlist.some((pattern) => contractPatternMatches(pattern, relative))) {
+      outsideAllowed.push(relative);
+    }
+  }
+
+  if (outsideAllowed.length > 0 || forbiddenTouched.length > 0) {
+    return {
+      ok: false,
+      reason: 'CHANGE_CONTRACT_SCOPE',
+      outsideAllowed,
+      forbiddenTouched,
+    };
+  }
+
+  return { ok: true };
 }
 
 function isProtectedTool(toolName) {
@@ -318,6 +406,30 @@ function handle(input) {
           `Edit guard blocked ${toolName}: exec-window is EXPIRED (expires_at=${window.expires_at}). ` +
           `Open a fresh exec-window via: node scripts/exec-window/open.cjs ` +
           `{ "session_id": "${lock.session_id}", "purpose": "...", "spawning_agent": "..." }`,
+      },
+    });
+    return;
+  }
+
+  const contract = readChangeContract(cwd);
+  const scopeLock = validateScopeLock(cwd, contract, paths);
+  if (!scopeLock.ok) {
+    recordHookEvent({
+      hook: 'edit-guard',
+      event: 'PreToolUse',
+      decision: 'deny',
+      attempted: toolName,
+      reason: scopeLock.reason,
+      outsideAllowed: scopeLock.outsideAllowed,
+      forbiddenTouched: scopeLock.forbiddenTouched,
+    });
+    emit({
+      hookSpecificOutput: {
+        permissionDecision: 'deny',
+        permissionDecisionReason:
+          `Edit guard blocked ${toolName}: CHANGE_CONTRACT_SCOPE violation. ` +
+          `outside_allowed=${JSON.stringify(scopeLock.outsideAllowed)} ` +
+          `forbidden_touched=${JSON.stringify(scopeLock.forbiddenTouched)}`,
       },
     });
     return;

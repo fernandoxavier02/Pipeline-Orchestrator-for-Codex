@@ -7,6 +7,19 @@ import { resolveValidatedRoot } from "./path-validation.js";
 // Post-review (QUAL-005): hardcoding 200 in tests let weak `<=` assertions
 // pass against the literal even if truncation produced an empty string.
 export const MAX_DETAIL_LENGTH = 200;
+export const CANONICAL_GATE_DECISION_MAP = {
+    BLOCKED: "block",
+    DISPATCHED: "pass",
+    SKIPPED: "skip",
+    APPROVED: "pass",
+    CONFIRMED: "pass",
+    REJECTED: "block",
+    TRIGGERED: "partial",
+    NOT_TRIGGERED: "skip",
+};
+export function normalizeCanonicalGateDecision(decision) {
+    return CANONICAL_GATE_DECISION_MAP[decision];
+}
 // Post-review note (ARCH-003): `source: "controller"` and
 // `source: "dispatch" + dispatchMode: "real"` both collapse to
 // `decided_by: "controller"` in the persisted audit log. This is intentional

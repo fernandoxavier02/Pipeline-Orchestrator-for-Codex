@@ -115,6 +115,19 @@ The field label must be `Recommended command` in the prose or table when using a
 - `/pipeline-orchestrator-for-codex:validate-design <scope>`: validate design quality/contracts.
 - `/pipeline-orchestrator-for-codex:validate-gap <scope>`: gap analysis between plan/spec/docs and implementation.
 
+## Paperclip Dispatch Skills
+
+- `/pipeline-orchestrator-for-codex:paperclip-overview`: list the Paperclip dispatch skill surface.
+- `/pipeline-orchestrator-for-codex:paperclip-feature <feature>`: dry-run and dispatch a Feature tree to Paperclip after confirmation.
+- `/pipeline-orchestrator-for-codex:paperclip-bugfix <bug>`: dry-run and dispatch a Bug Fix tree to Paperclip after confirmation.
+- `/pipeline-orchestrator-for-codex:paperclip-hotfix <incident>`: dry-run and dispatch a Hotfix tree to Paperclip after confirmation.
+- `/pipeline-orchestrator-for-codex:paperclip-audit <scope>`: dry-run and dispatch an Audit tree to Paperclip after confirmation.
+- `/pipeline-orchestrator-for-codex:paperclip-review [scope]`: dry-run and dispatch a Review-Only tree to Paperclip after confirmation.
+- `/pipeline-orchestrator-for-codex:paperclip-spec <spec>`: dry-run and dispatch a Spec tree to Paperclip after confirmation.
+- `/pipeline-orchestrator-for-codex:paperclip-user-story <story>`: dry-run and dispatch a User Story tree to Paperclip after confirmation.
+- `/pipeline-orchestrator-for-codex:paperclip-ux <journey>`: dry-run and dispatch a UX Simulation tree to Paperclip after confirmation.
+- `/pipeline-orchestrator-for-codex:setup-paperclip`: configure the Paperclip integration.
+
 ## Recommendation Rules
 
 When the user includes a request, classify it by intent and risk:

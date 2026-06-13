@@ -19,8 +19,19 @@ export type WorkflowId =
   | "feature-heavy"
   | "feature-light"
   | "help"
+  | "measure-paperclip-fidelity"
+  | "paperclip-audit"
+  | "paperclip-bugfix"
+  | "paperclip-feature"
+  | "paperclip-hotfix"
+  | "paperclip-overview"
+  | "paperclip-review"
+  | "paperclip-spec"
+  | "paperclip-user-story"
+  | "paperclip-ux"
   | "pipeline"
   | "review"
+  | "setup-paperclip"
   | "spec"
   | "spec-audit-only"
   | "spec-design"
@@ -176,6 +187,76 @@ export const WORKFLOW_NEXT_STEPS: Readonly<Record<WorkflowId, WorkflowNextStepRu
     defaultMode: "stop",
     requiresApproval: false,
   },
+  "measure-paperclip-fidelity": {
+    workflow: "measure-paperclip-fidelity",
+    next: null,
+    reason: "Paperclip fidelity measurement is informational; act on the report findings manually.",
+    defaultMode: "stop",
+    requiresApproval: false,
+  },
+  "paperclip-audit": {
+    workflow: "paperclip-audit",
+    next: "verify-completion",
+    reason: "Paperclip audit dispatch finished; verify the created task tree and closeout evidence.",
+    defaultMode: "suggest",
+    requiresApproval: false,
+  },
+  "paperclip-bugfix": {
+    workflow: "paperclip-bugfix",
+    next: "verify-completion",
+    reason: "Paperclip bugfix dispatch finished; verify the created task tree and closeout evidence.",
+    defaultMode: "suggest",
+    requiresApproval: false,
+  },
+  "paperclip-feature": {
+    workflow: "paperclip-feature",
+    next: "verify-completion",
+    reason: "Paperclip feature dispatch finished; verify the created task tree and closeout evidence.",
+    defaultMode: "suggest",
+    requiresApproval: false,
+  },
+  "paperclip-hotfix": {
+    workflow: "paperclip-hotfix",
+    next: "verify-completion",
+    reason: "Paperclip hotfix dispatch finished; verify the created task tree and closeout evidence.",
+    defaultMode: "suggest",
+    requiresApproval: false,
+  },
+  "paperclip-overview": {
+    workflow: "paperclip-overview",
+    next: null,
+    reason: "Paperclip overview is informational; invoke the recommended Paperclip skill explicitly when ready.",
+    defaultMode: "stop",
+    requiresApproval: false,
+  },
+  "paperclip-review": {
+    workflow: "paperclip-review",
+    next: "verify-completion",
+    reason: "Paperclip review dispatch finished; verify the created task tree and closeout evidence.",
+    defaultMode: "suggest",
+    requiresApproval: false,
+  },
+  "paperclip-spec": {
+    workflow: "paperclip-spec",
+    next: "verify-completion",
+    reason: "Paperclip spec dispatch finished; verify the created task tree and closeout evidence.",
+    defaultMode: "suggest",
+    requiresApproval: false,
+  },
+  "paperclip-user-story": {
+    workflow: "paperclip-user-story",
+    next: "verify-completion",
+    reason: "Paperclip user story dispatch finished; verify the created task tree and closeout evidence.",
+    defaultMode: "suggest",
+    requiresApproval: false,
+  },
+  "paperclip-ux": {
+    workflow: "paperclip-ux",
+    next: "verify-completion",
+    reason: "Paperclip UX dispatch finished; verify the created task tree and closeout evidence.",
+    defaultMode: "suggest",
+    requiresApproval: false,
+  },
   pipeline: {
     workflow: "pipeline",
     next: "verify-completion",
@@ -187,6 +268,13 @@ export const WORKFLOW_NEXT_STEPS: Readonly<Record<WorkflowId, WorkflowNextStepRu
     workflow: "review",
     next: "verify-completion",
     reason: "Review finished; verify the completion claim before GO.",
+    defaultMode: "suggest",
+    requiresApproval: false,
+  },
+  "setup-paperclip": {
+    workflow: "setup-paperclip",
+    next: "verify-completion",
+    reason: "Paperclip setup finished; verify the configured integration before closeout.",
     defaultMode: "suggest",
     requiresApproval: false,
   },

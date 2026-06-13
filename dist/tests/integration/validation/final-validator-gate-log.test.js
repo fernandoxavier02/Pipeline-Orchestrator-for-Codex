@@ -146,4 +146,31 @@ describe("final validator gate-log decisions", () => {
         expect(result.decision).toBe("NO-GO");
         expect(result.blockingGates).toEqual(["STOP_RULE"]);
     });
+    it("does not let AUDIT gates block closeout even when they record a block decision", () => {
+        const result = runFinalValidator({
+            reviews: [{ status: "approved" }],
+            confidenceScore: 0.92,
+            gateLog: [
+                {
+                    gate: "BOOTSTRAP_EXEMPTION_USED",
+                    hardness: "AUDIT",
+                    phase: "phase-1",
+                    decision: "block",
+                    decided_by: "controller",
+                    timestamp: "2026-04-02T12:00:00.000Z",
+                    detail: "Audit-only governance event",
+                    confidence_impact: 0,
+                },
+            ],
+            verificationEvidence: [
+                { kind: "build", passed: true, label: "npm run build" },
+                { kind: "tests", passed: true, label: "npm test" },
+                { kind: "final-review", passed: true, label: "final adversarial review" },
+            ],
+            validationIntent: "standard",
+            mode: "review-only",
+        });
+        expect(result.decision).toBe("GO");
+        expect(result.blockingGates).toEqual([]);
+    });
 });

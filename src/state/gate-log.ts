@@ -13,6 +13,16 @@ import { resolveValidatedRoot } from "./path-validation.js";
 
 export type DecidedBy = "controller" | "user" | "system" | "resume-router";
 export type DispatchMode = "real" | "emulated";
+export type GateDecision = "pass" | "block" | "skip" | "partial";
+export type CanonicalGateDecision =
+  | "BLOCKED"
+  | "DISPATCHED"
+  | "SKIPPED"
+  | "APPROVED"
+  | "CONFIRMED"
+  | "REJECTED"
+  | "TRIGGERED"
+  | "NOT_TRIGGERED";
 
 export type Provenance =
   | { source: "user" }
@@ -22,9 +32,15 @@ export type Provenance =
 
 export interface RecordGateInput {
   gate: string;
-  hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT";
+  hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT" | "AUDIT";
   phase: string;
-  decision: "pass" | "block" | "skip" | "partial";
+  // Wave 1 / 5.6 portability note: the runtime persists the local four-value
+  // subset (`pass|block|skip|partial`) enforced by gateDecisionSchema. Canonical
+  // Paperclip docs describe a broader protocol vocabulary, but those protocol
+  // states are intentionally recorded in `protocol-events.jsonl` or translated
+  // before they reach this writer. Do not widen this persisted enum without an
+  // explicit compatibility migration for existing gate-decisions.jsonl readers.
+  decision: GateDecision;
   detail: string;
   confidence_impact?: number;
   provenance: Provenance;
@@ -35,6 +51,21 @@ export interface RecordGateInput {
 // Post-review (QUAL-005): hardcoding 200 in tests let weak `<=` assertions
 // pass against the literal even if truncation produced an empty string.
 export const MAX_DETAIL_LENGTH = 200;
+
+export const CANONICAL_GATE_DECISION_MAP: Record<CanonicalGateDecision, GateDecision> = {
+  BLOCKED: "block",
+  DISPATCHED: "pass",
+  SKIPPED: "skip",
+  APPROVED: "pass",
+  CONFIRMED: "pass",
+  REJECTED: "block",
+  TRIGGERED: "partial",
+  NOT_TRIGGERED: "skip",
+};
+
+export function normalizeCanonicalGateDecision(decision: CanonicalGateDecision): GateDecision {
+  return CANONICAL_GATE_DECISION_MAP[decision];
+}
 
 // Post-review note (ARCH-003): `source: "controller"` and
 // `source: "dispatch" + dispatchMode: "real"` both collapse to

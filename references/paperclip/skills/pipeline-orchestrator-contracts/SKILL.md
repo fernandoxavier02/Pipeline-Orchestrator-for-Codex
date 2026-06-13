@@ -20,6 +20,65 @@ No Claude Code, contratos sao YAMLs embutidos no output (workaround do Achado 7)
 
 A duplicacao "comment + API call" eh proposital — o comment serve de log auditavel, e a API call dispara o workflow.
 
+## 0. HEARTBEAT_DISPOSITION — Encerrar sem travar a execucao
+
+**Quando usar:**
+- Sempre que sua run produziu progresso, mas a issue ainda NAO deve virar `done`, `cancelled`, `blocked` ou `in_review`
+- Sempre que ainda existe trabalho no mesmo escopo e voce quer que o Paperclip continue a partir de um checkpoint claro
+
+**Por que isso existe:**
+O Paperclip considera uma run `succeeded` sem disposicao clara como `successful_run_missing_state` / `clear_next_step`. Texto solto como "disposicao: in_progress" nao basta se nao houver um proximo passo concreto. Isso cria recovery issues e quebra a execucao continua.
+
+**Como agir:**
+
+### Passo A — Postar comment estruturado na issue atual
+
+Use este cabecalho literal:
+
+```markdown
+### CONTINUATION_DISPOSITION v1
+
+```yaml
+status: in_progress
+resumeIntent: true
+resumeFromRunId: "{{PAPERCLIP_RUN_ID ou run id atual}}"
+next_step: "{{proxima acao concreta, executavel, sem ambiguidade}}"
+remaining_scope:
+  - "{{item restante 1}}"
+  - "{{item restante 2}}"
+evidence:
+  - "{{comment/file/test/run que prova o progresso ja feito}}"
+not_done_reason: "{{por que ainda nao pode marcar done}}"
+```
+```
+
+### Passo B — Manter a issue explicitamente em progresso
+
+```bash
+PATCH /api/issues/{issue_id} body: { "status": "in_progress" }
+```
+
+### Passo C — Encerrar a run
+
+Depois do comment estruturado + PATCH, encerre a run. O Paperclip tem um caminho de continuacao parseavel e nao deve abrir recovery por `clear_next_step`.
+
+**Formato minimo aceito quando nao houver tempo:**
+
+```markdown
+### CONTINUATION_DISPOSITION v1
+
+status: in_progress
+resumeIntent: true
+resumeFromRunId: "{{run id atual}}"
+next_step: "{{acao concreta}}"
+```
+
+**Anti-padroes:**
+- ❌ "Disposicao: in_progress" sem `next_step`
+- ❌ "Continuar depois" sem acao concreta
+- ❌ Comment de resumo sem `resumeIntent: true`
+- ❌ Parar apos progresso util sem comment estruturado de disposicao
+
 ## 1. GATE_REQUEST — Solicitar decisao do Board
 
 **Quando usar:**
@@ -294,6 +353,7 @@ Seu agent.name eh slug literal do pipeline-orchestrator original (ex: `informati
 |---|---|---|
 | Pedir decisao Board | `### GATE_REQUEST v1` | abrir approval request + status=blocked |
 | Despachar subordinado | `### DISPATCH_REQUEST v1` | criar child issue + status=blocked |
+| Continuar no mesmo escopo | `### CONTINUATION_DISPOSITION v1` | status=in_progress + resumeIntent |
 | Registrar orquestracao | `### ORCHESTRATOR_DECISION v1` | nenhuma |
 | Modo research | `### PLAN_MODE_REQUEST v1` | self-policiar Read-only |
 | Validar processo | `### SENTINEL_VERDICT v1` | conforme verdict |

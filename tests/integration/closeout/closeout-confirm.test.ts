@@ -17,7 +17,7 @@ import * as dispatchRunRoleModule from "../../../src/dispatcher/run-role.js";
 
 type CloseoutGateLogEntry = {
   gate: string;
-  hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT";
+  hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT" | "AUDIT";
   phase: string;
   decision: "pass" | "block" | "skip" | "partial";
   decided_by: "controller";
@@ -448,6 +448,20 @@ describe("closeout confirmation", () => {
 
     expect(result.decision).toBe("NO-GO");
     expect(result.missingEvidence).toEqual(["build", "tests", "final-review"]);
+    expect(result.blockingGates).toContain("STOP_BEFORE_PA_DE_CAL");
+
+    const gateLog = await createGateLog(runtime.stateDir).list();
+    expect(gateLog).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          gate: "STOP_BEFORE_PA_DE_CAL",
+          hardness: "HARD",
+          phase: "phase-3",
+          decision: "block",
+        }),
+      ]),
+    );
+    await expect(readFile(result.tracePath, "utf8")).resolves.toContain("phase-3:STOP_BEFORE_PA_DE_CAL:block");
   });
 
   it("persists the authoritative closeout verdict and missing evidence to session state", async () => {
@@ -906,7 +920,7 @@ describe("closeout confirmation", () => {
     });
 
     expect(result.decision).toBe("NO-GO");
-    expect(result.blockingGates).toEqual([]);
+    expect(result.blockingGates).toEqual(["STOP_BEFORE_PA_DE_CAL"]);
     expect(result.missingEvidence).toEqual(["final-review"]);
   });
 

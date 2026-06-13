@@ -1,3 +1,5 @@
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { runAdversarialReview } from "../review/adversarial-review.js";
 import { createFinalAdversarialOrchestrator } from "../review/final-adversarial-orchestrator.js";
 import { createReviewOrchestrator } from "../review/review-orchestrator.js";
@@ -9,6 +11,8 @@ import { createQualityGateRouter } from "./quality-gate-router.js";
 import { resolveExecutionComplexity } from "../modes/complexity-resolution.js";
 import { reductionPolicyForMode } from "../modes/mode-policy.js";
 const authoritativeFinalReviewResultSymbol = Symbol("authoritative-final-review-result");
+const DEFAULT_FIX_LOOP_MAX_ATTEMPTS = 3;
+const DIFF_DISCIPLINE_FIX_LOOP_MAX_ATTEMPTS = 5;
 function normalizeFiles(files) {
     if (!Array.isArray(files)) {
         return [];
@@ -80,7 +84,7 @@ function resolveReworkFindings(review) {
         ? candidate.reviews
             .filter((entry) => !!entry && typeof entry === "object")
             .filter((entry) => typeof entry.reviewer === "string"
-            && ["batch-reviewer", "executor-spec-reviewer", "quality-reviewer"].includes(entry.reviewer))
+            && ["batch-reviewer", "executor-spec-reviewer", "quality-reviewer", "diff-discipline-reviewer"].includes(entry.reviewer))
             .flatMap((entry) => Array.isArray(entry.findings)
             ? entry.findings.filter((finding) => !!finding && typeof finding === "object")
             : [])
@@ -91,6 +95,25 @@ function resolveReworkFindings(review) {
     return Array.isArray(candidate.findings)
         ? candidate.findings.filter((finding) => !!finding && typeof finding === "object")
         : undefined;
+}
+function isDiffDisciplineReviewBlocked(review) {
+    if (!review || typeof review !== "object") {
+        return false;
+    }
+    const candidate = review;
+    const blockedReviewer = Array.isArray(candidate.reviews)
+        ? candidate.reviews.some((entry) => !!entry
+            && typeof entry === "object"
+            && entry.reviewer === "diff-discipline-reviewer"
+            && entry.status === "blocked")
+        : false;
+    if (blockedReviewer) {
+        return true;
+    }
+    return Array.isArray(candidate.findings)
+        && candidate.findings.some((finding) => !!finding
+            && typeof finding === "object"
+            && finding.source === "diff-discipline");
 }
 function isCheckpointStatus(value) {
     return value === "passed" || value === "failed" || value === "STOP_RULE";
@@ -270,6 +293,22 @@ function validateBatchAgainstChangeContract(input) {
     }
     return { ok: true };
 }
+function withActiveChangeContract(input) {
+    if (!input.sessionRoot || !input.changeContract) {
+        return input.action();
+    }
+    const contractPath = join(input.sessionRoot, "change-contract.json");
+    mkdirSync(input.sessionRoot, { recursive: true });
+    writeFileSync(contractPath, JSON.stringify(input.changeContract), "utf8");
+    return input.action().finally(() => {
+        try {
+            unlinkSync(contractPath);
+        }
+        catch {
+            // Best-effort cleanup: a blocked attempt may already have removed it.
+        }
+    });
+}
 async function defaultRunBatch(batch, dependencies) {
     const executeRole = dependencies?.runRole ?? runRole;
     const adversarialReview = dependencies?.adversarialReview ?? runAdversarialReview;
@@ -326,10 +365,10 @@ function toPlannedBatch(batch) {
 function normalizeScenarioPath(path) {
     return path.replace(/\\/g, "/");
 }
-function createBatchReviewLoopContext(iteration) {
+function createBatchReviewLoopContext(iteration, maxIterations = DEFAULT_FIX_LOOP_MAX_ATTEMPTS) {
     return {
         iteration,
-        maxIterations: 3,
+        maxIterations,
         afterFix: iteration > 0,
     };
 }
@@ -499,6 +538,108 @@ async function resolveQualityGatePlan(input) {
     }
     return parsed;
 }
+function isAuditReportOnlyVariant(variant) {
+    return typeof variant === "string" && variant.startsWith("audit-");
+}
+async function executeAuditReportOnly(input) {
+    const auditTasks = input.tasks.length > 0 ? input.tasks : ["audit-report-scope"];
+    const agents = [
+        {
+            role: "audit-intake",
+            expectedOutput: ["AUDIT_INTAKE_RESULT", "AuditIntake"],
+            prompt: "Perform read-only audit intake. Inventory the requested scope and return evidence-based findings only.",
+        },
+        {
+            role: "audit-domain-analyzer",
+            expectedOutput: ["DOMAIN_ANALYSIS", "DependencyImpactAudit", "DecisionSSOTAudit", "ContractGovernanceAudit"],
+            prompt: "Perform read-only architecture, domain, SSOT, and contract analysis for the audit scope.",
+        },
+        {
+            role: "audit-compliance-checker",
+            expectedOutput: ["COMPLIANCE_REPORT", "DataGovernanceAudit", "FrontendDeepAudit", "BackendDeepAudit", "DeliveryGovernanceAudit"],
+            prompt: "Perform read-only data, security, frontend, backend, test, and governance compliance review.",
+        },
+        {
+            role: "audit-risk-matrix-generator",
+            expectedOutput: ["AUDIT_REPORT", "AuditMasterSeal"],
+            prompt: "Consolidate read-only audit findings into a risk matrix with severity, evidence, and recommendations.",
+        },
+    ];
+    const reports = [];
+    for (const agent of agents) {
+        if (!input.runRole) {
+            reports.push({
+                role: agent.role,
+                output: {
+                    status: "completed",
+                    summary: "Local report-only audit role completed without runtime dispatch.",
+                    evidence: auditTasks,
+                },
+            });
+            continue;
+        }
+        reports.push(await input.runRole({
+            mode: "single-agent",
+            role: agent.role,
+            phase: "phase-2",
+            prompt: agent.prompt,
+            input: {
+                audit_request: input.summary ?? "",
+                scope: auditTasks,
+                variant: input.variant,
+                report_only: true,
+            },
+            expectedOutput: agent.expectedOutput,
+            filesInScope: auditTasks,
+            authorityLevel: "reviewer",
+            freshContext: true,
+            reviewOnly: true,
+            sessionRoot: input.sessionRoot,
+            sessionId: input.sessionId,
+        }));
+    }
+    return markAuthoritativeFinalReviewResult({
+        status: "completed",
+        execution: {
+            mode: "report-only",
+            variant: input.variant,
+            reports: reports.map((report) => ({
+                role: report.role,
+                output: report.output,
+            })),
+        },
+        changedFiles: [],
+        review: {
+            status: "approved",
+            mode: "report-only",
+            reports: reports.map((report) => report.role),
+        },
+        finalReview: {
+            status: "approved",
+            finalDecision: "approved",
+            mode: "report-only-audit",
+        },
+        verificationEvidence: {
+            scenarios: auditTasks,
+            evidence: auditTasks,
+        },
+        proof: {
+            approvedScenarios: auditTasks,
+            tddApproval: "APPROVED",
+            redValidation: {
+                status: "approved",
+                reasons: ["Report-only audit uses evidence-first validation instead of TDD."],
+            },
+            checkpointEvidence: [{
+                    batchName: "audit-report-only",
+                    requiredCheckpoints: 1,
+                    verifiedCheckpoints: 1,
+                    evidence: auditTasks,
+                }],
+            fixAttempts: [],
+        },
+    });
+}
 export function createExecutorController(dependencies = {}) {
     let currentExecutionMode;
     let currentSessionRoot;
@@ -520,7 +661,8 @@ export function createExecutorController(dependencies = {}) {
         });
     const runFixLoop = async (input) => {
         let strategy = input.strategy;
-        for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const maxAttempts = input.maxAttempts ?? DEFAULT_FIX_LOOP_MAX_ATTEMPTS;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
             const success = await input.attemptFix({ attempt, strategy });
             if (success) {
                 return {
@@ -535,7 +677,7 @@ export function createExecutorController(dependencies = {}) {
         }
         return {
             status: "FIX_LOOP_EXHAUSTED",
-            attempts: 3,
+            attempts: maxAttempts,
             strategyChangeRequired: true,
         };
     };
@@ -552,6 +694,16 @@ export function createExecutorController(dependencies = {}) {
                 complexity: input.complexity,
                 variant: input.variant,
             });
+            if (isAuditReportOnlyVariant(input.variant)) {
+                return executeAuditReportOnly({
+                    runRole: dependencies.runRole,
+                    summary: input.proposal?.summary,
+                    tasks,
+                    variant: input.variant,
+                    sessionRoot: input.sessionRoot,
+                    sessionId: input.sessionId,
+                });
+            }
             const batchPolicy = reductionPolicyForMode(input.mode);
             const planned = input.batch
                 ? {
@@ -634,7 +786,11 @@ export function createExecutorController(dependencies = {}) {
                     };
                 }
                 const executionBatch = toExecutionBatch(batch, changeContract);
-                const batchResult = await runBatch(executionBatch);
+                const batchResult = await withActiveChangeContract({
+                    sessionRoot: currentSessionRoot,
+                    changeContract,
+                    action: () => runBatch(executionBatch),
+                });
                 const actualChangedFiles = extractExecutionChangedFiles(batchResult);
                 const verificationEvidence = deriveControllerVerificationEvidence({
                     approvedScenarios: proof.approvedScenarios,
@@ -765,18 +921,27 @@ export function createExecutorController(dependencies = {}) {
                     && "status" in activeBatchReview
                     && activeBatchReview.status === "blocked") {
                     if (dependencies.runRole || batchFixAttempts.length > 0) {
+                        const isDiffDisciplineRework = isDiffDisciplineReviewBlocked(activeBatchReview);
+                        const reviewLoopMaxAttempts = isDiffDisciplineRework
+                            ? DIFF_DISCIPLINE_FIX_LOOP_MAX_ATTEMPTS
+                            : DEFAULT_FIX_LOOP_MAX_ATTEMPTS;
                         const fixLoopResult = await runFixLoop({
-                            strategy: "independent-review-rework",
+                            strategy: isDiffDisciplineRework ? "diff-discipline-rework" : "independent-review-rework",
+                            maxAttempts: reviewLoopMaxAttempts,
                             attemptFix: async ({ attempt, strategy }) => {
-                                const fixDispatch = await dispatchExecutorFix({
-                                    runRole: dependencies.runRole,
-                                    batch: executionBatch,
-                                    attempt,
-                                    strategy,
-                                    findings: resolveReworkFindings(activeBatchReview),
-                                    changedDomains,
+                                const fixDispatch = await withActiveChangeContract({
                                     sessionRoot: currentSessionRoot,
-                                    sessionId: currentSessionId,
+                                    changeContract,
+                                    action: () => dispatchExecutorFix({
+                                        runRole: dependencies.runRole,
+                                        batch: executionBatch,
+                                        attempt,
+                                        strategy,
+                                        findings: resolveReworkFindings(activeBatchReview),
+                                        changedDomains,
+                                        sessionRoot: currentSessionRoot,
+                                        sessionId: currentSessionId,
+                                    }),
                                 });
                                 const structuredResult = parseExecutorFixResult(fixDispatch && typeof fixDispatch === "object" && "output" in fixDispatch
                                     ? fixDispatch.output
@@ -830,7 +995,7 @@ export function createExecutorController(dependencies = {}) {
                                     changedDomains,
                                     mode: input.mode,
                                     changeContract,
-                                    reviewLoop: createBatchReviewLoopContext(attempt),
+                                    reviewLoop: createBatchReviewLoopContext(attempt, reviewLoopMaxAttempts),
                                 });
                                 currentBatchResult.batchReview = activeBatchReview;
                                 return !(activeBatchReview
@@ -892,17 +1057,21 @@ export function createExecutorController(dependencies = {}) {
                     const fixLoopResult = await runFixLoop({
                         strategy: "same-plan",
                         attemptFix: async ({ attempt, strategy }) => {
-                            const fixDispatch = await dispatchExecutorFix({
-                                runRole: dependencies.runRole,
-                                batch: executionBatch,
-                                attempt,
-                                strategy,
-                                findings: batchResult.review && typeof batchResult.review === "object" && "findings" in batchResult.review
-                                    ? batchResult.review.findings
-                                    : undefined,
-                                changedDomains,
+                            const fixDispatch = await withActiveChangeContract({
                                 sessionRoot: currentSessionRoot,
-                                sessionId: currentSessionId,
+                                changeContract,
+                                action: () => dispatchExecutorFix({
+                                    runRole: dependencies.runRole,
+                                    batch: executionBatch,
+                                    attempt,
+                                    strategy,
+                                    findings: batchResult.review && typeof batchResult.review === "object" && "findings" in batchResult.review
+                                        ? batchResult.review.findings
+                                        : undefined,
+                                    changedDomains,
+                                    sessionRoot: currentSessionRoot,
+                                    sessionId: currentSessionId,
+                                }),
                             });
                             const structuredResult = parseExecutorFixResult(fixDispatch && typeof fixDispatch === "object" && "output" in fixDispatch
                                 ? fixDispatch.output

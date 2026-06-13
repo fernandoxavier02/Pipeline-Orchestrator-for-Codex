@@ -239,11 +239,11 @@ Authority:
 
 - medium
 
-### `docs/adapter-guide.md`
+### `docs/migrations/claude-to-codex.md`
 
 Role:
 
-- explains adaptation mindset across environments
+- explains the Claude-to-Codex Paperclip adaptation boundary
 
 Authority:
 
@@ -251,13 +251,13 @@ Authority:
 
 ### Example flows
 
-- `docs/examples/simple-bugfix.md`
-- `docs/examples/medium-feature.md`
-- `docs/examples/complex-audit.md`
+- `docs/examples/audit-flow.md`
+- `docs/examples/feature-flow.md`
+- `docs/examples/spec-flow.md`
 
 Role:
 
-- illustrate intended operator UX and expected flow shape
+- illustrate repo-level Paperclip workflow surfaces and claim boundaries
 
 Authority:
 

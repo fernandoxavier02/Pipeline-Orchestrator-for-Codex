@@ -25,6 +25,7 @@ const VALID_HARDNESS: ReadonlySet<GateHardness> = new Set([
   "HARD",
   "CIRCUIT_BREAKER",
   "SOFT",
+  "AUDIT",
 ]);
 
 describe("R9: Gate Hardness Registry Consistency", () => {

@@ -26,9 +26,13 @@ describe("Paperclip package surface", () => {
     expect(files).toContain("commands/paperclip-feature.md");
     expect(files).toContain("commands/paperclip-bugfix.md");
     expect(files).toContain("commands/setup-paperclip.md");
+    expect(files).toContain("skills/paperclip-feature/SKILL.md");
+    expect(files).toContain("skills/paperclip-bugfix/SKILL.md");
+    expect(files).toContain("skills/setup-paperclip/SKILL.md");
     expect(files).toContain("references/paperclip/spec/lib/grow-tree.cjs");
     expect(files).toContain("references/paperclip/spec/lib/tree-factory.cjs");
     expect(files).toContain("references/paperclip/spec/lib/tree-factory-io.cjs");
     expect(files).toContain("references/paperclip/spec/lib/classify-bridge.cjs");
+    expect(files.some((file) => file.startsWith(".paperclip-hotfix/"))).toBe(false);
   });
 });

@@ -4,12 +4,49 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentRuntimeUnavailableError } from "../dispatcher/run-role.js";
 function buildPrompt(request) {
+    const roleSpecificContract = request.role === "quality-gate-router"
+        ? [
+            "For role quality-gate-router, return JSON with exactly this shape:",
+            "{",
+            '  "batchSize": number,',
+            '  "regressionProofs": number,',
+            '  "approvedScenarios": ["tests/path-or-report-evidence-id"],',
+            '  "batches": [{ "name": "batch-1", "tasks": ["file-or-task"], "parallel_eligible": false, "parallel_reason": "why" }]',
+            "}",
+        ].join("\n")
+        : request.role === "pre-tester"
+            ? [
+                "For role pre-tester, return JSON with exactly this shape:",
+                "{",
+                '  "approvedScenarios": ["tests/path-or-report-evidence-id"],',
+                '  "tddApproval": "APPROVED",',
+                '  "redValidation": { "status": "approved", "reasons": [] }',
+                "}",
+            ].join("\n")
+            : request.role === "checkpoint-validator"
+                ? [
+                    "For role checkpoint-validator, return JSON with exactly this shape:",
+                    "{",
+                    '  "status": "passed",',
+                    '  "checkpointName": "batch-1",',
+                    '  "consecutiveFailures": 0,',
+                    '  "requiredCheckpoints": 1,',
+                    '  "verifiedCheckpoints": 1,',
+                    '  "coverage": 1',
+                    "}",
+                ].join("\n")
+                : [
+                    "Return ONLY a single JSON object. Do not wrap it in markdown.",
+                    "The object must include: status, role, summary, evidence.",
+                ].join("\n");
     return [
         `PIPELINE_AGENT_FQN: ${request.role}`,
         "",
         "You are a Codex CLI child worker for Pipeline Orchestrator.",
-        "Return ONLY a single JSON object. Do not wrap it in markdown.",
-        "The object must include: status, role, summary, evidence.",
+        roleSpecificContract,
+        "",
+        "EXPECTED_OUTPUT:",
+        JSON.stringify(request.expectedOutput, null, 2),
         "",
         "REQUEST_JSON:",
         JSON.stringify(request, null, 2),
@@ -102,7 +139,9 @@ async function runCodexExec(prompt, options) {
 export function createCodexCliProcessRuntime(options = {}) {
     const codexBin = options.codexBin ?? process.env.CODEX_CLI_PATH ?? "codex";
     const cwd = options.cwd ?? process.cwd();
-    const timeoutMs = options.timeoutMs ?? 120_000;
+    const configuredTimeout = Number(process.env.CODEX_CLI_PROCESS_TIMEOUT_MS);
+    const timeoutMs = options.timeoutMs
+        ?? (Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 120_000);
     return {
         capabilities: {
             spawnAgent: true,

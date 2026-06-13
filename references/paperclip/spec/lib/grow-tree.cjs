@@ -48,19 +48,27 @@ const { assertSafeId, resolveRole, growSpine } = require('./tree-factory-io.cjs'
 // ─── HTTP TRANSPORT (produção) ────────────────────────────────────────────────
 // Envolve http.request para o loopback. Só usado quando --confirm e CLI real.
 
-function makeHttpTransport(baseUrl) {
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function makeHttpTransport(baseUrl, transportOptions = {}) {
   const http = require('http');
-  const url = require('url');
   const base = baseUrl || process.env.PAPERCLIP_API_URL || 'http://127.0.0.1:3100';
+  const timeoutMs = parsePositiveInt(
+    transportOptions.timeoutMs || process.env.PAPERCLIP_HTTP_TIMEOUT_MS,
+    30_000,
+  );
 
   return {
     request({ method, path: reqPath, body }) {
       return new Promise((resolve, reject) => {
-        const parsed = url.parse(base);
+        const parsed = new URL(base);
         const bodyStr = body ? JSON.stringify(body) : '';
         const options = {
           hostname: parsed.hostname,
-          port: parsed.port || 3100,
+          port: parsed.port || (parsed.protocol === 'https:' ? 443 : 3100),
           path: reqPath,
           method,
           headers: {
@@ -84,6 +92,13 @@ function makeHttpTransport(baseUrl) {
         });
 
         req.on('error', reject);
+        req.setTimeout(timeoutMs, () => {
+          req.destroy(
+            new Error(
+              `grow-tree/http-timeout: ${method} ${reqPath} timed out after ${timeoutMs}ms against ${base}`,
+            ),
+          );
+        });
         if (bodyStr) req.write(bodyStr);
         req.end();
       });
@@ -349,4 +364,4 @@ if (require.main === module) {
 }
 
 // ─── EXPORTS (para testes) ────────────────────────────────────────────────────
-module.exports = { runCli, indexRoster, makeHttpTransport, parseComplexity, validateComplexity };
+module.exports = { runCli, indexRoster, makeHttpTransport, parseComplexity, validateComplexity, parsePositiveInt };

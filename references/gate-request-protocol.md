@@ -171,6 +171,7 @@ When a GATE_REQUEST corresponds to a gate in the 22-gate registry, the parent du
 | `phase-0-info-gate-<topic>` | `INFO_GATE_BLOCKED` (only when blocking) | HARD |
 | `brainstorm-explore-q<N>` | (no canonical gate — protocol-events only) | n/a |
 | `brainstorm-explore-no-gaps` | (no canonical gate — protocol-events only) | n/a |
+| `brainstorm-alternatives-choice` | (no canonical gate — protocol-events only) | n/a |
 | `brainstorm-handoff` | (no canonical gate — protocol-events only) | n/a |
 | Any other custom gate_id | (no canonical gate — protocol-events only) | n/a |
 

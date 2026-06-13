@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paperclip Runtime Surfaces</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8f5;
+      --ink: #1f2824;
+      --muted: #5c6862;
+      --line: #b8c2bb;
+      --surface: #ffffff;
+      --accent: #2f6f5e;
+      --warn: #915f1d;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Aptos", "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+      letter-spacing: 0;
+    }
+
+    .boundary {
+      margin: 0 0 24px;
+      color: var(--muted);
+      max-width: 780px;
+    }
+
+    .diagram {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .node {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: 6px;
+      padding: 14px;
+      min-height: 96px;
+    }
+
+    .node strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--accent);
+    }
+
+    .node span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .blocked strong {
+      color: var(--warn);
+    }
+
+    details {
+      margin-top: 20px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      padding: 12px 14px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    code {
+      font-family: "Cascadia Mono", "SFMono-Regular", monospace;
+      font-size: 0.94em;
+    }
+
+    @media (max-width: 760px) {
+      .diagram {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Paperclip Runtime Surfaces</h1>
+    <p class="boundary">
+      Repo-only interactive documentation for Wave 6B. This file does not prove Marketplace
+      publication, installed-cache activation, VPS dispatch, or live plugin execution.
+    </p>
+
+    <section class="diagram" aria-label="Runtime surface flow">
+      <article class="node" data-surface="command">
+        <strong>Command</strong>
+        <span><code>commands/paperclip-*.md</code> exposes discoverable entrypoints.</span>
+      </article>
+      <article class="node" data-surface="skill">
+        <strong>Skill</strong>
+        <span><code>skills/paperclip-*/SKILL.md</code> owns workflow contracts.</span>
+      </article>
+      <article class="node" data-surface="runtime">
+        <strong>Runtime</strong>
+        <span><code>skills/pipeline/SKILL.md</code>, <code>src/**</code>, and <code>hooks/**</code> own behavior.</span>
+      </article>
+      <article class="node blocked" data-surface="blocked">
+        <strong>Runtime Missing</strong>
+        <span>Mandatory agent gaps stop with <code>blocked-no-agent-runtime</code>.</span>
+      </article>
+      <article class="node" data-surface="references">
+        <strong>References</strong>
+        <span><code>references/paperclip/**</code> stores templates and fidelity helpers.</span>
+      </article>
+      <article class="node" data-surface="tests">
+        <strong>Tests</strong>
+        <span><code>tests/compat/**</code>, <code>tests/bdd/**</code>, and <code>tests/regression/**</code> prove repo behavior.</span>
+      </article>
+      <article class="node" data-surface="eval">
+        <strong>Eval Gate</strong>
+        <span><code>evals/**</code> records local telemetry and validation claims.</span>
+      </article>
+      <article class="node" data-surface="closeout">
+        <strong>Closeout</strong>
+        <span><code>docs/PORTABILITY_CLOSEOUT_V7_12.md</code> records the evidence layer.</span>
+      </article>
+    </section>
+
+    <details open>
+      <summary>Claim boundary</summary>
+      <p>
+        Repo tests and docs can close local Wave 6B gaps. Public portability still requires
+        separate package-surface proof, installed-cache smoke proof, and live execution evidence.
+      </p>
+    </details>
+
+    <details>
+      <summary>Agent runtime requirement</summary>
+      <p>
+        A valid governed pipeline needs <code>spawn_agent</code>, <code>wait_agent</code>,
+        artifact collection, gate recording, hook/checkpoint recording, and structured final state.
+      </p>
+    </details>
+  </main>
+</body>
+</html>

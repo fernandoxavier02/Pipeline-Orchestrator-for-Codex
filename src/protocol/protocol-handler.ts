@@ -1,5 +1,10 @@
 import type { DispatchResult, RunRoleResult } from "../dispatcher/dispatcher-types.js";
-import { createGateLog, inferDecidedBy } from "../state/gate-log.js";
+import {
+  createGateLog,
+  inferDecidedBy,
+  normalizeCanonicalGateDecision,
+  type CanonicalGateDecision,
+} from "../state/gate-log.js";
 import {
   createProtocolEventLog,
   parseProtocolBlocks,
@@ -373,27 +378,40 @@ function canonicalGateForGateId(gateId: string) {
   return undefined;
 }
 
-// Post-review fix (SEC-005): the previous default was `"pass"` for any label
-// that did not match a block/skip/partial keyword. That inverts the fail-safe
-// principle for gate decisions — a compromised agent could craft a label
-// outside the known keyword set and silently forge a gate-pass entry. The
-// new default is `"block"`: only explicit approval keywords (yes / approve /
-// continue / etc.) map to `"pass"`. Unknown labels are treated as a block
-// so the gate stays closed until the user confirms.
-function decisionFromSelectedLabel(selectedLabel: string) {
+// Post-review fix (SEC-005): unknown labels must stay fail-closed. Labels are
+// first classified in the canonical 8-value vocabulary, then normalized by the
+// gate-log writer helper into the local persisted subset.
+function canonicalDecisionFromSelectedLabel(selectedLabel: string): CanonicalGateDecision {
   const normalized = selectedLabel.toLowerCase();
+  const canonicalLabel = selectedLabel.trim().toUpperCase();
+  if (
+    canonicalLabel === "BLOCKED"
+    || canonicalLabel === "DISPATCHED"
+    || canonicalLabel === "SKIPPED"
+    || canonicalLabel === "APPROVED"
+    || canonicalLabel === "CONFIRMED"
+    || canonicalLabel === "REJECTED"
+    || canonicalLabel === "TRIGGERED"
+    || canonicalLabel === "NOT_TRIGGERED"
+  ) {
+    return canonicalLabel;
+  }
   if (/\b(yes|sim|approve|aprovar|approved|continue|continuar|go|proceed|prosseguir|ok|confirm|confirmar)\b/u.test(normalized)) {
-    return "pass" as const;
+    return "APPROVED";
   }
   if (/\b(skip|pular)\b/u.test(normalized)) {
-    return "skip" as const;
+    return "SKIPPED";
   }
-  if (/\b(partial|conditional|condicional|ajust|revise|revisar)\b/u.test(normalized)) {
-    return "partial" as const;
+  if (/\b(triggered|partial|conditional|condicional|ajust|revise|revisar)\b/u.test(normalized)) {
+    return "TRIGGERED";
   }
-  // Default block: includes the prior block keywords (no / reject / abort /
-  // no-go) and any unrecognised label (fail-safe).
-  return "block" as const;
+  // Default block: includes block keywords (no / reject / abort / no-go) and
+  // any unrecognised label.
+  return "BLOCKED";
+}
+
+function decisionFromSelectedLabel(selectedLabel: string) {
+  return normalizeCanonicalGateDecision(canonicalDecisionFromSelectedLabel(selectedLabel));
 }
 
 export async function recordProtocolGateResponse(input: {

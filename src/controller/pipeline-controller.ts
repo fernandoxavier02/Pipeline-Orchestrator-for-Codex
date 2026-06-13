@@ -766,6 +766,84 @@ function createReviewOnlyNoDiffResult(input: {
   };
 }
 
+function createComplexityGate(input: {
+  mode: string;
+  baseClassification: PipelineClassification;
+  resolvedClassification: PipelineClassification;
+}) {
+  const classificationChanged =
+    input.baseClassification.type !== input.resolvedClassification.type
+    || input.baseClassification.complexity !== input.resolvedClassification.complexity
+    || input.baseClassification.variant !== input.resolvedClassification.variant;
+
+  if (!classificationChanged) {
+    return {
+      gate: "COMPLEXITY_GATE" as const,
+      status: "passed" as const,
+      hardness: "SOFT" as const,
+      reason: `Classifier accepted ${input.resolvedClassification.type}/${input.resolvedClassification.complexity} (${input.resolvedClassification.variant}) without override.`,
+      decision: "pass" as const,
+    };
+  }
+
+  return {
+    gate: "COMPLEXITY_GATE" as const,
+    status: "partial" as const,
+    hardness: "SOFT" as const,
+    reason: `Mode ${input.mode} changed classifier from ${input.baseClassification.type}/${input.baseClassification.complexity} (${input.baseClassification.variant}) to ${input.resolvedClassification.type}/${input.resolvedClassification.complexity} (${input.resolvedClassification.variant}).`,
+    decision: "partial" as const,
+  };
+}
+
+function createStep17RoutingGate(input: {
+  mode: PipelineMode;
+  explicitClassification?: unknown;
+}) {
+  const route = input.mode === "continue"
+    ? "load-existing"
+    : input.explicitClassification
+      ? "direct-workflow-dispatch"
+      : input.mode === "--no-plan"
+        ? "no-plan-bypass-evaluation"
+        : input.mode === "--simples"
+          ? "simple-mode-routing"
+          : "standard-classifier-routing";
+
+  return {
+    gate: "STEP_1_7_ROUTING" as const,
+    status: "passed" as const,
+    hardness: "HARD" as const,
+    reason: `Step 1.7 selected ${route} for mode ${input.mode}.`,
+    decision: "pass" as const,
+  };
+}
+
+async function persistStep17RecursionGuard(input: {
+  runtime?: {
+    stores?: {
+      gateLog?: GateLogStore;
+      confidence?: ConfidenceStore;
+      stateAdapter?: StateAdapter;
+    };
+  };
+  detail: string;
+  confidenceScore?: number;
+}) {
+  await persistGateAndConfidence(
+    input.runtime ?? {},
+    [
+      toGateLogEntry({
+        gate: "STEP_1_7_RECURSION_GUARD",
+        hardness: "CIRCUIT_BREAKER",
+        phase: "phase-1",
+        decision: "block",
+        detail: input.detail,
+      }),
+    ],
+    input.confidenceScore ?? 1,
+  );
+}
+
 function revokeExecutionApproval(input?: PipelineSessionState["executionProof"]) {
   return {
     approvedScenarios: [],
@@ -940,7 +1018,7 @@ function approveExecutionScenarios(input: {
 
 type PersistedGateLogEntry = {
   gate: string;
-  hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT";
+  hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT" | "AUDIT";
   phase: string;
   decision: "pass" | "block" | "skip" | "partial";
   decided_by: "controller" | "user" | "system" | "resume-router";
@@ -971,7 +1049,7 @@ function createRunStores(runDir: string, defaults: { strictAgents?: boolean } = 
 
 function toGateLogEntry(input: {
   gate: string;
-  hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT";
+  hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT" | "AUDIT";
   phase: string;
   decision: "pass" | "block" | "skip" | "partial";
   detail: string;
@@ -1539,9 +1617,15 @@ export function createPipelineController(runtime?: {
             throw new Error("Session is missing current phase");
           }
 
-        if (session.currentPhase === "phase-1") {
-          throw new Error("Cannot continue while proposal confirmation is pending");
-        }
+          if (session.currentPhase === "phase-1") {
+            const detail = "Cannot continue while proposal confirmation is pending";
+            await persistStep17RecursionGuard({
+              runtime,
+              detail,
+              confidenceScore: session.confidenceScore ?? 1,
+            });
+            throw new Error(detail);
+          }
 
         const gateLogEntries = await runtime?.stores?.gateLog?.list?.() ?? [];
         const pendingRollback = resolveContinueRollbackState({
@@ -1592,7 +1676,13 @@ export function createPipelineController(runtime?: {
         }
 
         if (session.currentPhase === "phase-1") {
-          throw new Error("Cannot continue while proposal confirmation is pending");
+          const detail = "Cannot continue while proposal confirmation is pending";
+          await persistStep17RecursionGuard({
+            runtime: { stores: runStores },
+            detail,
+            confidenceScore: session.confidenceScore ?? 1,
+          });
+          throw new Error(detail);
         }
 
         if (session.currentPhase === "phase-1.5" && !hasControllerManagedPhaseOnePointFiveTransition(session)) {
@@ -1749,6 +1839,15 @@ export function createPipelineController(runtime?: {
       const referenceIndex = await runtime?.referenceIndex?.();
       const baseClassification = explicitClassification ?? classifyRequest(normalizedRequest, referenceIndex);
       const classificationResult = applyClassificationOverrides(mode, baseClassification, referenceIndex);
+      const complexityGate = createComplexityGate({
+        mode,
+        baseClassification,
+        resolvedClassification: classificationResult.classification,
+      });
+      const step17RoutingGate = createStep17RoutingGate({
+        mode,
+        explicitClassification,
+      });
       const infoGate = runInformationGate({
         request: normalizedRequest,
         classification: classificationResult.classification,
@@ -1804,6 +1903,20 @@ export function createPipelineController(runtime?: {
               ? "partial"
               : "skip",
           detail: designInterrogation.summary,
+        }),
+        toGateLogEntry({
+          gate: complexityGate.gate,
+          hardness: complexityGate.hardness,
+          phase: "phase-0",
+          decision: complexityGate.decision,
+          detail: complexityGate.reason,
+        }),
+        toGateLogEntry({
+          gate: step17RoutingGate.gate,
+          hardness: step17RoutingGate.hardness,
+          phase: "phase-1",
+          decision: step17RoutingGate.decision,
+          detail: step17RoutingGate.reason,
         }),
       ];
       const specArtifactGate = requiresSpecArtifacts(classificationResult.classification.variant)
@@ -1864,6 +1977,8 @@ export function createPipelineController(runtime?: {
             ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
             infoGate,
             designInterrogation,
+            complexityGate,
+            step17RoutingGate,
             {
               gate: "SPEC_ARTIFACT_MISSING",
               status: "blocked",
@@ -1937,6 +2052,8 @@ export function createPipelineController(runtime?: {
             ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
             infoGate,
             designInterrogation,
+            complexityGate,
+            step17RoutingGate,
             {
               gate: "SPEC_FORMAT_GATE_FAIL",
               status: "blocked",
@@ -1965,6 +2082,8 @@ export function createPipelineController(runtime?: {
             ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
             infoGate,
             designInterrogation,
+            complexityGate,
+            step17RoutingGate,
           ],
           stoppedAfterProposal: true,
         };
@@ -1981,6 +2100,8 @@ export function createPipelineController(runtime?: {
               ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
               infoGate,
               designInterrogation,
+              complexityGate,
+              step17RoutingGate,
             ],
           });
         }
@@ -2004,6 +2125,8 @@ export function createPipelineController(runtime?: {
             ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
             infoGate,
             designInterrogation,
+            complexityGate,
+            step17RoutingGate,
           ],
           implementationSkipped: true,
           review,
@@ -2071,6 +2194,8 @@ export function createPipelineController(runtime?: {
           ...(capabilityGate?.status === "PASS" ? [capabilityGate.gate] : []),
           infoGate,
           designInterrogation,
+          complexityGate,
+          step17RoutingGate,
         ],
         planModeStatus,
       };

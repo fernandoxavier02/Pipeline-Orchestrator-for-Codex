@@ -308,7 +308,7 @@ function createFinalValidatorOutput(request: DispatchRequest) {
     ? request.input.gateLog
       .filter((entry): entry is {
         gate: string;
-        hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT";
+        hardness: "MANDATORY" | "HARD" | "CIRCUIT_BREAKER" | "SOFT" | "AUDIT";
         decision: "pass" | "block" | "skip" | "partial";
         phase?: string;
       } =>

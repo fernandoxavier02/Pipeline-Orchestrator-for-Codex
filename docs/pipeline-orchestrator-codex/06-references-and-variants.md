@@ -268,17 +268,19 @@ A Codex port should preserve terminology where it improves operator clarity, but
 Additional documents improve interpretation of the runtime:
 
 - `README.md`
-- `docs/adapter-guide.md`
-- `docs/examples/simple-bugfix.md`
-- `docs/examples/medium-feature.md`
-- `docs/examples/complex-audit.md`
+- `docs/migrations/claude-to-codex.md`
+- `docs/diagrams/runtime-surfaces.md`
+- `docs/examples/audit-flow.md`
+- `docs/examples/feature-flow.md`
+- `docs/examples/spec-flow.md`
 - `docs/plans/2026-03-20-plan-architect-agent.md`
 
 ### Why These Matter
 
 - `README.md` expresses the intended product positioning and claims.
-- `adapter-guide.md` explains how to adapt the pipeline to different environments.
-- the examples show intended operator experience, not just internal mechanics
+- `claude-to-codex.md` explains the Paperclip adaptation boundary for Codex.
+- `runtime-surfaces.md` names the evidence layers behind repo, runtime, tests, Eval Gate, and closeout.
+- the examples show repo-level Paperclip workflow surfaces and claim boundaries, not live execution proof.
 - the plan document captures design reasoning that is sometimes stronger than the final implementation artifact
 
 ## Authority Order

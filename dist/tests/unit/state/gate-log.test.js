@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createGateLog, inferDecidedBy, MAX_DETAIL_LENGTH, recordGateDecision, sanitizeDetail, } from "../../../src/state/gate-log.js";
+import { createGateLog, CANONICAL_GATE_DECISION_MAP, inferDecidedBy, MAX_DETAIL_LENGTH, normalizeCanonicalGateDecision, recordGateDecision, sanitizeDetail, } from "../../../src/state/gate-log.js";
 describe("gate log", () => {
     it("appends jsonl gate decisions", async () => {
         const root = mkdtempSync(join(tmpdir(), "pipeline-gates-"));
@@ -36,6 +36,26 @@ describe("gate log", () => {
             reason: "Missing reproduction steps",
         })}\n`, "utf8");
         await expect(log.list()).rejects.toThrow();
+    });
+});
+describe("canonical gate decision compatibility", () => {
+    it("maps the canonical 8-value vocabulary onto the persisted local subset", () => {
+        expect(CANONICAL_GATE_DECISION_MAP).toEqual({
+            BLOCKED: "block",
+            DISPATCHED: "pass",
+            SKIPPED: "skip",
+            APPROVED: "pass",
+            CONFIRMED: "pass",
+            REJECTED: "block",
+            TRIGGERED: "partial",
+            NOT_TRIGGERED: "skip",
+        });
+    });
+    it("normalizes canonical decisions before callers persist gate-decisions.jsonl", () => {
+        expect(normalizeCanonicalGateDecision("APPROVED")).toBe("pass");
+        expect(normalizeCanonicalGateDecision("REJECTED")).toBe("block");
+        expect(normalizeCanonicalGateDecision("TRIGGERED")).toBe("partial");
+        expect(normalizeCanonicalGateDecision("NOT_TRIGGERED")).toBe("skip");
     });
 });
 // Spec: pipeline-trust-restoration / R1 — Distinguishable Emulated Dispatches

@@ -2,12 +2,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 const HOOK = join(ROOT, "hooks", "sentinel-hook.cjs");
 
-function runSentinelHook(cwd: string, subagentType: string) {
+function runSentinelHook(cwd: string, subagentType: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, [HOOK], {
     cwd,
     input: JSON.stringify({
@@ -16,6 +17,7 @@ function runSentinelHook(cwd: string, subagentType: string) {
       },
     }),
     encoding: "utf8",
+    env: { ...process.env, ...env },
   });
 }
 
@@ -33,7 +35,11 @@ function runSentinelHookForSpawnAgent(cwd: string, message: string) {
   });
 }
 
-function writeRuntimeSentinelState(cwd: string, expectedNext: string[]) {
+function writeRuntimeSentinelState(
+  cwd: string,
+  expectedNext: string[],
+  overrides: Record<string, unknown> = {},
+) {
   const stateDir = join(cwd, ".codex", "pipeline");
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(join(stateDir, "sentinel-state.json"), JSON.stringify({
@@ -50,7 +56,61 @@ function writeRuntimeSentinelState(cwd: string, expectedNext: string[]) {
     consecutiveCorrections: 0,
     lastCheckpoint: "post_orchestrator",
     updatedAt: new Date().toISOString(),
+    ...overrides,
   }), "utf8");
+}
+
+function canonicalize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalize(entry)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`).join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function signState(state: Record<string, unknown>, key: string) {
+  return crypto.createHmac("sha256", key).update(canonicalize(state)).digest("hex");
+}
+
+function writeSignedRuntimeSentinelState(
+  cwd: string,
+  expectedNext: string[],
+  key: string,
+  overrides: Record<string, unknown> = {},
+) {
+  const stateDir = join(cwd, ".codex", "pipeline");
+  mkdirSync(stateDir, { recursive: true });
+  const state = {
+    pipelineActive: true,
+    currentPhase: "phase-1",
+    currentAgent: "pipeline-controller",
+    expectedNext,
+    completedPhases: ["phase-0"],
+    gateSummary: ["SENTINEL_CHECKPOINT"],
+    batchState: {
+      batchIndex: 0,
+      status: "awaiting-proposal-confirmation",
+    },
+    consecutiveCorrections: 0,
+    lastCheckpoint: "post_orchestrator",
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+  const signedState = {
+    ...state,
+    _integrity: {
+      algorithm: "hmac-sha256",
+      signature: signState(state, key),
+    },
+  };
+  writeFileSync(join(stateDir, "sentinel-state.json"), JSON.stringify(signedState), "utf8");
 }
 
 function runSentinelHookRaw(cwd: string, rawInput: string) {
@@ -154,6 +214,39 @@ describe("sentinel hook", () => {
     expect(result.stderr.trim()).toBe("");
   });
 
+  it("denies unsigned sentinel state when HMAC integrity is required", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeRuntimeSentinelState(cwd, ["information-gate"]);
+
+    const result = runSentinelHook(
+      cwd,
+      "pipeline-orchestrator-for-codex:core:information-gate",
+      { PIPELINE_SENTINEL_HMAC_KEY: "test-key" },
+    );
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toBe(
+      "sentinel internal error — failing closed",
+    );
+  });
+
+  it("allows signed sentinel state when HMAC integrity is required", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeSignedRuntimeSentinelState(cwd, ["information-gate"], "test-key");
+
+    const result = runSentinelHook(
+      cwd,
+      "pipeline-orchestrator-for-codex:core:information-gate",
+      { PIPELINE_SENTINEL_HMAC_KEY: "test-key" },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("");
+    expect(result.stderr.trim()).toBe("");
+  });
+
   it("allows a Codex spawn_agent payload that matches runtime expectedNext", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
     writeRuntimeSentinelState(cwd, ["information-gate"]);
@@ -201,6 +294,104 @@ describe("sentinel hook", () => {
     expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
     expect(output.hookSpecificOutput.permissionDecisionReason).toContain("Expected");
     expect(output.hookSpecificOutput.permissionDecisionReason).toContain("information-gate");
+  });
+
+  it("denies pipeline-controller bootstrap when an active sentinel is fresh and awaiting a response", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeRuntimeSentinelState(cwd, ["proposal-response"]);
+
+    const result = runSentinelHookForSpawnAgent(
+      cwd,
+      [
+        "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller",
+        "Start a new pipeline.",
+      ].join("\n"),
+    );
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("proposal-response");
+  });
+
+  it("allows stale pipeline-controller bootstrap without disabling active non-stale sequence checks", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeRuntimeSentinelState(cwd, ["proposal-response"], {
+      updatedAt: new Date(Date.now() - 301_000).toISOString(),
+      batchState: {
+        batchIndex: 0,
+        status: "awaiting-proposal-confirmation",
+      },
+    });
+
+    const result = runSentinelHookForSpawnAgent(
+      cwd,
+      [
+        "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller",
+        "Start a new approved bugfix-heavy pipeline.",
+      ].join("\n"),
+    );
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("allow");
+    expect(output.hookSpecificOutput.additionalContext).toContain("stale");
+
+    const state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "sentinel-state.json"), "utf8"));
+    expect(state.pipelineActive).toBe(true);
+    expect(state.expectedNext).toEqual(["proposal-response"]);
+
+    const gateLog = readFileSync(join(cwd, ".codex", "pipeline", "gate-decisions.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(gateLog).toHaveLength(1);
+    expect(gateLog[0]).toMatchObject({
+      gate: "BOOTSTRAP_EXEMPTION_USED",
+      hardness: "AUDIT",
+      phase: "phase-1",
+      decision: "pass",
+      decided_by: "system",
+    });
+  });
+
+  it("denies stale pipeline-controller bootstrap outside the phase-1 proposal-response recovery shape", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeRuntimeSentinelState(cwd, ["final-validator"], {
+      currentPhase: "phase-3",
+      updatedAt: new Date(Date.now() - 301_000).toISOString(),
+      batchState: {
+        batchIndex: 0,
+        status: "awaiting-final-validation",
+      },
+    });
+
+    const result = runSentinelHookForSpawnAgent(
+      cwd,
+      [
+        "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller",
+        "Start a new pipeline.",
+      ].join("\n"),
+    );
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("final-validator");
+  });
+
+  it("continues to deny non-controller divergence even when sentinel state is stale", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeRuntimeSentinelState(cwd, ["proposal-response"], {
+      updatedAt: new Date(Date.now() - 301_000).toISOString(),
+    });
+
+    const result = runSentinelHook(cwd, "pipeline-orchestrator-for-codex:executor:executor-controller");
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("proposal-response");
   });
 
   it("records observable hook events as JSONL", () => {

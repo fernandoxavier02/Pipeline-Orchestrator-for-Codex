@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "sourceAudit": "docs/GAP_ANALYSIS_CANONICAL_VS_CODEX.md#71-regression-test-versions-v600--v7120",
+  "canonicalRange": "v6.0.0-v7.12.0",
+  "codexBaseline": "v0.5.0",
+  "claimBoundary": "repo-only regression consolidation index; does not claim the full canonical regression suite is translated",
+  "statusVocabulary": ["covered", "partial", "deferred"],
+  "releases": [
+    {
+      "version": "v6.0.0",
+      "theme": "baseline canonical v6 regression surface",
+      "status": "deferred",
+      "deferredReason": "No specific v6.0.0 invariant was ported in the current Codex waves; keep this explicit so it cannot be silently claimed."
+    },
+    {
+      "version": "v6.1.0",
+      "theme": "gate inventory and mandatory gate references",
+      "status": "covered",
+      "evidence": [
+        "references/gates.md",
+        "tests/unit/gates/gate-registry-reference.test.ts",
+        "tests/unit/gates/gate-hardness-consistency.test.ts"
+      ]
+    },
+    {
+      "version": "v6.3.0",
+      "theme": "implementation discipline and gate-log centralization",
+      "status": "covered",
+      "evidence": [
+        "references/implementation-discipline.md",
+        "tests/unit/lint/gate-log-writer-centralization.test.ts",
+        "tests/unit/state/gate-log.test.ts"
+      ]
+    },
+    {
+      "version": "v7.1.0",
+      "theme": "gate decision writer and protocol evidence",
+      "status": "covered",
+      "evidence": [
+        "src/state/gate-log.ts",
+        "tests/unit/protocol/protocol-events.test.ts",
+        "tests/unit/lint/decided-by-centralization.test.ts"
+      ]
+    },
+    {
+      "version": "v7.3.0",
+      "theme": "telemetry and optional tracing evidence",
+      "status": "covered",
+      "evidence": [
+        "evals/tests/test_telemetry_hook.py",
+        "evals/README.md",
+        "evals/telemetry/latest_trace.json"
+      ]
+    },
+    {
+      "version": "v7.5.0",
+      "theme": "run directory and run identity",
+      "status": "covered",
+      "evidence": [
+        "src/run/run-directory.ts",
+        "tests/unit/run/run-directory.test.ts",
+        "tests/unit/observability/execution-identity.test.ts"
+      ]
+    },
+    {
+      "version": "v7.6.0",
+      "theme": "fidelity and score surfaces",
+      "status": "covered",
+      "evidence": [
+        "references/paperclip/spec/lib/measure-fidelity.cjs",
+        "references/paperclip/spec/lib/measure-fidelity.test.cjs",
+        "skills/measure-paperclip-fidelity/SKILL.md"
+      ]
+    },
+    {
+      "version": "v7.9.0",
+      "theme": "Paperclip flow mirror inventory",
+      "status": "covered",
+      "evidence": [
+        "references/paperclip/PAPERCLIP-FLOW-MIRROR.md",
+        "tests/unit/paperclip/flow-mirror-inventory.test.ts",
+        "tests/compat/wave6b-paperclip-scenarios.test.ts"
+      ]
+    },
+    {
+      "version": "v7.9.3",
+      "theme": "idempotent stop fidelity and run-log-style evidence",
+      "status": "covered",
+      "evidence": [
+        "hooks/session-cleanup-hook.cjs",
+        "tests/unit/hooks/session-cleanup-hook.test.ts",
+        "evals/outputs/latest_output.md"
+      ]
+    },
+    {
+      "version": "v7.10.0",
+      "theme": "Plan Mode mandatory agents and parallel dispatch contracts",
+      "status": "covered",
+      "evidence": [
+        "tests/integration/claude-v710-parity.test.ts",
+        "src/controller/plan-mode.ts",
+        "src/execution/executor-controller.ts"
+      ]
+    },
+    {
+      "version": "v7.10.1",
+      "theme": "parallel_eligible default contract",
+      "status": "covered",
+      "evidence": [
+        "tests/integration/claude-v710-parity.test.ts",
+        "src/execution/build-batches.ts",
+        "src/execution/executor-controller.ts"
+      ]
+    },
+    {
+      "version": "v7.11.0",
+      "theme": "visible progress and telemetry correlation",
+      "status": "covered",
+      "evidence": [
+        "references/visible-plan-contract.md",
+        "tests/unit/workflow/next-step-skill-contract.test.ts",
+        "evals/tests/test_eval_gate.py"
+      ]
+    },
+    {
+      "version": "v7.12.0",
+      "theme": "public user-story and UX simulation routing",
+      "status": "covered",
+      "evidence": [
+        "tests/integration/plugin/workflow-runtime-routing.test.ts",
+        "src/controller/classify-request.ts",
+        "tests/compat/wave6b-paperclip-scenarios.json"
+      ]
+    }
+  ]
+}

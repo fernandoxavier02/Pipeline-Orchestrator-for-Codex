@@ -1,7 +1,16 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { nextStep, nodeSpec, nodeSpecFanIn, allParallelSteps, templateFor, expandSlices, LOOP_INTERNAL_INSTRUCTION } = require('./tree-factory.cjs');
+const {
+  nextStep,
+  nodeSpec,
+  nodeSpecFanIn,
+  allParallelSteps,
+  templateFor,
+  expandSlices,
+  LOOP_INTERNAL_INSTRUCTION,
+  PAPERCLIP_CONTINUATION_DISPOSITION_INSTRUCTION,
+} = require('./tree-factory.cjs');
 const { TEMPLATES } = require('./tree-template.cjs');
 
 // GEN2 — nextStep(complexity, currentStep): decide o próximo nó (lê `next` do nó atual).
@@ -86,6 +95,18 @@ test('body menciona cada bloco do nó e o NEXT_STEP correto (implementar→revis
   assert.match(spec.body, /TDD_GREEN/);
   assert.match(spec.body, /REGRESSION_RESULT/);
   assert.match(spec.body, /NEXT_STEP:\s*revisar/);
+});
+
+test('body exige disposicao detectavel ao fim do heartbeat', () => {
+  const spec = nodeSpec('SIMPLES', 'implementar', 'ISSUE-42');
+  assert.match(spec.body, /CONTINUATION_DISPOSITION v1/);
+  assert.match(spec.body, /status: in_progress/);
+  assert.match(spec.body, /resumeIntent: true/);
+  assert.match(spec.body, /resumeFromRunId: "<run id atual>"/);
+  assert.match(spec.body, /next_step/);
+  assert.match(spec.body, /mantenha a issue em in_progress via PATCH/);
+  assert.match(spec.body, /Resumo narrativo sozinho nao conta como continuidade/);
+  assert.ok(spec.body.includes(PAPERCLIP_CONTINUATION_DISPOSITION_INSTRUCTION));
 });
 
 test('body do nó final marca NEXT_STEP: FIM', () => {

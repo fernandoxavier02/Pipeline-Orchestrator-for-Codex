@@ -1,0 +1,60 @@
+{
+  "feature_name": "paperclip-task-tree-factory",
+  "version": "0.1.0",
+  "created_at": "2026-06-12T00:00:00Z",
+  "status": "approved",
+  "phase": "tasks",
+  "next_phase": "implementation",
+  "type": "feature",
+  "complexity": "COMPLEXA",
+  "variant": "spec-heavy",
+  "language": "pt-BR",
+  "title": "Paperclip Task Tree Factory",
+  "summary": "Documentar e governar a fabrica de arvores de issues Paperclip que espelha fluxos do Pipeline Orchestrator em cartoes bloqueados por dependencias explicitas.",
+  "source_audit": "docs/GAP_ANALYSIS_CANONICAL_VS_CODEX.md#84-kiro-spec-paperclip-task-tree-factory",
+  "runtime_evidence": [
+    "references/paperclip/PAPERCLIP-FLOW-MIRROR.md",
+    "references/paperclip/spec/lib/tree-template.cjs",
+    "references/paperclip/spec/lib/tree-factory.cjs",
+    "references/paperclip/spec/lib/tree-factory-io.cjs",
+    "references/paperclip/spec/lib/grow-tree.cjs",
+    "references/paperclip/spec/lib/classify-bridge.cjs",
+    "references/paperclip/spec/lib/measure-fidelity.cjs"
+  ],
+  "requirements_count": 6,
+  "design_components": 5,
+  "tasks_count": 6,
+  "owners": {
+    "requirements": "plan-architect",
+    "design": "plan-architect",
+    "tasks": "plan-architect",
+    "implementation": "feature-implementer",
+    "review": "quality-reviewer"
+  },
+  "scope": {
+    "P0": 3,
+    "P1": 2,
+    "P2": 1,
+    "total_goals": 6
+  },
+  "sources": {
+    "gap_analysis": "docs/GAP_ANALYSIS_CANONICAL_VS_CODEX.md",
+    "flow_mirror": "references/paperclip/PAPERCLIP-FLOW-MIRROR.md",
+    "portability_spec": ".kiro/specs/canonical-v7-portability-closeout",
+    "steering": [
+      ".kiro/CONSTITUTION.md",
+      ".kiro/steering/product.md",
+      ".kiro/steering/tech.md",
+      ".kiro/steering/structure.md",
+      "AGENTS.md"
+    ]
+  },
+  "claim_boundary": "repo-only spec artifact; no Marketplace, installed-cache, VPS, or live Paperclip execution claim",
+  "approvals": {
+    "init": true,
+    "requirements": true,
+    "design": true,
+    "tasks": true,
+    "auto_approved_by_wave_6b_scope": true
+  }
+}

@@ -45,6 +45,17 @@ function writeSessionLock(cwd: string, sessionId: string, expiresAt: number) {
   }), "utf8");
 }
 
+function writeChangeContract(cwd: string, contract: Record<string, unknown>) {
+  const dir = join(cwd, ".codex", "pipeline");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "change-contract.json"), JSON.stringify({
+    allowed_files: [],
+    allowed_new_files: [],
+    forbidden_files: [],
+    ...contract,
+  }), "utf8");
+}
+
 describe("edit-guard-hook", () => {
   it("denies Edit when no exec-window is open", () => {
     const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
@@ -147,6 +158,76 @@ describe("edit-guard-hook", () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout.trim()).toBe("");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("denies Edit outside the active CHANGE_CONTRACT even when exec-window is OPEN", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
+    try {
+      writeSessionLock(cwd, "S7b", Math.floor(Date.now() / 1000) + 3600);
+      writeExecWindow(cwd, "S7b", Math.floor(Date.now() / 1000) + 300);
+      writeChangeContract(cwd, {
+        allowed_files: ["src/allowed.ts"],
+        allowed_new_files: [],
+        forbidden_files: ["dist/**"],
+      });
+      mkdirSync(join(cwd, "src"), { recursive: true });
+      writeFileSync(join(cwd, "src", "outside.ts"), "export const outside = true;\n", "utf8");
+
+      const result = runHook(cwd, "Edit", join(cwd, "src", "outside.ts"));
+
+      expect(result.status).toBe(0);
+      const output = JSON.parse(result.stdout.trim());
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("CHANGE_CONTRACT_SCOPE");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("src/outside.ts");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("allows Edit inside the active CHANGE_CONTRACT when exec-window is OPEN", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
+    try {
+      writeSessionLock(cwd, "S7c", Math.floor(Date.now() / 1000) + 3600);
+      writeExecWindow(cwd, "S7c", Math.floor(Date.now() / 1000) + 300);
+      writeChangeContract(cwd, {
+        allowed_files: ["src/allowed.ts"],
+        forbidden_files: ["dist/**"],
+      });
+      mkdirSync(join(cwd, "src"), { recursive: true });
+      writeFileSync(join(cwd, "src", "allowed.ts"), "export const allowed = true;\n", "utf8");
+
+      const result = runHook(cwd, "Edit", join(cwd, "src", "allowed.ts"));
+
+      expect(result.status).toBe(0);
+      expect(result.stdout.trim()).toBe("");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("denies forbidden_files even when the path is otherwise allowed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
+    try {
+      writeSessionLock(cwd, "S7d", Math.floor(Date.now() / 1000) + 3600);
+      writeExecWindow(cwd, "S7d", Math.floor(Date.now() / 1000) + 300);
+      writeChangeContract(cwd, {
+        allowed_files: ["dist/generated.js"],
+        forbidden_files: ["dist/**"],
+      });
+      mkdirSync(join(cwd, "dist"), { recursive: true });
+      writeFileSync(join(cwd, "dist", "generated.js"), "export const generated = true;\n", "utf8");
+
+      const result = runHook(cwd, "Edit", join(cwd, "dist", "generated.js"));
+
+      expect(result.status).toBe(0);
+      const output = JSON.parse(result.stdout.trim());
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("forbidden_touched");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("dist/generated.js");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

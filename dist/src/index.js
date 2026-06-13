@@ -246,7 +246,12 @@ function isBrainstormInteractiveRole(role) {
     return role === "brainstorm-controller"
         || role.endsWith(":core:brainstorm-controller")
         || role === "step-01-explore"
-        || role.endsWith(":brainstorm:step-01-explore");
+        || role.endsWith(":brainstorm:step-01-explore")
+        || role === "step-01b-alternatives"
+        || role.endsWith(":brainstorm:step-01b-alternatives");
+}
+function isBrainstormInteractiveGateId(gateId) {
+    return /brainstorm-(?:explore-(?:q\d+|no-gaps)|alternatives-choice)/u.test(gateId);
 }
 function normalizeDispatchPhase(phase) {
     if (phase === "phase-0"
@@ -260,13 +265,13 @@ function normalizeDispatchPhase(phase) {
     return "phase-2";
 }
 function promptCarriesBrainstormGateResponses(prompt) {
-    return /(?:^|\n)GATE_RESPONSES:\s*\n[\s\S]*brainstorm-explore-(?:q\d+|no-gaps)\b/u.test(prompt);
+    return /(?:^|\n)GATE_RESPONSES:\s*\n[\s\S]*brainstorm-(?:explore-(?:q\d+|no-gaps)|alternatives-choice)\b/u.test(prompt);
 }
 async function stateCarriesAnsweredBrainstormGate(stateDir) {
     try {
         const raw = await readFile(join(stateDir, "protocol-events.jsonl"), "utf8");
         return raw.split(/\r?\n/u).some((line) => (line.includes("\"status\":\"answered\"")
-            && /brainstorm-explore-(?:q\d+|no-gaps)/u.test(line)));
+            && isBrainstormInteractiveGateId(line)));
     }
     catch (error) {
         if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
@@ -530,7 +535,7 @@ export function createPipelineRuntime(options) {
                     ...result.output,
                     text: [
                         "BLOCKED: brainstorm attempted to continue without an interactive GATE_REQUEST response.",
-                        "The parent must collect GATE_RESPONSES for brainstorm-explore-q<N> or brainstorm-explore-no-gaps before synthesis, spec, report, plan, or handoff.",
+                        "The parent must collect GATE_RESPONSES for brainstorm-explore-* or brainstorm-alternatives-choice before synthesis, spec, report, plan, or handoff.",
                     ].join("\n"),
                     attemptedOutputText,
                     status: "blocked",
@@ -816,11 +821,34 @@ export function createPipelineRuntime(options) {
                     freshContext: true,
                     reviewOnly: false,
                 });
-                const validation = parseFinalValidatorResult(finalValidatorDispatch && typeof finalValidatorDispatch === "object" && "output" in finalValidatorDispatch
+                let validation = parseFinalValidatorResult(finalValidatorDispatch && typeof finalValidatorDispatch === "object" && "output" in finalValidatorDispatch
                     ? finalValidatorDispatch.output
                     : undefined);
                 if (!validation) {
                     throw new Error("final-validator returned an invalid runtime result");
+                }
+                let closeoutGateLog = effectiveGateLog;
+                if (validation.decision === "NO-GO") {
+                    const stopBeforePaDeCalEntry = {
+                        gate: "STOP_BEFORE_PA_DE_CAL",
+                        hardness: gateRegistry.get("STOP_BEFORE_PA_DE_CAL").hardness,
+                        phase: "phase-3",
+                        decision: "block",
+                        decided_by: inferDecidedBy({ source: "controller" }),
+                        timestamp: new Date().toISOString(),
+                        detail: `Final validator returned NO-GO before PA_DE_CAL. Missing evidence: ${validation.missingEvidence.join(", ") || "none"}.`,
+                        confidence_impact: 0,
+                    };
+                    await closeoutStores.gateLog.append(stopBeforePaDeCalEntry);
+                    closeoutGateLog = resolveEffectiveGateLog([
+                        ...effectiveGateLog,
+                        stopBeforePaDeCalEntry,
+                    ]);
+                    validation = {
+                        ...validation,
+                        blockingGates: [...new Set([...validation.blockingGates, "STOP_BEFORE_PA_DE_CAL"])],
+                        rollbackHint: validation.rollbackHint ?? gateRegistry.get("STOP_BEFORE_PA_DE_CAL").rollback,
+                    };
                 }
                 const tracePath = join(closeoutStores.runDir, "TRACE.md");
                 await writeTrace(tracePath, {
@@ -834,7 +862,7 @@ export function createPipelineRuntime(options) {
                         mode: input.mode ?? "FULL",
                         dispatchMode: options.strictAgents ? "real-agent" : "harness",
                     },
-                    executionLog: effectiveGateLog.map((entry) => `${entry.phase ?? "unknown"}:${entry.gate}:${entry.decision}`),
+                    executionLog: closeoutGateLog.map((entry) => `${entry.phase ?? "unknown"}:${entry.gate}:${entry.decision}`),
                     finalVerdict: validation.decision,
                 });
                 await recordPostFinalValidatorCheckpoint({

@@ -20,7 +20,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { recordHookEvent } = require('./hook-events.cjs');
+
+const SENTINEL_HMAC_ENV = 'PIPELINE_SENTINEL_HMAC_KEY';
+const GATE_DETAIL_MAX_CHARS = 200;
 
 // ── Auto-Discovery ──────────────────────────────────────────────────────────
 
@@ -97,6 +101,78 @@ function normalizeState(state) {
     consecutiveCorrections: state.consecutiveCorrections ?? state.consecutive_corrections ?? 0,
     variant: state.variant,
   };
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalize(entry)).join(',')}]`;
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`).join(',')}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function signState(state, key) {
+  return crypto.createHmac('sha256', key).update(canonicalize(state)).digest('hex');
+}
+
+function verifyStateIntegrity(state) {
+  const key = process.env[SENTINEL_HMAC_ENV];
+  if (!key) {
+    return { ok: true, mode: 'unsigned-allowed' };
+  }
+
+  const integrity = state && typeof state === 'object' ? state._integrity : undefined;
+  if (!integrity || integrity.algorithm !== 'hmac-sha256' || typeof integrity.signature !== 'string') {
+    return { ok: false, reason: 'missing or invalid integrity metadata' };
+  }
+
+  const unsignedState = { ...state };
+  delete unsignedState._integrity;
+  const expected = signState(unsignedState, key);
+  const actual = integrity.signature;
+  const expectedBytes = Buffer.from(expected, 'hex');
+  const actualBytes = Buffer.from(actual, 'hex');
+
+  if (expectedBytes.length === 0 || expectedBytes.length !== actualBytes.length) {
+    return { ok: false, reason: 'signature length mismatch' };
+  }
+
+  if (!crypto.timingSafeEqual(expectedBytes, actualBytes)) {
+    return { ok: false, reason: 'signature mismatch' };
+  }
+
+  return { ok: true, mode: 'signed-verified' };
+}
+
+function sanitizeGateDetail(value) {
+  return String(value ?? '').replace(/[\x00-\x1F\x7F-\x9F]+/g, ' ').slice(0, GATE_DETAIL_MAX_CHARS);
+}
+
+function recordBootstrapExemptionGate(stateFilePath, detail) {
+  try {
+    const dir = path.dirname(stateFilePath);
+    fs.mkdirSync(dir, { recursive: true });
+    const entry = {
+      gate: 'BOOTSTRAP_EXEMPTION_USED',
+      hardness: 'AUDIT',
+      phase: 'phase-1',
+      decision: 'pass',
+      decided_by: 'system',
+      timestamp: new Date().toISOString(),
+      detail: sanitizeGateDetail(detail),
+      confidence_impact: 0,
+    };
+    fs.appendFileSync(path.join(dir, 'gate-decisions.jsonl'), `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch {
+    // Best-effort observability only; the hook decision is still governed by sentinel checks.
+  }
 }
 
 function extractPipelineAgentType(input) {
@@ -211,6 +287,10 @@ function handleInput(raw) {
   let state;
   try {
     state = JSON.parse(fs.readFileSync(stateFilePath, 'utf8'));
+    const integrity = verifyStateIntegrity(state);
+    if (!integrity.ok) {
+      throw new Error(`sentinel integrity verification failed: ${integrity.reason}`);
+    }
   } catch (stateErr) {
     // Fail-closed: corrupted state file → deny (except bootstrap agents).
     const BOOTSTRAP_AGENTS_ON_CORRUPTION = ['task-orchestrator', 'sentinel'];
@@ -288,6 +368,39 @@ function handleInput(raw) {
   // 11. Compare target vs expected_next (ALWAYS runs, even if stale)
   const expectedValues = normalizedState.expectedNext.map((entry) => entry.toLowerCase());
   const target = agentName.toLowerCase();
+  const isStaleProposalBootstrap =
+    normalizedState.currentPhase === 'phase-1'
+    && expectedValues.includes('proposal-response');
+
+  // A stale Phase-1 state from a previous Codex turn can otherwise strand the
+  // public pipeline front door forever: the skill must spawn the controller
+  // first, but the old state may still expect "proposal-response". Keep the
+  // fail-closed guard for fresh state and all N2 agents; only the N1
+  // controller bootstrap may pass through stale state, and the state file is
+  // left intact for audit.
+  if (staleWarning && target === 'pipeline-controller' && isStaleProposalBootstrap) {
+    recordBootstrapExemptionGate(
+      stateFilePath,
+      'stale phase-1 proposal-response state allowed pipeline-controller bootstrap',
+    );
+    recordHookEvent({
+      hook: 'sentinel',
+      event: 'PreToolUse',
+      decision: 'allow-stale-bootstrap',
+      attempted: agentName,
+      expected: normalizedState.expectedNext.join(', '),
+      reason: 'stale state allowed controller bootstrap',
+    });
+    const output = {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        additionalContext: staleWarning,
+      }
+    };
+    console.log(JSON.stringify(output));
+    return process.exit(0);
+  }
 
   if (expectedValues.includes(target)) {
     recordHookEvent({

@@ -328,4 +328,41 @@ options:
       runRoleSpy.mockRestore();
     }
   });
+
+  it("allows brainstorm alternatives completion after alternatives GATE_RESPONSES are present", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-protocol-runtime-"));
+    const runtime = createPipelineRuntime({
+      cwd: root,
+      codexHome: "/codex-home",
+    });
+    const executionIdentity = createExecutionIdentity({
+      surface: "test",
+      cwd: root,
+      stateRoot: runtime.stateDir,
+      source: "test",
+    });
+    const runRoleSpy = vi.spyOn(dispatchRunRoleModule, "runRole").mockResolvedValue({
+      mode: "single-agent",
+      role: "step-01b-alternatives",
+      executionIdentity,
+      output: {
+        text: "ALTERNATIVES_RECORDED\nstatus: completed",
+        executionIdentity,
+      },
+    });
+
+    try {
+      const result = await runtime.dispatcher.runRole({
+        mode: "single-agent",
+        role: "step-01b-alternatives",
+        prompt: "GATE_RESPONSES:\n  brainstorm-alternatives-choice:\n    selected_label: Minimal path\n\nRecord alternatives.",
+        input: {},
+      });
+
+      expect(result.output.status).not.toBe("blocked");
+      expect(String(result.output.text)).toContain("ALTERNATIVES_RECORDED");
+    } finally {
+      runRoleSpy.mockRestore();
+    }
+  });
 });

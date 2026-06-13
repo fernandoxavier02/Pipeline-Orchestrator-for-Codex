@@ -115,15 +115,96 @@ const ROSTER = [
   ['spec-post-impl-validator', 'qa', [SPECP], SPEC, 'Spec Implementation Auditor'],
 ];
 
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseNonNegativeInt(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function isRetryableStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function isRetryableMethod(method) {
+  return ['GET', 'HEAD', 'OPTIONS'].includes(String(method || '').toUpperCase());
+}
+
+function shouldRetryRequest(method, status) {
+  return isRetryableMethod(method) && isRetryableStatus(status);
+}
+
+function apiTimeoutMs() {
+  return parsePositiveInt(process.env.PAPERCLIP_API_TIMEOUT_MS, 30_000);
+}
+
+function apiRetryAttempts() {
+  return parseNonNegativeInt(process.env.PAPERCLIP_API_RETRY_ATTEMPTS, 2);
+}
+
+function apiRetryBaseDelayMs() {
+  return parsePositiveInt(process.env.PAPERCLIP_API_RETRY_BASE_DELAY_MS, 250);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function makeTransientError(method, urlPath, cause) {
+  const message = cause && cause.message ? cause.message : String(cause || 'unknown error');
+  const err = new Error(
+    'Paperclip API request failed: ' + method + ' ' + urlPath + ' via ' + API + ' - ' + message,
+  );
+  err.cause = cause;
+  return err;
+}
+
 async function api(method, urlPath, body) {
-  const res = await fetch(API + urlPath, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  let json = null; try { json = JSON.parse(text); } catch (e) {}
-  return { status: res.status, json, text };
+  const timeoutMs = apiTimeoutMs();
+  const retryAttempts = apiRetryAttempts();
+  const retryBaseDelayMs = apiRetryBaseDelayMs();
+  let lastError = null;
+  for (let attempt = 0; attempt <= retryAttempts; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(
+        new Error(
+          'timeout after ' + timeoutMs + 'ms for ' + method + ' ' + urlPath + ' via ' + API,
+        ),
+      );
+    }, timeoutMs);
+
+    try {
+      const res = await fetch(API + urlPath, {
+        method,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+      const text = await res.text();
+      let json = null; try { json = JSON.parse(text); } catch (e) {}
+      const result = { status: res.status, json, text };
+      if (!shouldRetryRequest(method, res.status) || attempt === retryAttempts) {
+        return result;
+      }
+      lastError = new Error('transient HTTP status ' + res.status + ' for ' + method + ' ' + urlPath);
+    } catch (err) {
+      lastError = makeTransientError(method, urlPath, err);
+      if (!isRetryableMethod(method) || attempt === retryAttempts) {
+        throw lastError;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const delay = retryBaseDelayMs * (attempt + 1);
+    console.log('retry ' + (attempt + 1) + '/' + retryAttempts + ' ' + method + ' ' + urlPath + ' after ' + delay + 'ms');
+    await sleep(delay);
+  }
+  throw lastError || new Error('Paperclip API request failed without response: ' + method + ' ' + urlPath);
 }
 
 async function ensureCompany() {
@@ -257,4 +338,17 @@ if (require.main === module) {
   main().catch((e) => { console.error('FATAL: ' + (e && e.message ? e.message : e)); process.exit(1); });
 }
 
-module.exports = { ROSTER, desiredSkillsFor, hirePayload, reconcilePayload, syncSkills };
+module.exports = {
+  ROSTER,
+  SKILL_DIRS,
+  desiredSkillsFor,
+  hirePayload,
+  reconcilePayload,
+  syncSkills,
+  api,
+  parsePositiveInt,
+  parseNonNegativeInt,
+  isRetryableStatus,
+  isRetryableMethod,
+  shouldRetryRequest,
+};

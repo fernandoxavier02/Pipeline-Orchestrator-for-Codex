@@ -1,6 +1,6 @@
 ---
 name: brainstorm-controller
-description: Orchestrates the pre-execution brainstorm + spec lifecycle pipeline. Spawned by commands/brainstorm.md or by pipeline-controller STEP 1.7 (auto-dispatch for MEDIA/COMPLEXA/Spec). Handles 9 sequential steps (00-intake → 01-explore → 02-spec-init → 03-spec-requirements → 04-validate-gap → 05-spec-design → 06-validate-design → 07-spec-tasks → 08-handoff). Returns RUN_COMPLETE block to caller.
+description: Orchestrates the pre-execution brainstorm + spec lifecycle pipeline. Spawned by commands/brainstorm.md or by pipeline-controller STEP 1.7 (auto-dispatch for MEDIA/COMPLEXA/Spec). Handles 10 sequential steps (00-intake -> 01-explore -> 01b-alternatives -> 02-spec-init -> 03-spec-requirements -> 04-validate-gap -> 05-spec-design -> 06-validate-design -> 07-spec-tasks -> 08-handoff). Returns RUN_COMPLETE block to caller.
 tools: Read, Write, Glob, Grep, Agent, AskUserQuestion, Bash
 model: opus
 color: blue
@@ -21,8 +21,8 @@ You MAY NOT write to anything else.
 
 - `Read`, `Glob`, `Grep`: read source skills, run-dir state, prior artifacts.
 - `Write`: only within `pipeline-runs/<run_id>/`.
-- `Agent`: dispatch step agents (`agents/brainstorm/step-00-intake.md`, `agents/brainstorm/step-01-explore.md`) and cloned spec-lifecycle skills (`pipeline-orchestrator-for-codex:spec-init`, etc.).
-- `AskUserQuestion`: handoff gate at step-08, optional re-confirmations.
+- `Agent`: dispatch step agents (`agents/brainstorm/step-00-intake.md`, `agents/brainstorm/step-01-explore.md`, `agents/brainstorm/step-01b-alternatives.md`) and cloned spec-lifecycle skills (`pipeline-orchestrator-for-codex:spec-init`, etc.).
+- `AskUserQuestion`: handoff gate at step-09, optional re-confirmations.
 - `Bash`: only for `git status`, `git log`, and read-only git inspection during step-00-intake.
 
 ## Workflow
@@ -33,7 +33,7 @@ Arguments shape:
 - `<task description>` (positional, required UNLESS `--resume` is set)
 - `--resume <run-id>` — load `pipeline-runs/<run-id>/manifest.yaml`, set `current_step` to `step_completed + 1`.
 - `--type <Type>` — pre-classify; pass through to step-00-intake.
-- `--no-impl` — skip step-08 handoff if Phase 1 completes.
+- `--no-impl` — skip step-09 handoff if Phase 1 completes.
 - `--skip-validate-gap` — skip step-04.
 
 ### STEP A.1 — Flag precedence and persistence
@@ -47,9 +47,9 @@ Effective flags for the run are stored in `manifest.notes` as an append-only lis
 - If user omits a flag on resume CLI → persisted value is used.
 
 **Precedence example:**
-- Run created with `--no-impl`. manifest persists `no_impl=true`. User resumes WITHOUT --no-impl: persisted wins → still skip step-08 (this prevents an unwanted handoff prompt on resume).
+- Run created with `--no-impl`. manifest persists `no_impl=true`. User resumes WITHOUT --no-impl: persisted wins -> still skip step-09 (this prevents an unwanted handoff prompt on resume).
 - User resumes WITH `--no-impl`: same as persisted, no-op.
-- Run created without flags. User resumes WITH `--no-impl`: CLI overrides → step-08 now skipped, override logged in `notes` as `'override:no_impl=true at <iso-timestamp>'`.
+- Run created without flags. User resumes WITH `--no-impl`: CLI overrides -> step-09 now skipped, override logged in `notes` as `'override:no_impl=true at <iso-timestamp>'`.
 
 This contract makes resume idempotent against the original session's intent.
 
@@ -60,7 +60,7 @@ If `--resume`:
 2. Validate schema (use `lib/run-manifest.cjs` parsing rules — defer to schema validation in step agents).
 3. Set `start_at_step = manifest.step_completed + 1`.
 
-**Terminal guard:** if `manifest.status` is `ready` AND `manifest.step_completed >= 8`, the run already completed. Do NOT re-enter STEP C. Emit RUN_COMPLETE with the existing manifest values, append `notes: 'resumed-already-complete'` audit log, and exit. The user can inspect `04-final-report.md` for the prior outcome.
+**Terminal guard:** if `manifest.status` is `ready` AND `manifest.step_completed >= 9`, the run already completed. Do NOT re-enter STEP C. Emit RUN_COMPLETE with the existing manifest values, append `notes: 'resumed-already-complete'` audit log, and exit. The user can inspect `04-final-report.md` for the prior outcome.
 
 Else:
 1. Spawn a node helper or compute inline: next monotonic `<NNN>` from `pipeline-runs/`. Generate slug from prompt (kebab-case, max 5 words, collision suffix).
@@ -93,25 +93,26 @@ This is partial atomicity — not a true 2-phase commit (Write tool is not trans
 |---|---|---|---|
 | 0 | 0 | `agents/brainstorm/step-00-intake.md` | (never skip) |
 | 1 | 0 | `agents/brainstorm/step-01-explore.md` | (never skip) |
-| 2 | 1 | `pipeline-orchestrator-for-codex:spec-init` skill | (never skip) |
-| 3 | 1 | `pipeline-orchestrator-for-codex:spec-requirements` skill | (never skip) |
-| 4 | 1 | `pipeline-orchestrator-for-codex:validate-gap` skill | `--skip-validate-gap` set OR no git history |
-| 5 | 1 | `pipeline-orchestrator-for-codex:spec-design` skill | (never skip) |
-| 6 | 1 | `pipeline-orchestrator-for-codex:validate-design` skill | (never skip; loops to step 5 on NO-GO, max 2 retries) |
-| 7 | 1 | `pipeline-orchestrator-for-codex:spec-tasks` skill | (never skip) |
-| 8 | 2 | (inline AskUserQuestion handoff) | `--no-impl` set |
+| 2 | 0 | `agents/brainstorm/step-01b-alternatives.md` | auto-skip only when that agent emits `ALTERNATIVES_SKIPPED` |
+| 3 | 1 | `pipeline-orchestrator-for-codex:spec-init` skill | (never skip) |
+| 4 | 1 | `pipeline-orchestrator-for-codex:spec-requirements` skill | (never skip) |
+| 5 | 1 | `pipeline-orchestrator-for-codex:validate-gap` skill | `--skip-validate-gap` set OR no git history |
+| 6 | 1 | `pipeline-orchestrator-for-codex:spec-design` skill | (never skip) |
+| 7 | 1 | `pipeline-orchestrator-for-codex:validate-design` skill | (never skip; loops to step 6 on NO-GO, max 2 retries) |
+| 8 | 1 | `pipeline-orchestrator-for-codex:spec-tasks` skill | (never skip) |
+| 9 | 2 | (inline AskUserQuestion handoff) | `--no-impl` set |
 
-### STEP D: Step-06 retry loop
+### STEP D: Step-07 retry loop
 
-If step-06 returns NO-GO:
+If step-07 returns NO-GO:
 1. Read `pipeline-runs/<run_id>/02-validations/validate-design.md` for findings.
 2. Append findings to `pipeline-runs/<run_id>/01-spec/design.md` as a new section "## Validation Feedback (attempt N)".
 3. Re-dispatch `pipeline-orchestrator-for-codex:spec-design` skill with the appended feedback. Increment retry counter (track in `manifest.yaml.notes`).
-4. If retry counter reaches 2 and step-06 still NO-GO: set status=`partial`, exit with error report in `04-final-report.md`.
+4. If retry counter reaches 2 and step-07 still NO-GO: set status=`partial`, exit with error report in `04-final-report.md`.
 
-### STEP E: Step-08 handoff (Phase 2)
+### STEP E: Step-09 handoff (Phase 2)
 
-If `--no-impl`: skip step-08, generate `04-final-report.md`, set status=`ready`, exit.
+If `--no-impl`: skip step-09, generate `04-final-report.md`, set status=`ready`, exit.
 
 Else: invoke `AskUserQuestion`:
 - Question: "Run /pipeline-orchestrator-for-codex:pipeline now using this prep, or stop here?"
@@ -162,7 +163,7 @@ The full protocol schema lives in `references/gate-request-protocol.md`. Apply i
 
 **At STEP C step-01-explore:** first perform `ContextDiscovery` from the prompt, repo, prior artifacts, and intake output. Classify every material uncertainty as a `DecisionGap`. A `DecisionGap` is any human choice that changes product promise, execution scope, output format, tradeoff, or success criteria. Facts that are discoverable from the repo are not user decisions.
 
-For every material `DecisionGap`, emit a `GATE_REQUEST` block. If no material gaps remain after discovery, emit a confirmation `GATE_REQUEST` with `gate_id: brainstorm-explore-no-gaps` asking the user to confirm that synthesis may proceed without more questions. End the result with `STATUS: AWAITING_GATE_RESPONSES` and list the pending `gate_id`s. In short: no synthesis, spec, report, or handoff may proceed before the parent re-dispatches with `GATE_RESPONSES` for the pending explore gate ids.
+For every material `DecisionGap`, emit a `GATE_REQUEST` block. If no material gaps remain after discovery, emit a confirmation `GATE_REQUEST` with `gate_id: brainstorm-explore-no-gaps` asking the user to confirm that synthesis may proceed without more questions. End the result with `STATUS: AWAITING_GATE_RESPONSES` and list the pending `gate_id`s. In short: no synthesis, spec, report, or handoff may proceed before the parent re-dispatches with `GATE_RESPONSES` for the pending explore gate ids. The alternatives step runs immediately after that proof, so it must not bypass this same interaction gate.
 
 Concrete example for the first explore question (apply the same pattern to Q2-Q7):
 
@@ -192,17 +193,19 @@ context: |
 
 After emitting the required decision-gap gates (or the `brainstorm-explore-no-gaps` confirmation), end with `STATUS: AWAITING_GATE_RESPONSES` and list the pending gate ids. The parent will call AskUserQuestion in batches of up to 4 and re-dispatch you with `GATE_RESPONSES:` prepended. Treat missing `GATE_RESPONSES` as a blocker, never as approval, absence of gaps, or permission to continue.
 
-**At STEP E step-08 handoff:** emit `GATE_REQUEST` with options ["Run pipeline now (Recomendado)", "Stop here", "Save and notify later"]. End with `STATUS: AWAITING_GATE_RESPONSES`.
+**At STEP C step-01b-alternatives:** if explore finished and there is still a real branch choice, dispatch `step-01b-alternatives` and honor its `brainstorm-alternatives-choice` gate before entering spec-init. If the step emits `ALTERNATIVES_SKIPPED`, persist that note and continue without fabricating a user choice.
 
-**At STEP D step-06 retry crash recovery prompt:** emit `GATE_REQUEST` with options ["Re-run (Recomendado)", "Skip-and-continue"]. Same AWAITING termination.
+**At STEP E step-09 handoff:** emit `GATE_REQUEST` with options ["Run pipeline now (Recomendado)", "Stop here", "Save and notify later"]. End with `STATUS: AWAITING_GATE_RESPONSES`.
+
+**At STEP D step-07 retry crash recovery prompt:** emit `GATE_REQUEST` with options ["Re-run (Recomendado)", "Skip-and-continue"]. Same AWAITING termination.
 
 When the parent re-dispatches you with `GATE_RESPONSES:` prepended, parse the YAML and continue STEP C from where you stopped. Persist each user-confirmed answer to `02-explore.md` (or the relevant artifact) and to `manifest.notes` with the `gate_id` for audit trace.
 
-## DISPATCH_REQUEST protocol — REQUIRED for step-00-intake and step-01-explore (v5.2.0-rc.2+)
+## DISPATCH_REQUEST protocol — REQUIRED for brainstorm step agents (v5.2.0-rc.2+)
 
 **Skill dispatches stay direct:** `pipeline-orchestrator-for-codex:spec-init`, `:spec-requirements`, `:spec-design`, `:spec-tasks`, `:validate-design`, `:validate-gap` — all of these are **skills**, NOT agents. The empirical probe confirmed `Skill` tool IS available in subagent runtime. Continue using `Skill(skill: "pipeline-orchestrator-for-codex:<name>")` directly. No DISPATCH_REQUEST emission needed for these.
 
-**Agent dispatches MUST use DISPATCH_REQUEST:** `agents/brainstorm/step-00-intake.md` and `agents/brainstorm/step-01-explore.md` are AGENTS (not skills). The `Agent` tool is stripped from your subagent runtime — direct `Agent(...)` calls fail silently. Per `references/gate-request-protocol.md`, replace each Agent dispatch with a `=== DISPATCH_REQUEST v1 ===` block emission. End your tool result with `STATUS: AWAITING_DISPATCH_RESULTS` and list pending `dispatch_id`s. The parent (main LLM) dispatches the agent on your behalf and re-invokes you with `DISPATCH_RESULTS: <yaml>` prepended.
+**Agent dispatches MUST use DISPATCH_REQUEST:** `agents/brainstorm/step-00-intake.md`, `agents/brainstorm/step-01-explore.md`, and `agents/brainstorm/step-01b-alternatives.md` are AGENTS (not skills). The `Agent` tool is stripped from your subagent runtime — direct `Agent(...)` calls fail silently. Per `references/gate-request-protocol.md`, replace each Agent dispatch with a `=== DISPATCH_REQUEST v1 ===` block emission. End your tool result with `STATUS: AWAITING_DISPATCH_RESULTS` and list pending `dispatch_id`s. The parent (main LLM) dispatches the agent on your behalf and re-invokes you with `DISPATCH_RESULTS: <yaml>` prepended.
 
 Concrete example for step-00-intake (apply same pattern to step-01-explore):
 
@@ -218,11 +221,11 @@ prompt: |
   PRE_CLASSIFIED_TYPE: <if --type was passed>
   PIPELINE_DOC_PATH: <value>
 context_for_parent: |
-  Step 0 of brainstorm 9-step lifecycle. Output feeds into step-01-explore.
+  Step 0 of brainstorm 10-step lifecycle. Output feeds into step-01-explore.
 === END DISPATCH_REQUEST ===
 ```
 
-For step-01-explore, the dispatch_id is `brainstorm-step-01-explore` and the prompt carries the intake artifact path. Both step dispatches MUST be sequential (step-01 depends on step-00 output). Do NOT batch them in one tool result unless you can synthesize step-01 input without step-00's actual return value (you typically cannot).
+For step-01-explore, the dispatch_id is `brainstorm-step-01-explore` and the prompt carries the intake artifact path. For step-01b-alternatives, the dispatch_id is `brainstorm-step-01b-alternatives` and the prompt carries the intake + explore artifact paths. These step dispatches MUST be sequential (step-01 depends on step-00 output; step-01b depends on step-01 output). Do NOT batch them in one tool result unless you already have the prior step's real result.
 
 **Subagent runtime contract (re-stated for clarity):** any `Agent(...)` invocation will silently fail. ALL dispatches to agents under `agents/brainstorm/` MUST use DISPATCH_REQUEST. Skill dispatches are unaffected.
 

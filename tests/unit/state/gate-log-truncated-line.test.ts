@@ -56,4 +56,23 @@ describe("gate-log.list — crash-safe JSONL parsing (B10)", () => {
     const log = createGateLog(dir);
     await expect(log.list()).rejects.toBeTruthy();
   });
+
+  it("round-trips AUDIT hardness entries through the central gate log schema", async () => {
+    const log = createGateLog(dir);
+
+    await log.append({
+      gate: "BOOTSTRAP_EXEMPTION_USED",
+      hardness: "AUDIT",
+      phase: "phase-1",
+      decision: "pass",
+      decided_by: "controller",
+      timestamp: "2026-04-25T00:00:00.000Z",
+      detail: "audit trail",
+      confidence_impact: 0,
+    });
+
+    const entries = await log.list();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].hardness).toBe("AUDIT");
+  });
 });

@@ -17,6 +17,8 @@ const workflowCommandDefaults = {
     audit: { light: "audit-light", heavy: "audit-heavy", defaultVariant: "audit-heavy" },
     bugfix: { light: "bugfix-light", heavy: "bugfix-heavy", defaultVariant: "bugfix-heavy" },
     feature: { light: "feature-light", heavy: "feature-heavy", defaultVariant: "feature-light" },
+    "user-story": { light: "user-story-light", heavy: "user-story-heavy", defaultVariant: "user-story-heavy" },
+    "ux-sim": { light: "ux-sim-light", heavy: "ux-sim-heavy", defaultVariant: "ux-sim-heavy" },
     spec: { light: "spec-light", heavy: "spec-heavy", defaultVariant: "spec-light" },
 };
 const paperclipWorkflowCommandDefaults = {

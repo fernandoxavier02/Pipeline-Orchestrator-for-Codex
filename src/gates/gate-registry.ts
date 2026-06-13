@@ -93,6 +93,14 @@ const GATE_REGISTRY: Record<string, GateDefinition> = {
     confidenceImpactOnSkip: 0,
     rollback: "none",
   },
+  COMPLEXITY_GATE: {
+    gate: "COMPLEXITY_GATE",
+    hardness: "SOFT",
+    phase: "phase-0",
+    defaultDecision: "partial",
+    confidenceImpactOnSkip: -0.05,
+    rollback: "none",
+  },
   TDD_APPROVAL: {
     gate: "TDD_APPROVAL",
     hardness: "HARD",
@@ -189,6 +197,14 @@ const GATE_REGISTRY: Record<string, GateDefinition> = {
     confidenceImpactOnSkip: -0.05,
     rollback: "none",
   },
+  BOOTSTRAP_EXEMPTION_USED: {
+    gate: "BOOTSTRAP_EXEMPTION_USED",
+    hardness: "AUDIT",
+    phase: "phase-1",
+    defaultDecision: "pass",
+    confidenceImpactOnSkip: 0,
+    rollback: "none",
+  },
   REDUCED_VALIDATION_USAGE: {
     gate: "REDUCED_VALIDATION_USAGE",
     hardness: "SOFT",
@@ -204,6 +220,30 @@ const GATE_REGISTRY: Record<string, GateDefinition> = {
     defaultDecision: "pass",
     confidenceImpactOnSkip: 0,
     rollback: "none",
+  },
+  STEP_1_7_ROUTING: {
+    gate: "STEP_1_7_ROUTING",
+    hardness: "HARD",
+    phase: "phase-1",
+    defaultDecision: "pass",
+    confidenceImpactOnSkip: 0,
+    rollback: "none",
+  },
+  STEP_1_7_RECURSION_GUARD: {
+    gate: "STEP_1_7_RECURSION_GUARD",
+    hardness: "CIRCUIT_BREAKER",
+    phase: "phase-1",
+    defaultDecision: "block",
+    confidenceImpactOnSkip: 0,
+    rollback: "stop",
+  },
+  STOP_BEFORE_PA_DE_CAL: {
+    gate: "STOP_BEFORE_PA_DE_CAL",
+    hardness: "HARD",
+    phase: "phase-3",
+    defaultDecision: "block",
+    confidenceImpactOnSkip: 0,
+    rollback: "revalidate",
   },
 
   SPEC_ARTIFACT_MISSING: {

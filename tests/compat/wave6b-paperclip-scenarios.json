@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "sourceSpec": ".kiro/specs/canonical-v7-portability-closeout",
+  "canonicalTarget": "v7.12.0",
+  "codexBaseline": "v0.5.0",
+  "claimBoundary": "repo-only compatibility fixture; does not prove Marketplace, installed-cache, VPS, or live plugin execution",
+  "scenarios": [
+    {
+      "id": "compat-audit-heavy",
+      "family": "audit",
+      "taskType": "Audit",
+      "complexity": "COMPLEXA",
+      "variant": "heavy",
+      "prompt": "Audit the gate registry for canonical parity gaps and report evidence-backed findings.",
+      "command": "commands/paperclip-audit.md",
+      "skill": "skills/paperclip-audit/SKILL.md",
+      "expectedTemplate": { "type": "audit", "variant": "heavy" },
+      "mode": "read-only",
+      "requiredEvidence": ["risk matrix", "technical report", "executive report"]
+    },
+    {
+      "id": "compat-bugfix-light",
+      "family": "bugfix",
+      "taskType": "Bug Fix",
+      "complexity": "SIMPLES",
+      "variant": "light",
+      "prompt": "Fix the stale context warning and add a regression proof.",
+      "command": "commands/paperclip-bugfix.md",
+      "skill": "skills/paperclip-bugfix/SKILL.md",
+      "expectedTemplate": { "type": "bugfix", "variant": "light" },
+      "mode": "code-changing",
+      "requiredEvidence": ["root cause", "TDD", "regression"]
+    },
+    {
+      "id": "compat-feature-heavy",
+      "family": "feature",
+      "taskType": "Feature",
+      "complexity": "COMPLEXA",
+      "variant": "heavy",
+      "prompt": "Add a public workflow shortcut with visible plan and method gate coverage.",
+      "command": "commands/paperclip-feature.md",
+      "skill": "skills/paperclip-feature/SKILL.md",
+      "expectedTemplate": { "type": "feature", "variant": "heavy" },
+      "mode": "code-changing",
+      "requiredEvidence": ["BDD scenarios", "vertical slices", "integration validation"]
+    },
+    {
+      "id": "compat-hotfix",
+      "family": "hotfix",
+      "taskType": "Bug Fix",
+      "complexity": "COMPLEXA",
+      "variant": null,
+      "prompt": "Emergency fix for a production incident with one regression proof.",
+      "command": "commands/paperclip-hotfix.md",
+      "skill": "skills/paperclip-hotfix/SKILL.md",
+      "expectedTemplate": { "type": "hotfix", "variant": null },
+      "mode": "emergency-code-changing",
+      "requiredEvidence": ["emergency confirmation", "single batch", "Pa de Cal"]
+    },
+    {
+      "id": "compat-spec-heavy",
+      "family": "spec",
+      "taskType": "Spec",
+      "complexity": "COMPLEXA",
+      "variant": "heavy",
+      "prompt": "Produce a spec bundle for Paperclip task tree factory governance.",
+      "command": "commands/paperclip-spec.md",
+      "skill": "skills/paperclip-spec/SKILL.md",
+      "expectedTemplate": { "type": "spec", "variant": "heavy" },
+      "mode": "spec-lifecycle",
+      "requiredEvidence": ["requirements", "design", "tasks", "format gate"]
+    },
+    {
+      "id": "compat-user-story-light",
+      "family": "user-story",
+      "taskType": "User Story",
+      "complexity": "MEDIA",
+      "variant": "light",
+      "prompt": "As a maintainer, I want a repo-only compatibility fixture so Wave 6B has deterministic coverage.",
+      "command": "commands/paperclip-user-story.md",
+      "skill": "skills/paperclip-user-story/SKILL.md",
+      "expectedTemplate": { "type": "user-story", "variant": "light" },
+      "mode": "code-changing",
+      "requiredEvidence": ["acceptance criteria", "vertical slices", "integration validation"]
+    },
+    {
+      "id": "compat-ux-heavy",
+      "family": "ux",
+      "taskType": "UX Simulation",
+      "complexity": "COMPLEXA",
+      "variant": "heavy",
+      "prompt": "Simulate the UX flow for approving a Paperclip dispatch without creating cards.",
+      "command": "commands/paperclip-ux.md",
+      "skill": "skills/paperclip-ux/SKILL.md",
+      "expectedTemplate": { "type": "ux", "variant": "heavy" },
+      "mode": "read-only",
+      "requiredEvidence": ["simulation", "accessibility", "QA validation"]
+    }
+  ]
+}

@@ -26,6 +26,18 @@ describe("pipeline controller", () => {
         expect(result.proposal.workflowSelection.question).toContain("workflow");
         expect(result.proposal.workflowSelection.options.map((option) => option.command))
             .toEqual(expect.arrayContaining(["yes", "adjust", "audit", "bugfix", "feature", "ux", "spec"]));
+        expect(result.gates).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                gate: "COMPLEXITY_GATE",
+                status: "passed",
+                hardness: "SOFT",
+            }),
+            expect.objectContaining({
+                gate: "STEP_1_7_ROUTING",
+                status: "passed",
+                hardness: "HARD",
+            }),
+        ]));
     });
     it("records no-plan bypass semantics instead of silently skipping planning", async () => {
         const mediaResult = await runtime.controller.start("/pipeline --no-plan add small feature flag copy");
@@ -43,6 +55,85 @@ describe("pipeline controller", () => {
         expect(complexResult.proposal.planModeRequest).toMatchObject({
             kind: "PLAN_MODE_REQUEST",
         });
+    });
+    it("records COMPLEXITY_GATE as partial when a mode override downgrades the classifier", async () => {
+        const appendedGateEntries = [];
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => undefined,
+                    save: async () => undefined,
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+                gateLog: {
+                    append: async (entry) => {
+                        appendedGateEntries.push(entry);
+                    },
+                    list: async () => appendedGateEntries,
+                },
+                confidence: {
+                    save: async () => undefined,
+                },
+            },
+        });
+        const result = await controller.start("/pipeline --simples implement complex workflow boundary");
+        expect(result.gates).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                gate: "COMPLEXITY_GATE",
+                status: "partial",
+                hardness: "SOFT",
+            }),
+        ]));
+        expect(appendedGateEntries).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                gate: "COMPLEXITY_GATE",
+                decision: "partial",
+                hardness: "SOFT",
+                phase: "phase-0",
+            }),
+        ]));
+    });
+    it("records STEP_1_7_ROUTING when the controller selects an initial route", async () => {
+        const appendedGateEntries = [];
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => undefined,
+                    save: async () => undefined,
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+                gateLog: {
+                    append: async (entry) => {
+                        appendedGateEntries.push(entry);
+                    },
+                    list: async () => appendedGateEntries,
+                },
+                confidence: {
+                    save: async () => undefined,
+                },
+            },
+        });
+        const result = await controller.start("/pipeline --no-plan add small feature flag copy");
+        expect(result.gates).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                gate: "STEP_1_7_ROUTING",
+                status: "passed",
+                hardness: "HARD",
+                reason: expect.stringContaining("no-plan-bypass-evaluation"),
+            }),
+        ]));
+        expect(appendedGateEntries).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                gate: "STEP_1_7_ROUTING",
+                decision: "pass",
+                hardness: "HARD",
+                phase: "phase-1",
+            }),
+        ]));
     });
     it("lets the user switch the selected workflow before approving execution", async () => {
         let sessionState;
@@ -128,6 +219,40 @@ describe("pipeline controller", () => {
             nextPhase: "phase-2",
         });
         expect(referenceIndexCalls).toBe(0);
+    });
+    it("records STEP_1_7_RECURSION_GUARD before rejecting recursive continue during proposal confirmation", async () => {
+        const appendedGateEntries = [];
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => ({
+                        currentPhase: "phase-1",
+                        confidenceScore: 0.9,
+                    }),
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+                gateLog: {
+                    append: async (entry) => {
+                        appendedGateEntries.push(entry);
+                    },
+                    list: async () => appendedGateEntries,
+                },
+                confidence: {
+                    save: async () => undefined,
+                },
+            },
+        });
+        await expect(controller.start("/pipeline continue")).rejects.toThrow("Cannot continue while proposal confirmation is pending");
+        expect(appendedGateEntries).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                gate: "STEP_1_7_RECURSION_GUARD",
+                decision: "block",
+                hardness: "CIRCUIT_BREAKER",
+                phase: "phase-1",
+            }),
+        ]));
     });
     it("persists a final adversarial rework rollback route during continue", { timeout: 10000 }, async () => {
         let sessionState = {

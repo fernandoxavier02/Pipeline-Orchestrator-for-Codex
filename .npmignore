@@ -5,6 +5,8 @@ evals/tests/__pycache__/
 .codex/
 .worktrees/
 .parity-audit/
+.paperclip-hotfix/
+.playwright-mcp/
 coverage/
 node_modules/
 hooks.backup-session-lock-*/

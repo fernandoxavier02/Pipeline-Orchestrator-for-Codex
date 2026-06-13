@@ -63,7 +63,7 @@ export function runFinalValidator(input) {
         : [];
     const blockingGates = [
         ...effectiveGateLog
-            .filter((entry) => entry.decision === "block")
+            .filter((entry) => entry.decision === "block" && entry.hardness !== "AUDIT")
             .map((entry) => entry.gate),
         ...missingRequiredGates,
     ];

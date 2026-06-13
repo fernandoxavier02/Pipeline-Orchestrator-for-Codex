@@ -42,6 +42,9 @@ describe("dispatch-contract value object", () => {
     expect(AGENT_LEAF_TO_FQN["step-01-explore"]).toBe(
       `${PIPELINE_NAMESPACE}:brainstorm:step-01-explore`,
     );
+    expect(AGENT_LEAF_TO_FQN["step-01b-alternatives"]).toBe(
+      `${PIPELINE_NAMESPACE}:brainstorm:step-01b-alternatives`,
+    );
   });
 
   it("isPipelineAgentLeaf / fqnFor cover known and unknown leaves", () => {

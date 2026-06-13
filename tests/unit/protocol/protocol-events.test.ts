@@ -503,6 +503,31 @@ describe("R5: protocol event dispatchMode field", () => {
     }
   });
 
+  it("maps canonical gate labels through the gate-log compatibility normalizer", async () => {
+    const { recordProtocolGateResponse } = await import(
+      "../../../src/protocol/protocol-handler.js"
+    );
+    const cases = [
+      ["APPROVED", "pass"],
+      ["SKIPPED", "skip"],
+      ["REJECTED", "block"],
+      ["TRIGGERED for follow-up", "partial"],
+    ] as const;
+
+    for (const [selectedLabel, expectedDecision] of cases) {
+      const root = await mkdtemp(join(tmpdir(), "protocol-canonical-decision-"));
+      await recordProtocolGateResponse({
+        stateRoot: root,
+        gateId: "phase-3-closeout",
+        selectedLabel,
+      });
+
+      const raw = await readFile(join(root, "gate-decisions.jsonl"), "utf8");
+      const entry = JSON.parse(raw.trim());
+      expect(entry.decision).toBe(expectedDecision);
+    }
+  });
+
   it("dispatchMode persists through the writer when supplied", async () => {
     const root = await mkdtemp(join(tmpdir(), "protocol-events-r5-"));
     const log = createProtocolEventLog(root);

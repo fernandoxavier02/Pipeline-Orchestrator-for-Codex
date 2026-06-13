@@ -1,0 +1,46 @@
+{
+  "STATUS": "FAIL",
+  "verdict": "FAIL",
+  "generated_at": "2026-06-13T00:00:00Z",
+  "scope": "repo-only fidelity sweep against /root/projetos/pipeline-orchestrator-for-codex/repo/.kiro/specs/canonical-v7-portability-closeout",
+  "weighted_score": 0.67,
+  "fidelity_score": 0.67,
+  "breakdown": {
+    "requirement_coverage": 0.68,
+    "test_coverage": 0.72,
+    "design_congruence": 0.7,
+    "task_completeness": 0.58,
+    "non_invention": 0.86,
+    "contract_compliance": 0.5
+  },
+  "findings_by_severity": {
+    "critical": [
+      "REQ-009/TASK-010 final specialized Codex harness review is not complete. The spec requires real spawn_agent/wait_agent artifact collection with zero findings before final completion can be claimed.",
+      "REQ-008/TASK-009 final closeout is not complete. There is no final closeout report, final repo validation record, generated dist review, installed-cache boundary proof, or explicit final publication deferral artifact."
+    ],
+    "high": [
+      "REQ-003/TASK-003 public user-story and ux-sim surfaces remain partial. Runtime routing and Paperclip aliases exist, but the canonical skills/user-story* and skills/ux-sim* directories are absent and the ledger records these rows as partial.",
+      "REQ-004, REQ-005, and REQ-006 still have partial/open ledger rows for implementation discipline, Plan Mode/parallel execution, and observability/Langfuse/run-log/user-score maturity."
+    ],
+    "medium": [
+      "Wave 6A flow mirror completeness remains partial because the ledger still requires canonical-source comparison or an explicit Codex-equivalent deviation before claiming complete canonical parity.",
+      "Front-door package/cache/live claims remain intentionally unproven. This is acceptable for repo-only work, but it blocks any complete public portability claim."
+    ],
+    "low": [
+      "The spec.json status is approved, which matches an implemented-but-not-closed state."
+    ]
+  },
+  "EVIDENCE": [
+    "Read source spec artifacts in the repo checkout: .kiro/specs/canonical-v7-portability-closeout/spec.json, requirements.md, design.md, and tasks.md.",
+    "Repo evidence for TASK-001 exists in docs/PORTABILITY_CLOSEOUT_V7_12.md with explicit repo-only, generated-build, marketplace/local copy, installed-cache, and live-smoke claim boundaries.",
+    "Repo evidence for Wave 6B exists in tests/compat/wave6b-paperclip-scenarios.json, tests/compat/wave6b-paperclip-scenarios.test.ts, tests/regression/**, docs/migrations/**, docs/diagrams/**, docs/examples/**, and .kiro/specs/paperclip-task-tree-factory/**.",
+    "Repo evidence for Wave 6A exists in skills/measure-paperclip-fidelity/SKILL.md, references/paperclip/spec/lib/**, tests/unit/paperclip/**, and tests/integration/plugin/paperclip-fidelity-skill-surface.test.ts.",
+    "The ledger still records multiple non-closed rows: public user-story and ux-sim skill surfaces are partial; implementation discipline is partial; Plan Mode/parallel execution is partial; Langfuse, run-log aggregation, and user-score collection are open; final closeout and Task 10 are incomplete.",
+    "Prior focused validation from the previous heartbeat passed in the cache/runtime context: 28/28 tests for package/fidelity/closeout/surface-contract and 27/27 tests for parse-mode/gate-hardness/claude-v710 parity. This heartbeat revalidates the repo checkout separately in the markdown report."
+  ],
+  "NEXT_ACTION": [
+    "Keep PIP-71 blocked as a spec hard gate, not done.",
+    "Delegate or continue corrective implementation for TASK-003, TASK-004, TASK-005, TASK-006, TASK-009, and TASK-010.",
+    "After those gaps land, rerun the post-implementation sweep and require final repo validation plus Task 10 zero-finding real-agent review before spec closeout."
+  ]
+}

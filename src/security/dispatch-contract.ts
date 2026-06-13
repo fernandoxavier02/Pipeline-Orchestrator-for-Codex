@@ -55,6 +55,7 @@ const RAW_AGENT_LEAVES: ReadonlyArray<readonly [FolderName, string]> = [
   ["executor/type-specific", "ux-simulator"],
   ["brainstorm", "step-00-intake"],
   ["brainstorm", "step-01-explore"],
+  ["brainstorm", "step-01b-alternatives"],
   ["quality", "architecture-reviewer"],
   ["quality", "design-interrogator"],
   ["quality", "final-adversarial-orchestrator"],

@@ -236,6 +236,164 @@ describe("fix loop cap", () => {
     );
   });
 
+  it("uses an independent five-attempt fix loop for diff-discipline rejections", async () => {
+    const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
+      if (role === "pre-tester") {
+        return {
+          mode: "single-agent",
+          role: "pre-tester",
+          output: {
+            PRE_TESTER_RESULT: "approved-proof",
+            STATUS: "approved",
+            EVIDENCE: ["tests/unit/controller/pipeline-controller.test.ts"],
+            NEXT_ACTION: "proceed-to-batch",
+            approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+            tddApproval: "APPROVED",
+            redValidation: {
+              status: "approved",
+              reasons: ["RED validation passed for approved scenarios"],
+            },
+          },
+        };
+      }
+
+      if (role === "checkpoint-validator") {
+        return {
+          mode: "single-agent",
+          role: "checkpoint-validator",
+          output: {
+            CHECKPOINT_RESULT: typeof input?.checkpointName === "string" ? input.checkpointName : "batch-1",
+            STATUS: "passed",
+            EVIDENCE: ["tests/unit/controller/pipeline-controller.test.ts"],
+            NEXT_ACTION: "continue",
+            status: "passed",
+            checkpointName: typeof input?.checkpointName === "string" ? input.checkpointName : "batch-1",
+            consecutiveFailures: 0,
+            requiredCheckpoints: 1,
+            verifiedCheckpoints: 1,
+            coverage: 1,
+            evidence: ["tests/unit/controller/pipeline-controller.test.ts"],
+          },
+        };
+      }
+
+      return {
+        mode: "single-agent",
+        role: "executor-fix",
+        output: {
+          FIX_RESULT: "fixed",
+          CHANGES: ["src/controller/pipeline-controller.ts"],
+          TESTS: ["tests/unit/controller/pipeline-controller.test.ts"],
+          NEXT_ACTION: "re-run-checkpoint",
+          status: "fixed",
+        },
+      };
+    });
+    const diffFinding = {
+      severity: "important",
+      summary: "Batch touched a file outside CHANGE_CONTRACT.allowed_files.",
+      file: "src/controller/pipeline-controller.ts",
+      source: "diff-discipline",
+    };
+    const reviewBatch = vi.fn().mockResolvedValue({
+      status: "blocked",
+      findings: [diffFinding],
+      reviews: [
+        {
+          reviewer: "diff-discipline-reviewer",
+          status: "blocked",
+          findings: [diffFinding],
+        },
+      ],
+    });
+    const controller = createExecutorController({
+      runBatch: vi.fn().mockResolvedValue({
+        execution: {
+          status: "implemented",
+        },
+        changedFiles: ["src/controller/pipeline-controller.ts"],
+        review: {
+          status: "approved",
+        },
+        verificationEvidence: {
+          scenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+        },
+      }),
+      reviewOrchestrator: {
+        reviewBatch,
+      } as any,
+      runRole,
+      preTester: {
+        deriveExecutionProof: () => ({
+          approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+          tddApproval: "APPROVED",
+          redValidation: {
+            status: "approved",
+            reasons: [],
+          },
+          checkpointEvidence: [],
+          fixAttempts: [],
+        }),
+      } as any,
+    });
+
+    const result = await controller.executeApprovedWork({
+      batch: {
+        name: "batch-1",
+        files: ["src/controller/pipeline-controller.ts"],
+      },
+      mode: "--complexa",
+      proposal: {
+        summary: "stabilize scope discipline",
+        affectedFiles: ["src/controller/pipeline-controller.ts"],
+        validationIntent: "standard",
+        batchSize: 1,
+      },
+      approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+    });
+
+    const executorFixCalls = runRole.mock.calls.filter(([request]) => request.role === "executor-fix");
+    expect(result.status).toBe("FIX_LOOP_EXHAUSTED");
+    expect(result.attempts).toBe(5);
+    expect(executorFixCalls).toHaveLength(5);
+    expect(executorFixCalls[0]?.[0].input).toMatchObject({
+      strategy: "diff-discipline-rework",
+      findings: [diffFinding],
+    });
+    expect(reviewBatch.mock.calls.map(([request]) => request.reviewLoop)).toEqual([
+      {
+        iteration: 0,
+        maxIterations: 3,
+        afterFix: false,
+      },
+      {
+        iteration: 1,
+        maxIterations: 5,
+        afterFix: true,
+      },
+      {
+        iteration: 2,
+        maxIterations: 5,
+        afterFix: true,
+      },
+      {
+        iteration: 3,
+        maxIterations: 5,
+        afterFix: true,
+      },
+      {
+        iteration: 4,
+        maxIterations: 5,
+        afterFix: true,
+      },
+      {
+        iteration: 5,
+        maxIterations: 5,
+        afterFix: true,
+      },
+    ]);
+  });
+
   it("uses executor-spec-reviewer and quality-reviewer outputs as direct rework input for executor-fix", async () => {
     const runRole = vi.fn().mockImplementation(async ({ role, input }) => {
       if (role === "pre-tester") {

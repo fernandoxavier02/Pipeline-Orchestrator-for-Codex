@@ -107,4 +107,26 @@ describe("Paperclip command parsing", () => {
       },
     });
   });
+
+  it("routes direct user-story and ux-sim families through governed pipeline variants", () => {
+    expect(parseMode("/pipeline-orchestrator-for-codex:user-story --simples as a user I want clearer onboarding")).toMatchObject({
+      mode: "full",
+      normalizedRequest: "as a user I want clearer onboarding",
+      explicitClassification: {
+        type: "User Story",
+        complexity: "MEDIA",
+        variant: "user-story-light",
+      },
+    });
+
+    expect(parseMode("/pipeline-orchestrator-for-codex:ux-sim --complexa onboarding accessibility journey")).toMatchObject({
+      mode: "full",
+      normalizedRequest: "onboarding accessibility journey",
+      explicitClassification: {
+        type: "UX Simulation",
+        complexity: "COMPLEXA",
+        variant: "ux-sim-heavy",
+      },
+    });
+  });
 });
