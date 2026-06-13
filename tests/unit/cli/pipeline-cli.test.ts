@@ -494,6 +494,29 @@ describe("pipeline CLI exit code", () => {
     }
   });
 
+  it("blocks bare yes when the pending gate sentinel is future-dated", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-future-gate-"));
+
+    try {
+      await seedPendingProposal(root, "yes", {
+        sentinelUpdatedAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      });
+
+      const result = await runPipelineCli({
+        cwd: root,
+        codexHome: root,
+        strictAgents: true,
+        task: "yes",
+        agentRuntime: completeAgentRuntime(),
+      });
+
+      expect(result.status).toBe("BLOCKED");
+      expect(result.reason).toBe("blocked-invalid-pending-gate-state");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("blocks bare yes when sentinel HMAC is required but state is unsigned", async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-cli-unsigned-sentinel-"));
 
@@ -540,6 +563,41 @@ describe("pipeline CLI exit code", () => {
           response: "yes",
         },
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks bare yes when a signed sentinel is tampered", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-tampered-sentinel-"));
+
+    try {
+      await seedPendingProposal(root, "yes");
+      await signSentinelState(root, "test-key");
+
+      const file = join(root, ".codex", "pipeline", "sentinel-state.json");
+      const state = JSON.parse(await readFile(file, "utf8")) as {
+        expectedNext: string[];
+      };
+      await writeFile(
+        file,
+        JSON.stringify({
+          ...state,
+          expectedNext: ["phase-2-response"],
+        }),
+        "utf8",
+      );
+
+      const result = await withSentinelHmac("test-key", () => runPipelineCli({
+        cwd: root,
+        codexHome: root,
+        strictAgents: true,
+        task: "yes",
+        agentRuntime: completeAgentRuntime(),
+      }));
+
+      expect(result.status).toBe("BLOCKED");
+      expect(result.reason).toBe("blocked-invalid-pending-gate-state");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

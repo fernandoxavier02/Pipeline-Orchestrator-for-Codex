@@ -148,8 +148,9 @@ function sentinelIntegrityVerified(rawSentinel: unknown) {
 
 function sentinelIsFresh(updatedAt: string) {
   const updatedAtMs = new Date(updatedAt).getTime();
-  return Number.isFinite(updatedAtMs)
-    && Date.now() - updatedAtMs <= SENTINEL_STALE_THRESHOLD_MS;
+  if (!Number.isFinite(updatedAtMs)) return false;
+  const ageMs = Date.now() - updatedAtMs;
+  return ageMs >= 0 && ageMs <= SENTINEL_STALE_THRESHOLD_MS;
 }
 
 function expectedGateShape(session: ReturnType<typeof sessionStateSchema.parse>) {
