@@ -1,7 +1,6 @@
 {
   "added_unrequested_features": false,
   "changed_files": [
-    "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
     "evals/telemetry/latest_trace.json"
   ],
@@ -156,7 +155,7 @@
     },
     "unexpected_files": []
   },
-  "timestamp": "2026-06-13T03:00:03.483980+00:00",
+  "timestamp": "2026-06-13T03:01:31.905910+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validation_evidence": {
