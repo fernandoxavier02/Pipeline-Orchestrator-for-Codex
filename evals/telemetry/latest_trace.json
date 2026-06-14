@@ -1,20 +1,15 @@
 {
   "added_unrequested_features": false,
   "changed_files": [
-    ".agents/skills/workflow-eval-gate/scripts/run_eval.py",
-    ".codex/hooks/post_tool_use_telemetry.py",
-    "evals/outputs/latest_output.md",
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
-    "evals/telemetry/latest_trace.json",
-    "evals/tests/test_eval_gate.py",
-    "evals/tests/test_telemetry_hook.py"
+    "evals/telemetry/latest_trace.json"
   ],
   "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
     "hook_event": "PostToolUse",
-    "session_id": "019ec0ce-56f0-7703-ac8f-a9221c61732e",
+    "session_id": "019ec655-38d1-7071-acdc-7248e36e9fdc",
     "tool_name": "Bash"
   },
   "execution_observed": true,
@@ -60,20 +55,15 @@
     "scope_justifications": {},
     "unexpected_files": []
   },
-  "timestamp": "2026-06-13T16:02:08.613672+00:00",
+  "timestamp": "2026-06-14T13:32:46.610072+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "524522a8b9d267628c61501a3bb241e005344291",
+    "base_commit": "5aabcc44fb9c3ddc34299204156e3e684f178449",
     "changed_files": [
-      ".agents/skills/workflow-eval-gate/scripts/run_eval.py",
-      ".codex/hooks/post_tool_use_telemetry.py",
-      "evals/outputs/latest_output.md",
       "evals/telemetry/changed_files.txt",
       "evals/telemetry/git_diff.patch",
-      "evals/telemetry/latest_trace.json",
-      "evals/tests/test_eval_gate.py",
-      "evals/tests/test_telemetry_hook.py"
+      "evals/telemetry/latest_trace.json"
     ],
     "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
     "ref": "HEAD+working-tree"
