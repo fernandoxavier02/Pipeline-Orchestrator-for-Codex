@@ -155,6 +155,39 @@ function sanitizeGateDetail(value) {
   return String(value ?? '').replace(/[\x00-\x1F\x7F-\x9F]+/g, ' ').slice(0, GATE_DETAIL_MAX_CHARS);
 }
 
+function hasExplicitPipelineLock() {
+  const lockPath = path.join(process.cwd(), '.codex', 'pipeline', 'session-lock.json');
+  try {
+    if (!fs.existsSync(lockPath)) return false;
+    const raw = fs.readFileSync(lockPath, 'utf8');
+    const lock = JSON.parse(raw);
+    if (!lock || typeof lock !== 'object') return true;
+    if (lock.status && lock.status !== 'active') return true;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function emitDeny(reason, eventReason, extra = {}) {
+  const output = {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: reason,
+    }
+  };
+  recordHookEvent({
+    hook: 'sentinel',
+    event: 'PreToolUse',
+    decision: 'deny',
+    reason: eventReason,
+    ...extra,
+  });
+  console.log(JSON.stringify(output));
+  return process.exit(0);
+}
+
 function recordBootstrapExemptionGate(stateFilePath, detail) {
   try {
     const dir = path.dirname(stateFilePath);
@@ -232,6 +265,7 @@ function handleInput(raw) {
 
   // "pipeline-orchestrator-for-codex:core:sentinel" → "sentinel"
   const agentName = fullAgentType.split(':').pop();
+  const explicitPipelineLock = hasExplicitPipelineLock();
 
   // 3. Anti-loop: sentinel itself always passes
   if (agentName === 'sentinel') {
@@ -243,6 +277,14 @@ function handleInput(raw) {
 
   // 5. No state file found — hybrid fail
   if (!stateFilePath) {
+    if (explicitPipelineLock) {
+      return emitDeny(
+        'SENTINEL: explicit pipeline lock is active but sentinel-state.json is missing.',
+        'explicit pipeline missing sentinel state',
+        { attempted: agentName },
+      );
+    }
+
     // Bootstrap whitelist: these agents can run before state file exists
     const BOOTSTRAP_AGENTS = ['task-orchestrator'];
 
@@ -293,6 +335,17 @@ function handleInput(raw) {
     }
   } catch (stateErr) {
     // Fail-closed: corrupted state file → deny (except bootstrap agents).
+    if (explicitPipelineLock) {
+      process.stderr.write(
+        `[sentinel-hook] corrupted state at ${stateFilePath}: ${stateErr && stateErr.message ? stateErr.message : String(stateErr)}\n`,
+      );
+      return emitDeny(
+        SENTINEL_SANITIZED_REASON,
+        'explicit pipeline corrupted sentinel state',
+        { attempted: agentName },
+      );
+    }
+
     const BOOTSTRAP_AGENTS_ON_CORRUPTION = ['task-orchestrator', 'sentinel'];
     if (BOOTSTRAP_AGENTS_ON_CORRUPTION.includes(agentName)) {
       recordHookEvent({
@@ -331,12 +384,34 @@ function handleInput(raw) {
 
   // 7. Schema version check (legacy snake_case files only)
   if (normalizedState.schemaVersion !== undefined && normalizedState.schemaVersion !== 1) {
+    if (explicitPipelineLock) {
+      return emitDeny(
+        'SENTINEL: explicit pipeline lock is active but sentinel schema is incompatible.',
+        'explicit pipeline incompatible sentinel schema',
+        { attempted: agentName },
+      );
+    }
     return process.exit(0); // incompatible version → don't interfere
   }
 
   // 8. Pipeline inactive? → silent pass
   if (!normalizedState.pipelineActive) {
+    if (explicitPipelineLock) {
+      return emitDeny(
+        'SENTINEL: explicit pipeline lock is active but sentinel state is inactive.',
+        'explicit pipeline inactive sentinel state',
+        { attempted: agentName },
+      );
+    }
     return process.exit(0);
+  }
+
+  if (explicitPipelineLock && normalizedState.expectedNext.length === 0) {
+    return emitDeny(
+      'SENTINEL: explicit pipeline lock is active but sentinel expectedNext is missing.',
+      'explicit pipeline missing sentinel expectedNext',
+      { attempted: agentName },
+    );
   }
 
   // 9. Stale state detection (collected, NOT early-return — divergence check must ALWAYS run)

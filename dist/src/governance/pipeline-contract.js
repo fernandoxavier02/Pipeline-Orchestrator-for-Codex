@@ -58,16 +58,23 @@ function hasCapability(runtime, capability) {
 }
 export function evaluateCapabilities(runtime) {
     const missing_capabilities = REQUIRED_PIPELINE_CAPABILITIES.filter((capability) => !hasCapability(runtime, capability));
-    const status = missing_capabilities.length === 0 ? "PASS" : "BLOCKED";
+    const runtime_mode = runtime?.runtimeMode
+        ?? runtime?.agentRuntime?.runtimeMode
+        ?? (runtime?.agentRuntime ? "real-agent" : "blocked-no-agent-runtime");
+    const bypassActive = runtime_mode === "dev-bypass" || runtime_mode === "harness";
+    const status = missing_capabilities.length === 0 && !bypassActive ? "PASS" : "BLOCKED";
     return {
         status,
+        runtime_mode,
         missing_capabilities,
         gate: {
-            gate: "CAPABILITY_GATE",
+            gate: bypassActive ? "BYPASS_MODE_ACTIVE" : "CAPABILITY_GATE",
             status,
             reason: status === "PASS"
                 ? "All mandatory pipeline runtime capabilities are available."
-                : `Missing mandatory pipeline runtime capabilities: ${missing_capabilities.join(", ")}`,
+                : bypassActive
+                    ? `Runtime mode ${runtime_mode} is not valid for production pipeline execution.`
+                    : `Missing mandatory pipeline runtime capabilities: ${missing_capabilities.join(", ")}`,
             evidence_ref: "runtime.capabilities",
         },
     };
@@ -92,6 +99,9 @@ export function createBlockedPipelineArtifact(input) {
     return {
         pipeline_requested: true,
         pipeline_valid: false,
+        runtime_mode: input.runtime_mode ?? (reason === "dev-bypass" ? "dev-bypass" : "blocked-no-agent-runtime"),
+        hook_enforcement_mode: "advisory",
+        exec_window_enforcement: "cooperative",
         status: "BLOCKED",
         reason,
         missing_capabilities: input.missing_capabilities ?? [],
@@ -132,6 +142,9 @@ export function validatePipelineArtifact(artifact, options = {}) {
     const hookFailures = artifact.hooks.filter((hook) => hook.status !== "PASS");
     const verdictBlocked = artifact.final_verdict.status !== "PASS";
     const pipeline_valid = artifact.pipeline_requested === true
+        && artifact.runtime_mode === "real-agent"
+        && artifact.hook_enforcement_mode === "blocking"
+        && artifact.exec_window_enforcement === "cooperative"
         && artifact.status === "PASS"
         && artifact.missing_capabilities.length === 0
         && missing_gates.length === 0
@@ -153,9 +166,35 @@ export function validatePipelineArtifact(artifact, options = {}) {
     };
 }
 export function createPassingPipelineArtifact(input = {}) {
+    if (input.testOnly !== true) {
+        return {
+            pipeline_requested: true,
+            pipeline_valid: false,
+            runtime_mode: "harness",
+            hook_enforcement_mode: "advisory",
+            exec_window_enforcement: "cooperative",
+            status: "BLOCKED",
+            reason: "createPassingPipelineArtifact requires testOnly=true and must not mint production PASS artifacts.",
+            missing_capabilities: [],
+            gates: [],
+            hooks: [],
+            agents: [],
+            manual_fallback: createManualFallbackArtifact(),
+            manual_fallback_allowed: true,
+            manual_fallback_counts_as_pipeline: false,
+            final_verdict: {
+                status: "BLOCKED",
+                reason: "testOnly flag required for synthetic PASS helper.",
+                evidence_ref: "createPassingPipelineArtifact",
+            },
+        };
+    }
     const artifact = {
         pipeline_requested: true,
         pipeline_valid: true,
+        runtime_mode: "real-agent",
+        hook_enforcement_mode: "blocking",
+        exec_window_enforcement: "cooperative",
         status: "PASS",
         missing_capabilities: [],
         gates: input.gates ?? REQUIRED_PIPELINE_GATES.map((gate) => ({

@@ -175,6 +175,73 @@ describe("continue mode", () => {
     expect(events.some((e) => e.status === "answered" && e.kind === "GATE_REQUEST")).toBe(true);
   });
 
+  it("RED: blocks a bare yes when no pending proposal gate exists", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-bare-yes-"));
+    const controller = createPipelineController({
+      stores: {
+        session: createSessionStore(root),
+        checkpoints: createCheckpointStore(root),
+      },
+    });
+
+    const result = await controller.start("yes");
+
+    expect(result).toMatchObject({
+      status: "blocked",
+      blockedBy: "SENTINEL_SEQUENCE_BLOCK",
+      reason: expect.stringContaining("no pending proposal"),
+    });
+  });
+
+  it("RED: proposal confirmation writes a user gate decision", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-protocol-gate-decision-"));
+    const sessionStore = createSessionStore(root);
+    const controller = createPipelineController({
+      workspaceRoot: root,
+      stores: {
+        session: sessionStore,
+        checkpoints: createCheckpointStore(root),
+      },
+    });
+
+    await sessionStore.save({
+      sessionId: "protocol-gate-decision-1",
+      currentPhase: "phase-1",
+      mode: "--simples",
+      variant: "bugfix-light",
+      confidenceScore: 0.9,
+      proposal: {
+        summary: "quick login fix",
+        variant: "bugfix-light",
+        awaitingUserConfirmation: true,
+        infoGateStatus: "passed",
+        designReviewStatus: "skipped",
+        planModeStatus: "skipped",
+        affectedFiles: ["src/auth/login.ts"],
+        batchSize: 1,
+        validationIntent: "standard",
+      },
+    });
+
+    await controller.start("yes");
+
+    const decisionsPath = join(root, "gate-decisions.jsonl");
+    expect(existsSync(decisionsPath)).toBe(true);
+    const decisions = readFileSync(decisionsPath, "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line));
+    expect(decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          gate: "SCOPE_GATE",
+          decision: "pass",
+          decided_by: "user",
+        }),
+      ]),
+    );
+  });
+
   it("does not transition to phase-2 when user rejects a light workflow", async () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-continue-reject-"));
     const sessionStore = createSessionStore(root);

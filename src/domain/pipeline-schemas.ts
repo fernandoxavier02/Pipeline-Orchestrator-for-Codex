@@ -12,6 +12,7 @@ const gateDecisionValueSchema = z.enum(["pass", "block", "skip", "partial"]);
 const confidenceBandSchema = z.enum(["low", "medium", "high"]);
 const classificationTypeSchema = z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation", "Spec"]);
 const pipelineComplexitySchema = z.enum(["SIMPLES", "MEDIA", "COMPLEXA"]);
+const runtimeModeSchema = z.enum(["real-agent", "harness", "blocked-no-agent-runtime", "dev-bypass"]);
 
 const executionIdentitySchema = z.object({
   trace_id: z.string(),
@@ -152,6 +153,7 @@ const closeoutSummarySchema = z.object({
 
 export const sessionStateSchema = z.object({
   sessionId: z.string(),
+  run_id: z.string().optional(),
   runStartedAt: z.string().optional(),
   currentPhase: pipelinePhaseSchema,
   phase: pipelinePhaseSchema.optional(),
@@ -163,6 +165,7 @@ export const sessionStateSchema = z.object({
   // Optional for backward-compat (legacy sessions without this field are
   // treated as undefined and the cascade default applies — R6 AC 6.3).
   strictAgents: z.boolean().optional(),
+  runtime_mode: runtimeModeSchema.optional(),
   proposal: proposalSchema.optional(),
   approvalProof: controllerManagedTransitionSchema.optional(),
   executionProof: executionProofSchema.optional(),
@@ -194,6 +197,11 @@ export const controllerRevalidationLockSchema = z.object({
 });
 
 export const sentinelStateSchema = z.object({
+  session_id: z.string().optional(),
+  run_id: z.string().optional(),
+  workflow_id: z.string().optional(),
+  created_by_runtime: z.boolean().optional(),
+  runtime_mode: runtimeModeSchema.optional(),
   pipelineActive: z.boolean(),
   currentPhase: pipelinePhaseSchema,
   currentAgent: z.string(),

@@ -13,6 +13,7 @@ claim that every canonical gate already has an end-to-end runtime emitter.
 | `ADVERSARIAL_GATE_MANDATORY` | `MANDATORY` | `phase-2` | `block` | `manual` |
 | `ADVERSARIAL_LOOP_CHECKPOINT` | `SOFT` | `phase-2` | `pass` | `none` |
 | `BOOTSTRAP_EXEMPTION_USED` | `AUDIT` | `phase-1` | `pass` | `none` |
+| `BYPASS_MODE_ACTIVE` | `MANDATORY` | `phase-0` | `block` | `manual` |
 | `CAPABILITY_GATE` | `MANDATORY` | `phase-0` | `block` | `manual` |
 | `CHECKPOINT_FAIL` | `HARD` | `phase-2` | `block` | `revalidate` |
 | `CLOSEOUT_CONFIRM` | `SOFT` | `phase-3` | `skip` | `none` |
@@ -47,7 +48,7 @@ claim that every canonical gate already has an end-to-end runtime emitter.
 
 ## Wave 1 Delta
 
-- Implemented local inventory: `36` gates.
+- Implemented local inventory: `37` gates.
 - Canonical target from `.kiro/specs/canonical-v7-portability-closeout`: `35` gates or documented Codex-specific equivalents.
 - Wave 1 registry compatibility: the runtime registry now exposes the named canonical-era delta gates plus Codex-specific extensions.
 - Remaining Wave 1 work: prove or document the runtime emitters for the compatibility gates that were added only as registry rows in this slice.
@@ -74,7 +75,7 @@ names four gate concepts now represented as first-class runtime rows:
 
 Wave 1 can therefore prove this gate-inventory statement at repo level:
 
-- the Codex runtime inventory is stable at `36` rows and test-enforced;
+- the Codex runtime inventory is stable at `37` rows and test-enforced;
 - the named canonical-era delta gates are represented as first-class runtime
   rows by name;
 - future work must still prove the corresponding runtime emitters before

@@ -7,7 +7,7 @@ gates_at: [phase-0, phase-1, phase-1.5, phase-2, phase-3]
 sentinel_checkpoints: [post_orchestrator, phase_0_to_1, phase_1_to_2, phase_2_to_3, post_final_validator]
 ---
 
-# Pipeline Orchestrator — Thin Delegator
+# Pipeline Orchestrator — Runtime-Enforced State Machine
 
 ## VISIBLE_PLAN Contract
 
@@ -56,19 +56,22 @@ When the user invokes `/pipeline-orchestrator-for-codex:pipeline`, they are requ
 Do not present emulation mode as real multi-agent execution. Always document which mode is active in execution logs.
 </MANDATORY-SUBAGENT-RULE>
 
-You are the **PIPELINE SKILL** — a thin delegator. Your ONLY job is:
+You are the **PIPELINE SKILL** — the public Codex workflow surface for the TypeScript state machine.
+
+The enforcement source of truth is `src/controller/pipeline-controller.ts` plus the runtime stores, gates, hooks, sentinel state, protocol logs, and `validatePipelineArtifact` in `src/governance/pipeline-contract.ts`. Markdown explains and constrains the workflow, but it is not sufficient evidence that a pipeline was valid.
+
+Your operational responsibilities are:
 
 1. Open the visible plan with `update_plan`
 2. Show the workflow/method gate
-3. **Read** `agents/core/pipeline-controller.md`
-4. **Dispatch** it as a worker agent:
+3. Start the controller through the deterministic TypeScript runtime or, when the host exposes complete real-agent tools, dispatch the controller prompt as a worker agent:
    - `spawn_agent(agent_type: "worker", message: <controller prompt>)`
-5. **Wait** for the result with `wait_agent`
-6. **Process** the structured blocks it emits (`=== DISPATCH_REQUEST v1 ===`, `=== GATE_REQUEST v1 ===`, `=== PLAN_MODE_REQUEST v1 ===`)
-7. **Re-dispatch** with responses through fresh `spawn_agent` calls and persisted protocol state
-8. Repeat until `PIPELINE COMPLETE`
+4. **Wait** for the result with `wait_agent`
+5. **Process** the structured blocks it emits (`=== DISPATCH_REQUEST v1 ===`, `=== GATE_REQUEST v1 ===`, `=== PLAN_MODE_REQUEST v1 ===`)
+6. **Re-dispatch** with responses through fresh `spawn_agent` calls and persisted protocol state
+7. Repeat until the runtime accepts a validated `PipelineGovernanceArtifact`
 
-You do NOT classify tasks. You do NOT review code. You do NOT run builds. You do NOT write code. **The pipeline-controller agent does ALL of that.** You are the protocol handler.
+Do not treat a textual `PIPELINE COMPLETE` as success. A public pipeline PASS requires the TypeScript runtime to validate the governance artifact and persist protocol/gate evidence.
 
 <task>
 $ARGUMENTS
@@ -76,7 +79,11 @@ $ARGUMENTS
 
 ## How to Dispatch the Pipeline Controller
 
-**Step 1.** Read `agents/core/pipeline-controller.md`
+The public skill dispatches the controller only after the visible plan and workflow/method gate have completed. In production, this dispatch must be a real `spawn_agent` call; in CLI/runtime entrypoints, the deterministic TypeScript controller performs the equivalent state-machine bootstrap and records the same governance evidence.
+
+## Runtime and Dispatch Contract
+
+**Step 1.** Use the TypeScript runtime/state machine as the authority for classification, gates, session state, sentinel state, runtime mode, and artifact validation.
 
 **Step 2.** Call `spawn_agent` with:
 - `agent_type: "worker"`
@@ -88,7 +95,7 @@ $ARGUMENTS
 - `=== PLAN_MODE_REQUEST v1 ===` → enter planning mode, return results
 **Step 5.** Re-dispatch via fresh `spawn_agent` with the prior protocol state prepended
 **Step 6.** Call `wait_agent` after every dispatch
-**Step 7.** Repeat until `PIPELINE COMPLETE`
+**Step 7.** Repeat until the runtime accepts a validated `PipelineGovernanceArtifact`
 
 ### Fallback
 
@@ -180,9 +187,9 @@ If absent, auto-detect from package.json / Makefile.
 You are a **PROTOCOL HANDLER**, not an executor. For EVERY invocation:
 
 1. **Run CAPABILITY_GATE:** complete Codex real-agent runtime available? If no, return `BLOCKED`.
-2. **Read** `agents/core/pipeline-controller.md`
-3. **Dispatch** the controller as a worker agent using `spawn_agent`
-4. **Process** protocol blocks (DISPATCH_REQUEST, GATE_REQUEST, PLAN_MODE_REQUEST)
-5. **Wait and re-dispatch** until PIPELINE COMPLETE
+2. **Use the TypeScript state machine** in `src/controller/pipeline-controller.ts` as the enforcement source.
+3. **Dispatch** the controller as a worker agent using `spawn_agent` when real-agent runtime is available.
+4. **Process** protocol blocks (DISPATCH_REQUEST, GATE_REQUEST, PLAN_MODE_REQUEST).
+5. **Wait and re-dispatch** until the runtime produces and validates a `PipelineGovernanceArtifact`.
 
 **Self-check before responding:** Did you dispatch at least one agent with `spawn_agent`, call `wait_agent`, and receive its result? If no, you violated the pipeline contract. Executing the controller's work inline is NEVER acceptable.

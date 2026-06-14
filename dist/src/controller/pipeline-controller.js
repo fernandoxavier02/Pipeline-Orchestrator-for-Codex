@@ -1,9 +1,11 @@
 import { PIPELINE_MODES } from "../domain/pipeline-types.js";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { buildExecWindow } from "../security/exec-window.js";
 import { createExecWindowStore } from "../security/exec-window-store.js";
+import { buildSessionLock, sessionLockPath, writeSessionLockAtomic } from "../security/session-lock.js";
 import { resumePipeline } from "../continue/resume-pipeline.js";
 import { findLatestRun } from "../continue/find-latest-run.js";
 import { buildProposal } from "./build-proposal.js";
@@ -27,6 +29,7 @@ import { createGateLog, inferDecidedBy } from "../state/gate-log.js";
 import { createSessionStore } from "../state/session-store.js";
 import { createSentinelStateStore } from "../sentinel/sentinel-state.js";
 import { createProtocolEventLog } from "../protocol/protocol-events.js";
+import { recordProtocolGateResponse } from "../protocol/protocol-handler.js";
 import { createStateAdapter } from "./state-adapter.js";
 import { createExecutorController, hasAuthoritativeFinalReviewResult } from "../execution/executor-controller.js";
 import { resolveExecutionComplexity } from "../modes/complexity-resolution.js";
@@ -343,6 +346,66 @@ function createInitialExecutionProof() {
         checkpointEvidence: [],
         fixAttempts: [],
     };
+}
+function resolveRuntimeMode(input) {
+    if (input.capabilityRuntimeMode) {
+        return input.capabilityRuntimeMode;
+    }
+    if (!input.agentRuntime) {
+        return "blocked-no-agent-runtime";
+    }
+    if (input.agentRuntime.runtimeMode) {
+        return input.agentRuntime.runtimeMode;
+    }
+    if (input.explicitPipelineRequested && input.strictAgents === false) {
+        return "harness";
+    }
+    return "real-agent";
+}
+async function bootstrapExplicitPipelineState(input) {
+    if (!input.stateRoot) {
+        return;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    writeSessionLockAtomic(sessionLockPath(input.stateRoot), buildSessionLock({
+        session_id: input.sessionId,
+        now,
+    }));
+    await input.runtime?.stores?.session?.save?.({
+        sessionId: input.sessionId,
+        run_id: input.runId,
+        runStartedAt: new Date(now * 1000).toISOString(),
+        currentPhase: "phase-0",
+        phase: "phase-0",
+        batchIndex: 0,
+        mode: input.mode,
+        variant: input.variant,
+        confidenceScore: 1,
+        strictAgents: input.runtime?.strictAgents,
+        runtime_mode: input.runtimeMode,
+        unresolvedBlockers: [],
+        pendingDecision: "bootstrap",
+        touchedFiles: [],
+    });
+    await saveSentinelState(input.runtime, {
+        session_id: input.sessionId,
+        run_id: input.runId,
+        workflow_id: input.mode,
+        created_by_runtime: true,
+        runtime_mode: input.runtimeMode,
+        pipelineActive: true,
+        currentPhase: "phase-0",
+        currentAgent: "pipeline-controller",
+        expectedNext: ["pipeline-controller"],
+        completedPhases: [],
+        gateSummary: ["BOOTSTRAP"],
+        batchState: {
+            batchIndex: 0,
+            status: "bootstrap",
+        },
+        consecutiveCorrections: 0,
+        lastCheckpoint: "post_orchestrator",
+    });
 }
 function resolveSpecIdFromSession(session) {
     const source = session.proposal?.summary ?? session.sessionId ?? session.variant ?? "spec-request";
@@ -821,17 +884,73 @@ export function createPipelineController(runtime) {
         async start(input) {
             const trimmedInput = input.trim();
             const explicitPipelineRequested = isExplicitPipelineRequest(trimmedInput);
+            const { mode, normalizedRequest, explicitClassification } = parseMode(input);
+            const stateRoot = getStateRoot(runtime);
             const capabilityGate = explicitPipelineRequested
-                ? evaluateCapabilities({
-                    agentRuntime: runtime?.agentRuntime,
-                    stores: runtime?.stores,
-                })
+                ? (() => {
+                    const preflightRuntimeMode = resolveRuntimeMode({
+                        explicitPipelineRequested,
+                        strictAgents: runtime?.strictAgents,
+                        agentRuntime: runtime?.agentRuntime,
+                    });
+                    return evaluateCapabilities({
+                        agentRuntime: runtime?.agentRuntime,
+                        runtimeMode: preflightRuntimeMode,
+                        stores: runtime?.stores,
+                    });
+                })()
                 : undefined;
+            const runtimeMode = resolveRuntimeMode({
+                explicitPipelineRequested,
+                strictAgents: runtime?.strictAgents,
+                agentRuntime: runtime?.agentRuntime,
+                capabilityRuntimeMode: capabilityGate?.runtime_mode,
+            });
+            const bootstrapState = explicitPipelineRequested
+                ? {
+                    sessionId: `pipeline-${randomUUID()}`,
+                    runId: randomUUID(),
+                }
+                : undefined;
+            if (bootstrapState) {
+                await bootstrapExplicitPipelineState({
+                    runtime,
+                    stateRoot,
+                    sessionId: bootstrapState.sessionId,
+                    runId: bootstrapState.runId,
+                    mode,
+                    variant: explicitClassification?.variant ?? "unknown",
+                    request: normalizedRequest,
+                    runtimeMode,
+                });
+            }
             if (capabilityGate?.status !== undefined && capabilityGate.status !== "PASS") {
+                if (capabilityGate.gate) {
+                    await persistGateAndConfidence(runtime ?? {}, [pipelineGateToLogEntry(capabilityGate.gate)], 1);
+                }
+                if (bootstrapState) {
+                    await runtime?.stores?.session?.save?.({
+                        sessionId: bootstrapState.sessionId,
+                        run_id: bootstrapState.runId,
+                        runStartedAt: new Date().toISOString(),
+                        currentPhase: "phase-0",
+                        phase: "phase-0",
+                        batchIndex: 0,
+                        mode,
+                        variant: explicitClassification?.variant ?? "unknown",
+                        confidenceScore: 1,
+                        strictAgents: runtime?.strictAgents,
+                        runtime_mode: runtimeMode,
+                        unresolvedBlockers: [capabilityGate.gate.reason],
+                        pendingDecision: "blocked-no-agent-runtime",
+                        touchedFiles: [],
+                    });
+                }
                 return {
                     ...createBlockedPipelineArtifact({
                         request: input,
                         reason: "blocked-no-agent-runtime",
+                        runtime_mode: runtimeMode,
                         missing_capabilities: capabilityGate.missing_capabilities,
                         capabilityGate: capabilityGate.gate,
                     }),
@@ -839,8 +958,6 @@ export function createPipelineController(runtime) {
                 };
             }
             const normalizedResponse = trimmedInput.toLowerCase();
-            const { mode, normalizedRequest, explicitClassification } = parseMode(input);
-            const stateRoot = getStateRoot(runtime);
             const workflowSwitchClassification = resolveWorkflowSwitch({
                 response: normalizedResponse,
             });
@@ -921,9 +1038,28 @@ export function createPipelineController(runtime) {
                 }
             }
             if (normalizedResponse === "yes" || normalizedResponse === "no" || normalizedResponse === "adjust") {
-                const session = (await runtime?.stores?.session?.load?.());
+                const session = await runtime?.stores?.session?.load?.()
+                    .then((loaded) => loaded)
+                    .catch(() => undefined);
                 const sentinelState = await loadSentinelState(runtime);
                 const expectedToken = getExpectedSentinelToken(session);
+                if (session?.currentPhase !== "phase-1" && session?.currentPhase !== "phase-1.5") {
+                    const detail = `Received "${normalizedResponse}" but there is no pending proposal or plan gate in the active session.`;
+                    await persistGateAndConfidence(runtime ?? {}, [
+                        toGateLogEntry({
+                            gate: "SENTINEL_SEQUENCE_BLOCK",
+                            hardness: "HARD",
+                            phase: "phase-1",
+                            decision: "block",
+                            detail,
+                        }),
+                    ], session?.confidenceScore ?? 1);
+                    return {
+                        status: "blocked",
+                        blockedBy: "SENTINEL_SEQUENCE_BLOCK",
+                        reason: detail,
+                    };
+                }
                 if (sentinelState?.pipelineActive
                     && sentinelState.expectedNext.length > 0
                     && !sentinelState.expectedNext.includes(expectedToken)) {
@@ -969,18 +1105,13 @@ export function createPipelineController(runtime) {
                                 ],
                             },
                         });
-                        await protocolLog.append({
-                            event_id: `gate-request-${gateId}-answered`,
-                            kind: "GATE_REQUEST",
-                            protocol_version: 1,
-                            status: "answered",
+                        await recordProtocolGateResponse({
+                            stateRoot,
+                            gateId,
+                            selectedLabel: normalizedResponse,
                             source: "pipeline-controller",
                             timestamp,
-                            payload: {
-                                gate_id: gateId,
-                                selected_label: normalizedResponse,
-                                confirmation_status: confirmation.status,
-                            },
+                            userNotes: `confirmation_status=${confirmation.status}`,
                         });
                     }
                     catch {
@@ -1466,7 +1597,8 @@ export function createPipelineController(runtime) {
                 ];
                 await persistGateAndConfidence(runtime ?? {}, blockedGates, 1);
                 await runtime?.stores?.session?.save?.({
-                    sessionId: `${mode}:${normalizedRequest || "request"}`,
+                    sessionId: bootstrapState?.sessionId ?? `${mode}:${normalizedRequest || "request"}`,
+                    run_id: bootstrapState?.runId,
                     runStartedAt: new Date().toISOString(),
                     currentPhase: "phase-1",
                     phase: "phase-1",
@@ -1474,6 +1606,8 @@ export function createPipelineController(runtime) {
                     mode,
                     variant: classificationResult.classification.variant,
                     confidenceScore: 1,
+                    strictAgents: runtime?.strictAgents,
+                    runtime_mode: runtimeMode,
                     proposal: {
                         ...authoritativeProposal,
                         awaitingUserConfirmation: false,
@@ -1531,7 +1665,8 @@ export function createPipelineController(runtime) {
                 ];
                 await persistGateAndConfidence(runtime ?? {}, blockedGates, 1);
                 await runtime?.stores?.session?.save?.({
-                    sessionId: `${mode}:${normalizedRequest || "request"}`,
+                    sessionId: bootstrapState?.sessionId ?? `${mode}:${normalizedRequest || "request"}`,
+                    run_id: bootstrapState?.runId,
                     runStartedAt: new Date().toISOString(),
                     currentPhase: "phase-1",
                     phase: "phase-1",
@@ -1539,6 +1674,8 @@ export function createPipelineController(runtime) {
                     mode,
                     variant: classificationResult.classification.variant,
                     confidenceScore: 1,
+                    strictAgents: runtime?.strictAgents,
+                    runtime_mode: runtimeMode,
                     proposal: {
                         ...authoritativeProposal,
                         awaitingUserConfirmation: false,
@@ -1633,6 +1770,11 @@ export function createPipelineController(runtime) {
             }
             await persistGateAndConfidence(runtime ?? {}, gateEntries, 1);
             await saveSentinelState(runtime, {
+                session_id: bootstrapState?.sessionId,
+                run_id: bootstrapState?.runId,
+                workflow_id: mode,
+                created_by_runtime: true,
+                runtime_mode: runtimeMode,
                 pipelineActive: true,
                 currentPhase: "phase-1",
                 currentAgent: "pipeline-controller",
@@ -1656,7 +1798,8 @@ export function createPipelineController(runtime) {
                 }),
             ], 1);
             await runtime?.stores?.session?.save?.({
-                sessionId: `${mode}:${normalizedRequest || "request"}`,
+                sessionId: bootstrapState?.sessionId ?? `${mode}:${normalizedRequest || "request"}`,
+                run_id: bootstrapState?.runId,
                 runStartedAt: new Date().toISOString(),
                 currentPhase: "phase-1",
                 phase: "phase-1",
@@ -1664,6 +1807,8 @@ export function createPipelineController(runtime) {
                 mode,
                 variant: classificationResult.classification.variant,
                 confidenceScore: 1,
+                strictAgents: runtime?.strictAgents,
+                runtime_mode: runtimeMode,
                 proposal: {
                     ...authoritativeProposal,
                     awaitingUserConfirmation: true,

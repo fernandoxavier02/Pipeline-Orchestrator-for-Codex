@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createPipelineController } from "../../../src/controller/pipeline-controller.js";
 import { createPipelineRuntime } from "../../../src/index.js";
@@ -38,6 +41,92 @@ describe("pipeline controller", () => {
                 hardness: "HARD",
             }),
         ]));
+    });
+    it("RED: explicit pipeline bootstrap creates shared lock, session, sentinel, and gate state before proposal", async () => {
+        const cwd = mkdtempSync(join(tmpdir(), "pipeline-controller-bootstrap-"));
+        const runtime = createPipelineRuntime({
+            cwd,
+            codexHome: cwd,
+            strictAgents: true,
+            agentRuntime: {
+                capabilities: {
+                    spawnAgent: true,
+                    waitAgent: true,
+                    collectArtifacts: true,
+                    recordGates: true,
+                    recordCheckpoints: true,
+                    structuredFinalState: true,
+                },
+                async spawnAgent(request) {
+                    return {
+                        mode: "single-agent",
+                        role: request.role,
+                        output: { status: "approved", dispatchMode: "real-agent" },
+                    };
+                },
+                async waitAgent(dispatch) {
+                    return dispatch;
+                },
+                async collectArtifacts(dispatches) {
+                    return dispatches.map((dispatch) => dispatch.output);
+                },
+            },
+        });
+        await runtime.controller.start("/pipeline-orchestrator-for-codex:pipeline fix explicit bootstrap");
+        const stateDir = join(cwd, ".codex", "pipeline");
+        expect(existsSync(join(stateDir, "session-lock.json"))).toBe(true);
+        expect(existsSync(join(stateDir, "session.json"))).toBe(true);
+        expect(existsSync(join(stateDir, "sentinel-state.json"))).toBe(true);
+        expect(existsSync(join(stateDir, "gate-decisions.jsonl"))).toBe(true);
+        const lock = JSON.parse(readFileSync(join(stateDir, "session-lock.json"), "utf8"));
+        const session = JSON.parse(readFileSync(join(stateDir, "session.json"), "utf8"));
+        const sentinel = JSON.parse(readFileSync(join(stateDir, "sentinel-state.json"), "utf8"));
+        expect(session.sessionId).toBe(lock.session_id);
+        expect(sentinel.session_id).toBe(lock.session_id);
+        expect(session.runtime_mode).toBe("real-agent");
+    });
+    it("RED: explicit pipeline with strictAgents=false is harness and cannot pass capability gate", async () => {
+        const cwd = mkdtempSync(join(tmpdir(), "pipeline-controller-harness-"));
+        const runtime = createPipelineRuntime({
+            cwd,
+            codexHome: cwd,
+            strictAgents: false,
+            agentRuntime: {
+                capabilities: {
+                    spawnAgent: true,
+                    waitAgent: true,
+                    collectArtifacts: true,
+                    recordGates: true,
+                    recordCheckpoints: true,
+                    structuredFinalState: true,
+                },
+                async spawnAgent(request) {
+                    return {
+                        mode: "single-agent",
+                        role: request.role,
+                        output: { status: "approved", dispatchMode: "real-agent" },
+                    };
+                },
+                async waitAgent(dispatch) {
+                    return dispatch;
+                },
+                async collectArtifacts(dispatches) {
+                    return dispatches.map((dispatch) => dispatch.output);
+                },
+            },
+        });
+        const result = await runtime.controller.start("/pipeline-orchestrator-for-codex:pipeline fix harness false pass");
+        expect(result).toMatchObject({
+            status: "BLOCKED",
+            pipeline_valid: false,
+            runtime_mode: "harness",
+        });
+        expect(result.gates).toEqual([
+            expect.objectContaining({
+                gate: "BYPASS_MODE_ACTIVE",
+                status: "BLOCKED",
+            }),
+        ]);
     });
     it("records no-plan bypass semantics instead of silently skipping planning", async () => {
         const mediaResult = await runtime.controller.start("/pipeline --no-plan add small feature flag copy");

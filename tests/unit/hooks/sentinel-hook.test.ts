@@ -60,6 +60,19 @@ function writeRuntimeSentinelState(
   }), "utf8");
 }
 
+function writeActiveSessionLock(cwd: string, overrides: Record<string, unknown> = {}) {
+  const stateDir = join(cwd, ".codex", "pipeline");
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, "session-lock.json"), JSON.stringify({
+    session_id: "sentinel-session",
+    run_id: "sentinel-run",
+    status: "active",
+    created_at: Math.floor(Date.now() / 1000) - 10,
+    expires_at: Math.floor(Date.now() / 1000) + 300,
+    ...overrides,
+  }), "utf8");
+}
+
 function canonicalize(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((entry) => canonicalize(entry)).join(",")}]`;
@@ -201,6 +214,62 @@ describe("sentinel hook", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe("");
+  });
+
+  it("denies corrupted sentinel state when an explicit pipeline lock is active", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    writeActiveSessionLock(cwd);
+    writeFileSync(join(stateDir, "sentinel-state.json"), "{bad-json", "utf8");
+
+    const result = runSentinelHook(cwd, "pipeline-orchestrator-for-codex:core:task-orchestrator");
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toBe(
+      "sentinel internal error — failing closed",
+    );
+  });
+
+  it("denies inactive sentinel state when an explicit pipeline lock is active", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeActiveSessionLock(cwd);
+    writeRuntimeSentinelState(cwd, ["information-gate"], { pipelineActive: false });
+
+    const result = runSentinelHook(cwd, "pipeline-orchestrator-for-codex:core:information-gate");
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("inactive");
+  });
+
+  it("denies incompatible sentinel schema when an explicit pipeline lock is active", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeActiveSessionLock(cwd);
+    writeRuntimeSentinelState(cwd, ["information-gate"], { schema_version: 2 });
+
+    const result = runSentinelHook(cwd, "pipeline-orchestrator-for-codex:core:information-gate");
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("schema");
+  });
+
+  it("denies missing expectedNext when an explicit pipeline lock is active", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeActiveSessionLock(cwd);
+    writeRuntimeSentinelState(cwd, []);
+
+    const result = runSentinelHook(cwd, "pipeline-orchestrator-for-codex:core:information-gate");
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain("expectedNext");
   });
 
   it("allows a pipeline agent that matches runtime camelCase expectedNext", () => {

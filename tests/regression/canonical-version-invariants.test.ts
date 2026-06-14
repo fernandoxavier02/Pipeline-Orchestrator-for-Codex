@@ -26,7 +26,7 @@ const invariants: Invariant[] = [
   {
     version: "v6.1.0",
     evidencePath: "references/gates.md",
-    patterns: [/CAPABILITY_GATE/, /SSOT_CONFLICT/, /36` gates/],
+    patterns: [/CAPABILITY_GATE/, /SSOT_CONFLICT/, /37` gates/],
   },
   {
     version: "v6.3.0",

@@ -109,8 +109,17 @@ describe("pipeline governance contract", () => {
     expect(validatePipelineArtifact(artifact).pipeline_valid).toBe(false);
   });
 
+  it("RED: the passing artifact helper cannot mint a valid production PASS from defaults", () => {
+    const artifact = createPassingPipelineArtifact();
+
+    expect(artifact.pipeline_valid).toBe(false);
+    expect(artifact.status).toBe("BLOCKED");
+    expect(artifact.final_verdict.reason).toContain("testOnly");
+  });
+
   it("blocks when any mandatory gate is missing", () => {
     const artifact = createPassingPipelineArtifact({
+      testOnly: true,
       gates: REQUIRED_PIPELINE_GATES
         .filter((gate) => gate !== "FINAL_VERDICT_GATE")
         .map((gate) => ({
@@ -129,6 +138,7 @@ describe("pipeline governance contract", () => {
 
   it("does not create a valid PASS artifact when required gates are missing", () => {
     const artifact = createPassingPipelineArtifact({
+      testOnly: true,
       gates: REQUIRED_PIPELINE_GATES
         .filter((gate) => gate !== "CAPABILITY_GATE")
         .map((gate) => ({
@@ -146,6 +156,7 @@ describe("pipeline governance contract", () => {
 
   it("blocks when any mandatory hook checkpoint is missing", () => {
     const artifact = createPassingPipelineArtifact({
+      testOnly: true,
       hooks: REQUIRED_PIPELINE_HOOKS
         .filter((hook) => hook !== "final_verdict:after")
         .map((checkpoint) => ({
@@ -164,6 +175,7 @@ describe("pipeline governance contract", () => {
 
   it("blocks adversarial review without independent primary and adversarial reviewers", () => {
     const artifact = createPassingPipelineArtifact({
+      testOnly: true,
       agents: [
         {
           role: "primary_reviewer",
@@ -181,7 +193,7 @@ describe("pipeline governance contract", () => {
   });
 
   it("blocks security review without a security reviewer", () => {
-    const artifact = createPassingPipelineArtifact();
+    const artifact = createPassingPipelineArtifact({ testOnly: true });
     const validation = validatePipelineArtifact(artifact, { adversarial: true, security: true });
 
     expect(validation.status).toBe("BLOCKED");
@@ -191,6 +203,7 @@ describe("pipeline governance contract", () => {
   it("passes only when capabilities, gates, hooks, agents, and verdict are complete", () => {
     const capabilityGate = evaluateCapabilities(completeRuntime());
     const artifact = createPassingPipelineArtifact({
+      testOnly: true,
       gates: REQUIRED_PIPELINE_GATES.map((gate) => ({
         gate,
         status: "PASS",

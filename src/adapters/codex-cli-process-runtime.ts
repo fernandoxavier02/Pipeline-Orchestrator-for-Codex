@@ -172,6 +172,7 @@ export function createCodexCliProcessRuntime(
     ?? (Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 120_000);
 
   return {
+    runtimeMode: "dev-bypass",
     capabilities: {
       spawnAgent: true,
       waitAgent: true,

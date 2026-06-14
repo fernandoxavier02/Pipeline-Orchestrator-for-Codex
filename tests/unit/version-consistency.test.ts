@@ -14,6 +14,7 @@ describe("version consistency across manifests", () => {
   const pkgJson = readJson(join(ROOT, "package.json"));
   const hooksJson = readFileSync(join(ROOT, "hooks", "hooks.json"), "utf8");
   const changelog = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
+  const readme = readFileSync(join(ROOT, "README.md"), "utf8");
 
   it("plugin.json version is 0.5.0", () => {
     expect(pluginJson.version).toBe("0.5.0");
@@ -21,6 +22,23 @@ describe("version consistency across manifests", () => {
 
   it("package.json version matches plugin.json", () => {
     expect(pkgJson.version).toBe(pluginJson.version);
+  });
+
+  it("README version and agent count match plugin.json", () => {
+    const version = String(pluginJson.version);
+    const description = [
+      pluginJson.description,
+      (pluginJson.display as { shortDescription?: string; longDescription?: string } | undefined)?.shortDescription,
+      (pluginJson.display as { shortDescription?: string; longDescription?: string } | undefined)?.longDescription,
+    ].join("\n");
+    const agentCount = description.match(/\b(\d+)\s+agent prompts\b/i)?.[1];
+
+    expect(agentCount, "plugin manifest must declare agent prompt count").toBeDefined();
+    expect(readme).toContain(`version-${version}`);
+    expect(readme).toContain(`/${version}`);
+    expect(readme).toContain(`agents-${agentCount}`);
+    expect(readme).toContain(`**${agentCount} agent prompts**`);
+    expect(readme).toContain(`## ${agentCount} Agent Prompts`);
   });
 
   it("SessionStart banner mentions v0.5.0", () => {

@@ -83,7 +83,19 @@ describe("force pipeline agents hook", () => {
     expect(output.systemMessage).toContain("agents/core/pipeline-controller.md");
     expect(output.systemMessage).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller");
     expect(output.systemMessage).toContain("blocked-no-agent-runtime");
+    expect(output.systemMessage).not.toContain("send_input");
     expect(output.systemMessage).not.toContain("agents/core/task-orchestrator.md");
+  });
+
+  it("RED: explicit pipeline hook reports advisory mode instead of pretending enforcement is proven", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-"));
+
+    const result = runHook(cwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo sem runtime real");
+    const output = parseOutput(result);
+
+    expect(output.hook_enforcement_mode).toBe("advisory");
+    expect(output.pipeline_valid).toBe(false);
+    expect(output.systemMessage).toContain("advisory");
   });
 
   it("ATDD: plugin mention without explicit workflow enters the canonical pipeline front door", () => {

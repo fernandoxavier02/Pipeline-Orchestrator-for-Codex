@@ -7,6 +7,14 @@ const GATE_REGISTRY = {
         confidenceImpactOnSkip: 0,
         rollback: "manual",
     },
+    BYPASS_MODE_ACTIVE: {
+        gate: "BYPASS_MODE_ACTIVE",
+        hardness: "MANDATORY",
+        phase: "phase-0",
+        defaultDecision: "block",
+        confidenceImpactOnSkip: 0,
+        rollback: "manual",
+    },
     INTAKE_GATE: {
         gate: "INTAKE_GATE",
         hardness: "MANDATORY",

@@ -117,6 +117,16 @@ describe("Codex-native public workflow surface", () => {
     }
   });
 
+  it("keeps pipeline skill aligned with the TypeScript state-machine enforcement", () => {
+    const content = readSkill("pipeline");
+
+    expect(content.toLowerCase()).not.toContain("thin delegator");
+    expect(content).not.toContain("Your ONLY job");
+    expect(content).toContain("TypeScript state machine");
+    expect(content).toContain("src/controller/pipeline-controller.ts");
+    expect(content).toContain("validatePipelineArtifact");
+  });
+
   it("documents GATE_REQUEST parent handling instead of direct Claude AskUserQuestion execution", () => {
     for (const skill of PUBLIC_WORKFLOW_SKILLS) {
       const content = readSkill(skill);

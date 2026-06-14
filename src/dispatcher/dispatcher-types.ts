@@ -24,6 +24,7 @@ export interface AgentRuntimeAdapter {
   waitAgent?: (dispatch: DispatchResult) => Promise<DispatchResult>;
   collectArtifacts?: (dispatches: DispatchResult[]) => Promise<Record<string, unknown>[]>;
   capabilities?: Partial<Record<AgentRuntimeCapability, boolean>>;
+  runtimeMode?: "real-agent" | "harness" | "blocked-no-agent-runtime" | "dev-bypass";
 }
 
 export type AgentRuntimeCapability =

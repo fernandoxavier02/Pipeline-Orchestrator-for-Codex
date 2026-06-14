@@ -233,11 +233,11 @@ Você DEVE iniciar o workflow governado por uma destas duas formas equivalentes:
    - message iniciando com:
      PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller
 3. Chamar wait_agent para obter o resultado do controller antes de processar qualquer bloco.
-4. Usar send_input quando precisar reenviar respostas ao mesmo controller aberto.
+4. Re-dispatchar por spawn_agent com o estado de protocolo persistido quando precisar continuar o controller.
 
 Depois disso, processe todos os blocos GATE_REQUEST, DISPATCH_REQUEST e PLAN_MODE_REQUEST antes de avançar.
 
-Se spawn_agent, wait_agent ou send_input não estiverem disponíveis, PARE e responda exatamente com blocked-no-agent-runtime. Não execute inline, não gere auditoria manual, não rode testes como substituto e não diga que foi pipeline real.
+Se spawn_agent ou wait_agent não estiverem disponíveis, PARE e responda exatamente com blocked-no-agent-runtime. Não execute inline, não gere auditoria manual, não rode testes como substituto e não diga que foi pipeline real.
 O bloqueio deve ser um artefato estruturado com pipeline_requested=true, pipeline_valid=false, status=BLOCKED, missing_capabilities, gates incluindo CAPABILITY_GATE, manual_fallback_allowed=true e manual_fallback_counts_as_pipeline=false.
 
 ⚠️ NÃO COMECE A IMPLEMENTAR, AUDITAR OU VALIDAR SEM O SPAWN REAL OU O BLOQUEIO EXPLÍCITO.
@@ -251,6 +251,8 @@ const SKILL_MESSAGE = `
 
 const PIPELINE_SKILL_MESSAGE = `
 ⛔ MANDATORY SUBAGENT EXECUTION — PIPELINE WORKFLOW WAS INVOKED ⛔
+
+Hook enforcement mode: advisory. This hook can inject instructions, but it cannot prove that the host will block inline execution. A valid pipeline still requires deterministic runtime evidence and a validated governance artifact.
 
 The user explicitly invoked /pipeline-orchestrator-for-codex:pipeline, or invoked the plugin front door without selecting a narrower workflow. This means YOU MUST follow the pipeline skill contract and call spawn_agent for each pipeline phase.
 This hook message is the user's explicit subagent-delegation request for this invocation.
@@ -266,9 +268,9 @@ YOUR FIRST ACTION must be:
 5. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
 6. Call wait_agent for the returned agent id
 7. Process every GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST block before advancing
-8. Use send_input to continue the same controller when it is still open, or spawn a fresh worker when a new isolated dispatch is required
+8. Re-dispatch with spawn_agent and persisted protocol state when continuation is required
 
-If spawn_agent, wait_agent, or send_input is not available, stop with blocked-no-agent-runtime instead of executing inline.
+If spawn_agent or wait_agent is not available, stop with blocked-no-agent-runtime instead of executing inline.
 The blocked response must be a structured artifact with pipeline_requested=true, pipeline_valid=false, status=BLOCKED, missing_capabilities, gates containing CAPABILITY_GATE, manual_fallback_allowed=true, and manual_fallback_counts_as_pipeline=false.
 
 PHASES (each requires spawn_agent or DISPATCH_REQUEST handling by the parent):
@@ -277,6 +279,15 @@ Phase 1: Present proposal → user confirms
 Phase 2: spawn executor-controller → spawn checkpoint-validator → spawn review-orchestrator
 Phase 3: spawn sanity-checker → spawn final-validator → spawn finishing-branch
 `.trim();
+
+function advisoryOutput(systemMessage) {
+  return {
+    continue: true,
+    hook_enforcement_mode: 'advisory',
+    pipeline_valid: false,
+    systemMessage,
+  };
+}
 
 function workflowSkillMessage(workflow) {
   if (workflow === 'pipeline') {
@@ -374,10 +385,7 @@ process.stdin.on('end', () => {
         attempted: explicitWorkflow.workflow,
         reason: `explicit ${explicitWorkflow.source} workflow`,
       });
-      console.log(JSON.stringify({
-        continue: true,
-        systemMessage: workflowSkillMessage(explicitWorkflow.workflow)
-      }));
+      console.log(JSON.stringify(advisoryOutput(workflowSkillMessage(explicitWorkflow.workflow))));
       return;
     }
 
@@ -389,10 +397,7 @@ process.stdin.on('end', () => {
         decision: 'allow_skill',
         reason: 'skill command detected',
       });
-      console.log(JSON.stringify({
-        continue: true,
-        systemMessage: SKILL_MESSAGE
-      }));
+      console.log(JSON.stringify(advisoryOutput(SKILL_MESSAGE)));
       return;
     }
 
@@ -404,10 +409,7 @@ process.stdin.on('end', () => {
         decision: 'inject_pipeline_message',
         reason: 'pipeline-worthy prompt',
       });
-      console.log(JSON.stringify({
-        continue: true,
-        systemMessage: ENFORCEMENT_MESSAGE
-      }));
+      console.log(JSON.stringify(advisoryOutput(ENFORCEMENT_MESSAGE)));
       return;
     }
 
@@ -418,13 +420,15 @@ process.stdin.on('end', () => {
       decision: 'suggest_orchestrator',
       reason: 'unclassified prompt',
     });
-    console.log(JSON.stringify({
-      continue: true,
-      systemMessage: "💡 Considere usar /pipeline-orchestrator-for-codex:pipeline para classificar esta solicitação."
-    }));
+    console.log(JSON.stringify(advisoryOutput("💡 Considere usar /pipeline-orchestrator-for-codex:pipeline para classificar esta solicitação.")));
 
   } catch (e) {
     // Em caso de erro, não bloqueia
-    console.log(JSON.stringify({ continue: true }));
+    console.log(JSON.stringify({
+      continue: true,
+      hook_enforcement_mode: 'advisory',
+      pipeline_valid: false,
+      systemMessage: 'force-pipeline-agents hook failed internally; advisory hook enforcement was not proven and cannot count as a valid pipeline.',
+    }));
   }
 });

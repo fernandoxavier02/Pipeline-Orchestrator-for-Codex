@@ -369,6 +369,46 @@ function containsPipelineCompletion(text: string) {
   return /\bPIPELINE COMPLETE\b/u.test(text);
 }
 
+function hasNonEmptyRegularFile(path: string) {
+  try {
+    const stats = lstatSync(path);
+    return !stats.isSymbolicLink() && stats.isFile() && stats.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+function validatePipelineCompletionEvidence(input: {
+  stateDir: string;
+  output: Record<string, unknown>;
+}) {
+  const missing: string[] = [];
+  if (!hasNonEmptyRegularFile(join(input.stateDir, "protocol-events.jsonl"))) {
+    missing.push("protocol-events.jsonl");
+  }
+  if (!hasNonEmptyRegularFile(join(input.stateDir, "gate-decisions.jsonl"))) {
+    missing.push("gate-decisions.jsonl");
+  }
+
+  const artifact = input.output.pipelineGovernanceArtifact
+    ?? input.output.governanceArtifact
+    ?? input.output.pipeline_governance_artifact;
+  const artifactValid =
+    !!artifact
+    && typeof artifact === "object"
+    && (artifact as { pipeline_requested?: unknown }).pipeline_requested === true
+    && (artifact as { pipeline_valid?: unknown }).pipeline_valid === true
+    && (artifact as { status?: unknown }).status === "PASS";
+  if (!artifactValid) {
+    missing.push("PipelineGovernanceArtifact");
+  }
+
+  return {
+    ok: missing.length === 0,
+    missing,
+  };
+}
+
 // R3 — `isOperationalPipelineDispatch` is now exported from src/runtime/strict-resolution.ts
 // (single authority for the requireRealAgent cascade — DI-3). Re-import here to
 // preserve the existing call sites without renaming.
@@ -729,6 +769,31 @@ export function createPipelineRuntime(options: RuntimeOptions) {
     }
 
     if (pendingProtocolBlocks.length === 0) {
+      const attemptedOutputText = dispatchOutputText(result.output);
+      if (isOperationalPipelineDispatch(request) && containsPipelineCompletion(attemptedOutputText)) {
+        const completionEvidence = validatePipelineCompletionEvidence({
+          stateDir,
+          output: result.output,
+        });
+        if (!completionEvidence.ok) {
+          return {
+            ...result,
+            output: {
+              ...result.output,
+              text: [
+                "BLOCKED: pipeline attempted textual completion without validated governance evidence.",
+                `Missing evidence: ${completionEvidence.missing.join(", ")}`,
+              ].join("\n"),
+              attemptedOutputText,
+              status: "blocked",
+              protocolStatus: "blocked-missing-governance-evidence",
+              blockedReason: `missing ${completionEvidence.missing.join(", ")}`,
+              pipeline_valid: false,
+              manual_fallback_counts_as_pipeline: false,
+            },
+          };
+        }
+      }
       return result;
     }
 

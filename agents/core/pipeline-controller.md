@@ -54,6 +54,8 @@ Key references (discover via `Glob "**/references/gates.md"` then `Grep` the mat
 - `sentinel-integration.md` — Sentinel state file + 5 mandatory checkpoints
 - `pipelines/*.md` — team composition per variant (bugfix-light, implement-heavy, etc.)
 
+Runtime capability gates include `CAPABILITY_GATE` for missing real-agent runtime and `BYPASS_MODE_ACTIVE` for harness/dev-bypass execution. Both are mandatory phase-0 blockers for explicit production pipeline requests.
+
 If the Glob finds multiple matches (e.g., vendored copies), prefer the shortest absolute path — it is the plugin install location. Do NOT use `{CODEX_PLUGIN_ROOT}` literally in Grep commands; it will not be expanded in your subagent context.
 
 ## Execution protocol (summary)

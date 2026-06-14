@@ -126,6 +126,7 @@ export function createCodexAgentRuntimeAdapter(
   const namespace = options.pluginNamespace ?? DEFAULT_NAMESPACE;
 
   return {
+    runtimeMode: "real-agent",
     capabilities: {
       spawnAgent: true,
       waitAgent: true,

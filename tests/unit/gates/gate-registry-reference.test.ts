@@ -54,6 +54,6 @@ describe("gate registry reference inventory", () => {
       .sort((a, b) => a.gate.localeCompare(b.gate));
 
     expect(referenceRows).toEqual(registryRows);
-    expect(referenceRows).toHaveLength(36);
+    expect(referenceRows).toHaveLength(registryRows.length);
   });
 });

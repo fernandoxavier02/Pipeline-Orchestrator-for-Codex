@@ -357,6 +357,9 @@ export async function processProtocolBlocksForParent(input: {
 }
 
 function canonicalGateForGateId(gateId: string) {
+  if (/^proposal-confirmation-/u.test(gateId)) {
+    return { gate: "SCOPE_GATE", hardness: "MANDATORY" as const, phase: "phase-1" };
+  }
   if (/^phase-2-tdd-approval-/u.test(gateId)) {
     return { gate: "TDD_APPROVAL", hardness: "HARD" as const, phase: "phase-2" };
   }
