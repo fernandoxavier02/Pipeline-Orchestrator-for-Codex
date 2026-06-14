@@ -11,7 +11,8 @@ type GateReferenceRow = {
 };
 
 function parseReferenceRows(markdown: string): GateReferenceRow[] {
-  const inventorySection = markdown
+  const normalizedMarkdown = markdown.replace(/\r\n/g, "\n");
+  const inventorySection = normalizedMarkdown
     .split("## Inventory\n")[1]
     ?.split("\n## Wave 1 Delta")[0];
 

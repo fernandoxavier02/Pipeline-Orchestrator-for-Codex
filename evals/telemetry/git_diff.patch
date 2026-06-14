@@ -1,73 +1,163 @@
+diff --git a/evals/outputs/latest_output.md b/evals/outputs/latest_output.md
+index 4a7f11e..1d885b7 100644
+--- a/evals/outputs/latest_output.md
++++ b/evals/outputs/latest_output.md
+@@ -3,32 +3,23 @@
+ ## What was inspected
+
+ - Canonical repository: `D:\Pipeline Orchestrator for Codex`.
+-- CLI gate-response path for `yes`, `no`, and `adjust` in `src/cli/pipeline-cli.ts`.
+-- Compiled executable path in `dist/src/cli/pipeline-cli.js`.
+-- Regression coverage in `tests/unit/cli/pipeline-cli.test.ts`.
+-- Pipeline workflow gate audit evidence in `evals/outputs/workflow-gate-decisions.jsonl`.
+-- Eval Gate runner and telemetry hook in `.agents/skills/workflow-eval-gate/scripts/run_eval.py` and `.codex/hooks/post_tool_use_telemetry.py`.
+-- Eval Gate local contract in `evals/README.md`.
+-- behavior_cases: 5
++- Local branch `main`, remote `origin/main`, and VPS checkout at commit `1717c6bef326a259e5dee91af7c19742c08242ea`.
++- VPS working tree status after sync: clean on `main`.
++- Local validation failure after sync: `tests/unit/gates/gate-registry-reference.test.ts` failed on Windows line endings while reading the gate inventory.
++- behavior_cases: 5.
+
+ ## What was changed
+
+-- In `src/cli/pipeline-cli.ts`, tightened the pending-gate freshness check so a future-dated sentinel is treated as invalid instead of fresh.
+-- In `tests/unit/cli/pipeline-cli.test.ts`, added regression coverage for future-dated sentinel state and tampered signed sentinel state.
+-- In `dist/src/cli/pipeline-cli.js`, rebuilt the generated CLI so the future-dated sentinel guard matches source.
+-- In `.agents/skills/workflow-eval-gate/scripts/run_eval.py`, required `validated_target` for dirty validation evidence, required validation command metadata to point at that target, and added narrow claim-vs-evidence checks.
+-- In `.codex/hooks/post_tool_use_telemetry.py`, added read-only telemetry output mode and recorded validated-target metadata for hook-generated traces.
+-- In `evals/tests/test_eval_gate.py` and `evals/tests/test_telemetry_hook.py`, added regression tests for missing command text, missing validated target, target mismatch, claim/evidence mismatch, manual read-only telemetry, and registered read-only command behavior.
+-
+-Prior hardening already present in base commit `d3e0a35781572d6f67af621f9496d8e94a5f7937` was revalidated here: coherent pending-state routing, stale-state blocking, HMAC-required unsigned-state blocking, adapter-load short-circuiting, and Kimi test isolation.
++- Advanced the local `main` checkout from `3febbfdd9b6222d98da5fd566d04ec4b1714c86c` to `1717c6bef326a259e5dee91af7c19742c08242ea`, matching the VPS and `origin/main`.
++- In `tests/unit/gates/gate-registry-reference.test.ts`, normalized CRLF to LF before splitting the Markdown inventory section so the same gate inventory test passes on Windows and Linux.
++- Refreshed `evals/telemetry/changed_files.txt`, `evals/telemetry/git_diff.patch`, and `evals/telemetry/latest_trace.json` for this local validation run.
+
+ ## What was not changed
+
+-- I did not manually edit `dist/**`; generated files came from `npm run build`.
+-- I did not change the controller mutation path; the CLI pre-check remains read-only and the controller still applies the state transition.
+-- I did not claim that the installed Codex plugin cache or marketplace runtime has adopted this repository build.
+-- I did not treat `evals/outputs/workflow-gate-decisions.jsonl` as the canonical runtime gate log; it is a versioned workflow evidence artifact with workflow-specific vocabulary.
+-- I did not commit `.codex/pipeline/**` runtime state or `.pipeline/sessions/audit.log`.
++- I did not change runtime behavior beyond the commit that already came from VPS and origin.
++- I did not manually keep the build-generated `dist/**` line-ending churn; it was restored because it had no content diff.
++- I did not claim marketplace, installed Codex cache, or global runtime adoption.
++- I did not push the local Windows test fix back to origin or the VPS.
+
+ ## Validation evidence collected
+
+@@ -36,36 +27,27 @@ Prior hardening already present in base commit `d3e0a35781572d6f67af621f9496d8e9
+   - PASS.
+ - `npm run build`
+   - PASS.
+-- `npx vitest run tests/unit/cli/pipeline-cli.test.ts`
+-  - PASS: 35 tests, including stale, future-dated, unsigned-HMAC, signed-HMAC, and tampered-HMAC sentinel coverage.
+-- `npx vitest run tests/unit/cli/pipeline-cli.test.ts tests/integration/scenarios/continue-mode.test.ts tests/integration/sentinel/sentinel-controller.test.ts`
+-  - PASS: 40 tests.
+-- `npm test -- --testTimeout=30000`
++- `npx vitest run tests/unit/gates/gate-registry-reference.test.ts`
++  - PASS after the CRLF/LF normalization fix.
++- `npm test`
+   - PASS: full Vitest repository suite.
+-- Direct `dist` E2E smoke in temporary roots:
+-  - PASS: no active state treats bare `yes` as a normal task.
+-  - PASS: valid pending phase 1 state accepts bare `yes` as the pending gate response.
+-  - PASS: future-dated pending sentinel blocks with `blocked-invalid-pending-gate-state`.
+-- `git diff --check`
+-  - PASS; only Windows LF/CRLF warnings were emitted.
+ - `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`
+   - PASS: 61 tests.
++- `git diff --check`
++  - PASS; Windows LF/CRLF warnings were emitted, but no diff-check errors.
+ - `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`
+-  - PASS after telemetry was rebound to validated target `d3e0a35781572d6f67af621f9496d8e94a5f7937` plus current working-tree diff.
++  - PASS after the report and telemetry were rebound to this sync run.
+
+ ## Remaining risks
+
+-- This PASS covers the local repository and generated `dist`; it does not prove adoption by the installed Codex cache/runtime.
+-- The blocking error message is safe but still coarse; a future UX improvement could identify which pending-state field failed validation.
+-- The CLI contains a small duplicated gate-shape guard. It is covered by tests and fail-closed, but a future refactor could extract this contract for shared use with the controller.
+-- Eval Gate command freshness is now explicit metadata, but it is still local governance evidence, not a cryptographic attestation service.
++- Local code is synced to the VPS commit, but the small Windows test fix is currently a local follow-up change and has not been pushed back.
++- Eval Gate evidence is local repository evidence. It does not prove installed plugin cache, marketplace, or global Codex runtime adoption.
++- The workspace still has local telemetry files modified because the Eval Gate records this validation run.
+
+ ## Eval result
+
+ Eval Gate result: PASS.
+
+-This PASS covers the repository code, generated CLI executable, focused regression tests, full test suite, local telemetry, deterministic Eval Gate evidence, and adversarial cycle 2 fixes. It does not yet prove cache/global/marketplace activation.
+-
+ ## Next safest step
+
+-Proceed with the workflow closeout, then verify package/cache/runtime parity before claiming the fix is active in the installed Codex plugin.
++Commit and push the local Windows test fix if you want the VPS, origin, and local checkout to remain identical after this validation fix.
 diff --git a/evals/telemetry/changed_files.txt b/evals/telemetry/changed_files.txt
-index fec57a7..e69de29 100644
+index 915c95d..704f406 100644
 --- a/evals/telemetry/changed_files.txt
 +++ b/evals/telemetry/changed_files.txt
-@@ -1,8 +0,0 @@
--.agents/skills/workflow-eval-gate/scripts/run_eval.py
--.codex/hooks/post_tool_use_telemetry.py
--evals/outputs/latest_output.md
--evals/telemetry/changed_files.txt
--evals/telemetry/git_diff.patch
--evals/telemetry/latest_trace.json
--evals/tests/test_eval_gate.py
--evals/tests/test_telemetry_hook.py
+@@ -1,3 +1,5 @@
++evals/outputs/latest_output.md
+ evals/telemetry/changed_files.txt
+ evals/telemetry/git_diff.patch
+ evals/telemetry/latest_trace.json
++tests/unit/gates/gate-registry-reference.test.ts
 diff --git a/evals/telemetry/latest_trace.json b/evals/telemetry/latest_trace.json
-index 31db291..f19f9f6 100644
+index d01ca57..2bd9da0 100644
 --- a/evals/telemetry/latest_trace.json
 +++ b/evals/telemetry/latest_trace.json
-@@ -1,15 +1,6 @@
+@@ -1,15 +1,17 @@
  {
    "added_unrequested_features": false,
--  "changed_files": [
--    ".agents/skills/workflow-eval-gate/scripts/run_eval.py",
--    ".codex/hooks/post_tool_use_telemetry.py",
--    "evals/outputs/latest_output.md",
--    "evals/telemetry/changed_files.txt",
--    "evals/telemetry/git_diff.patch",
--    "evals/telemetry/latest_trace.json",
--    "evals/tests/test_eval_gate.py",
--    "evals/tests/test_telemetry_hook.py"
--  ],
-+  "changed_files": [],
+   "changed_files": [
++    "evals/outputs/latest_output.md",
+     "evals/telemetry/changed_files.txt",
+     "evals/telemetry/git_diff.patch",
+-    "evals/telemetry/latest_trace.json"
++    "evals/telemetry/latest_trace.json",
++    "tests/unit/gates/gate-registry-reference.test.ts"
+   ],
    "eval_result": "PASS",
    "execution_event": "PostToolUse",
    "execution_identity": {
-@@ -18,8 +9,8 @@
+     "hook_event": "PostToolUse",
+-    "session_id": "019ec655-38d1-7071-acdc-7248e36e9fdc",
++    "session_id": "019ec698-c6b3-74e2-82bb-a829d8b3de4e",
      "tool_name": "Bash"
    },
    "execution_observed": true,
--  "git_diff_captured": true,
--  "git_state": "dirty",
-+  "git_diff_captured": false,
-+  "git_state": "clean",
-   "last_hook_event": "PostToolUse",
-   "plugin_execution": {
-     "observed": true,
-@@ -60,23 +51,14 @@
+@@ -55,15 +57,17 @@
      "scope_justifications": {},
      "unexpected_files": []
    },
--  "timestamp": "2026-06-13T16:02:08.613672+00:00",
-+  "timestamp": "2026-06-13T16:07:35.972508+00:00",
+-  "timestamp": "2026-06-14T13:32:46.610072+00:00",
++  "timestamp": "2026-06-14T15:00:25.176369+00:00",
    "untracked_files_included": [],
    "untracked_files_omitted_from_diff": [],
    "validated_target": {
--    "base_commit": "524522a8b9d267628c61501a3bb241e005344291",
--    "changed_files": [
--      ".agents/skills/workflow-eval-gate/scripts/run_eval.py",
--      ".codex/hooks/post_tool_use_telemetry.py",
--      "evals/outputs/latest_output.md",
--      "evals/telemetry/changed_files.txt",
--      "evals/telemetry/git_diff.patch",
--      "evals/telemetry/latest_trace.json",
--      "evals/tests/test_eval_gate.py",
--      "evals/tests/test_telemetry_hook.py"
--    ],
-+    "base_commit": "5aabcc44fb9c3ddc34299204156e3e684f178449",
-+    "changed_files": [],
+-    "base_commit": "5aabcc44fb9c3ddc34299204156e3e684f178449",
++    "base_commit": "1717c6bef326a259e5dee91af7c19742c08242ea",
+     "changed_files": [
++      "evals/outputs/latest_output.md",
+       "evals/telemetry/changed_files.txt",
+       "evals/telemetry/git_diff.patch",
+-      "evals/telemetry/latest_trace.json"
++      "evals/telemetry/latest_trace.json",
++      "tests/unit/gates/gate-registry-reference.test.ts"
+     ],
      "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
--    "ref": "HEAD+working-tree"
-+    "ref": "HEAD"
-   },
-   "validation_evidence": {
-     "commands": {
+     "ref": "HEAD+working-tree"
+diff --git a/tests/unit/gates/gate-registry-reference.test.ts b/tests/unit/gates/gate-registry-reference.test.ts
+index 0e32611..6328b94 100644
+--- a/tests/unit/gates/gate-registry-reference.test.ts
++++ b/tests/unit/gates/gate-registry-reference.test.ts
+@@ -11,7 +11,8 @@ type GateReferenceRow = {
+ };
+
+ function parseReferenceRows(markdown: string): GateReferenceRow[] {
+-  const inventorySection = markdown
++  const normalizedMarkdown = markdown.replace(/\r\n/g, "\n");
++  const inventorySection = normalizedMarkdown
+     .split("## Inventory\n")[1]
+     ?.split("\n## Wave 1 Delta")[0];

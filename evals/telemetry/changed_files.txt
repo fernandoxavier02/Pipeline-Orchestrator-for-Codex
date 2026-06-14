@@ -1,3 +1,5 @@
+evals/outputs/latest_output.md
 evals/telemetry/changed_files.txt
 evals/telemetry/git_diff.patch
 evals/telemetry/latest_trace.json
+tests/unit/gates/gate-registry-reference.test.ts

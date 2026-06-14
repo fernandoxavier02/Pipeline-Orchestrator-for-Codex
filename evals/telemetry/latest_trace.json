@@ -1,15 +1,17 @@
 {
   "added_unrequested_features": false,
   "changed_files": [
+    "evals/outputs/latest_output.md",
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
-    "evals/telemetry/latest_trace.json"
+    "evals/telemetry/latest_trace.json",
+    "tests/unit/gates/gate-registry-reference.test.ts"
   ],
   "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
     "hook_event": "PostToolUse",
-    "session_id": "019ec655-38d1-7071-acdc-7248e36e9fdc",
+    "session_id": "019ec698-c6b3-74e2-82bb-a829d8b3de4e",
     "tool_name": "Bash"
   },
   "execution_observed": true,
@@ -55,15 +57,17 @@
     "scope_justifications": {},
     "unexpected_files": []
   },
-  "timestamp": "2026-06-14T13:32:46.610072+00:00",
+  "timestamp": "2026-06-14T15:03:28.393489+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "5aabcc44fb9c3ddc34299204156e3e684f178449",
+    "base_commit": "1717c6bef326a259e5dee91af7c19742c08242ea",
     "changed_files": [
+      "evals/outputs/latest_output.md",
       "evals/telemetry/changed_files.txt",
       "evals/telemetry/git_diff.patch",
-      "evals/telemetry/latest_trace.json"
+      "evals/telemetry/latest_trace.json",
+      "tests/unit/gates/gate-registry-reference.test.ts"
     ],
     "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
     "ref": "HEAD+working-tree"
