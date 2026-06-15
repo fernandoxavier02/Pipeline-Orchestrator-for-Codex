@@ -50,6 +50,19 @@ describe("R7: detectCodexAgentRuntime", () => {
     expect(detected?.detectionMode).toBe("auto");
   });
 
+  it("detects a paired globalScope.wait_agent and wires it into adapter capabilities", () => {
+    const stubScope = {
+      spawn_agent: async () => ({ output: { status: "spawned" } }),
+      wait_agent: async () => ({ output: { status: "completed" } }),
+    };
+
+    const detected = detectCodexAgentRuntime(stubScope);
+    expect(detected?.waitAgent).toBe(stubScope.wait_agent);
+
+    const adapter = createCodexAgentRuntimeAdapter(detected!);
+    expect(adapter.capabilities?.waitAgent).toBe(true);
+  });
+
   it("R7 AC 7.1: detects nested globalScope.codex.spawn_agent", () => {
     const stubScope = {
       codex: {
@@ -61,6 +74,21 @@ describe("R7: detectCodexAgentRuntime", () => {
     expect(typeof detected?.spawnAgent).toBe("function");
   });
 
+  it("detects a paired nested globalScope.codex.wait_agent", () => {
+    const stubScope = {
+      codex: {
+        spawn_agent: async () => ({ output: { status: "spawned" } }),
+        wait_agent: async () => ({ output: { status: "completed" } }),
+      },
+    };
+
+    const detected = detectCodexAgentRuntime(stubScope);
+    expect(detected?.waitAgent).toBe(stubScope.codex.wait_agent);
+
+    const adapter = createCodexAgentRuntimeAdapter(detected!);
+    expect(adapter.capabilities?.waitAgent).toBe(true);
+  });
+
   it("returns null when no spawn_agent is exposed", () => {
     const detected = detectCodexAgentRuntime({});
     expect(detected).toBeNull();
@@ -68,8 +96,8 @@ describe("R7: detectCodexAgentRuntime", () => {
 });
 
 describe("R7: createCodexAgentRuntimeAdapter", () => {
-  it("R7 AC 7.3: invokes spawn_agent with namespaced FQN and serialized request", async () => {
-    const spawnAgent = vi.fn<(input: { fqn: string; message: string }) => Promise<{ output: unknown }>>(
+  it("R7 AC 7.3: invokes spawn_agent with worker type, isolated context, FQN marker, and serialized request", async () => {
+    const spawnAgent = vi.fn<(input: { agent_type: "worker"; fork_context: false; message: string }) => Promise<{ output: unknown }>>(
       async () => ({
         output: { status: "approved" },
       }),
@@ -80,14 +108,16 @@ describe("R7: createCodexAgentRuntimeAdapter", () => {
 
     expect(spawnAgent).toHaveBeenCalledTimes(1);
     const call = spawnAgent.mock.calls[0]?.[0];
-    expect(call?.fqn).toBe("pipeline-orchestrator-for-codex:core:final-validator");
+    expect(call?.agent_type).toBe("worker");
+    expect(call?.fork_context).toBe(false);
+    expect(call?.message).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:final-validator");
     expect(typeof call?.message).toBe("string");
     expect(result.mode).toBe("single-agent");
     expect((result.output as Record<string, unknown>).status).toBe("approved");
   });
 
   it("preserves a caller-supplied namespaced role", async () => {
-    const spawnAgent = vi.fn<(input: { fqn: string; message: string }) => Promise<{ output: unknown }>>(
+    const spawnAgent = vi.fn<(input: { agent_type: "worker"; fork_context: false; message: string }) => Promise<{ output: unknown }>>(
       async () => ({ output: {} }),
     );
     const adapter = createCodexAgentRuntimeAdapter({ spawnAgent });
@@ -95,13 +125,13 @@ describe("R7: createCodexAgentRuntimeAdapter", () => {
       makeAgentRequest({ role: "pipeline-orchestrator-for-codex:executor:executor-controller" }),
     );
     const call = spawnAgent.mock.calls[0]?.[0];
-    expect(call?.fqn).toBe(
-      "pipeline-orchestrator-for-codex:executor:executor-controller",
+    expect(call?.message).toContain(
+      "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:executor:executor-controller",
     );
   });
 
   it("respects a custom pluginNamespace option", async () => {
-    const spawnAgent = vi.fn<(input: { fqn: string; message: string }) => Promise<{ output: unknown }>>(
+    const spawnAgent = vi.fn<(input: { agent_type: "worker"; fork_context: false; message: string }) => Promise<{ output: unknown }>>(
       async () => ({ output: {} }),
     );
     const adapter = createCodexAgentRuntimeAdapter({
@@ -110,11 +140,11 @@ describe("R7: createCodexAgentRuntimeAdapter", () => {
     });
     await adapter.spawnAgent(makeAgentRequest({ role: "core:final-validator" }));
     const call = spawnAgent.mock.calls[0]?.[0];
-    expect(call?.fqn).toBe("custom-namespace:core:final-validator");
+    expect(call?.message).toContain("PIPELINE_AGENT_FQN: custom-namespace:core:final-validator");
   });
 
   it("R7 AC 7.4: throws AgentRuntimeUnavailableError when spawn_agent rejects (never falls back to emulation)", async () => {
-    const spawnAgent = vi.fn<(input: { fqn: string; message: string }) => Promise<{ output: unknown }>>(
+    const spawnAgent = vi.fn<(input: { agent_type: "worker"; fork_context: false; message: string }) => Promise<{ output: unknown }>>(
       async () => {
         throw new Error("network down");
       },

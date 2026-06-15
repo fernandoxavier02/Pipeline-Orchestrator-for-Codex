@@ -57,6 +57,7 @@ Spawn the `pipeline-controller` agent with real Codex `spawn_agent` and the user
 ```
 spawn_agent({
   agent_type: "worker",
+  fork_context: false,
   message: "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller\nPRE_CLASSIFIED_TYPE=Bug Fix\n\n$ARGUMENTS"
 })
 ```
@@ -88,7 +89,7 @@ When the dispatched pipeline-controller (or any subagent it transitively dispatc
 
 1. Parse each block out of the tool result.
 2. For `GATE_REQUEST`: ask the user in the parent context with the parsed question + options and persist the response.
-3. For `DISPATCH_REQUEST` with `target_kind: agent`: invoke `spawn_agent(agent_type: "worker", message: "PIPELINE_AGENT_FQN: <target_name>\n<prompt>")`.
+3. For `DISPATCH_REQUEST` with `target_kind: agent`: invoke `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <target_name>\n<prompt>")`.
 4. For `DISPATCH_REQUEST` with `target_kind: skill`: invoke `Skill(skill: target_name)`.
 5. For `PLAN_MODE_REQUEST`: show a visible read-only plan in Codex when available; do not promise a literal Claude plan-mode tool when the runtime lacks it.
 6. Aggregate responses/results into `GATE_RESPONSES` / `DISPATCH_RESULTS` / `PLAN_MODE_RESULTS` YAML payloads.

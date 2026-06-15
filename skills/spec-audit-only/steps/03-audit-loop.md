@@ -52,7 +52,7 @@ Use apos o Content Review (step 02) ter retornado `GO` ou `GO-WARN`. Este step e
 
 ## Etapa 1 — Dispatch paralelo dos 3 auditores
 
-Em UMA UNICA MENSAGEM, dispatchar via Codex `spawn_agent` tres subagents simultaneos. Cada mensagem deve iniciar com `PIPELINE_AGENT_FQN: <Subagent FQDN>`:
+Em UMA UNICA MENSAGEM, dispatchar via Codex `spawn_agent` tres subagents simultaneos. Cada chamada deve usar `agent_type: "worker"` e `fork_context: false`; nunca usar o FQN como `agent_type` e nunca usar fork completo de historico. Cada mensagem deve iniciar com `PIPELINE_AGENT_FQN: <Subagent FQDN>`:
 
 | Subagent FQDN | Foco |
 |---|---|

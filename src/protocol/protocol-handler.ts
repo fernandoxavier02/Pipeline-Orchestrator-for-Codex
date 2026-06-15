@@ -316,6 +316,25 @@ export async function processProtocolBlocksForParent(input: {
         payload: result,
         ...(input.dispatchMode ? { dispatchMode: input.dispatchMode } : {}),
       });
+      if (block.target_kind === "agent") {
+        await log.append({
+          event_id: `dispatch-request-${block.dispatch_id}-wait-agent-completed`,
+          kind: "DISPATCH_REQUEST",
+          protocol_version: 1,
+          status: "completed",
+          source: input.source ?? "protocol-parent-handler",
+          timestamp: new Date().toISOString(),
+          payload: {
+            event: "WAIT_AGENT_COMPLETED",
+            capability: "wait_agent",
+            dispatchId: block.dispatch_id,
+            targetName: block.target_name,
+            targetKind: block.target_kind,
+            proof: `wait_agent:${block.target_name}`,
+          },
+          ...(input.dispatchMode ? { dispatchMode: input.dispatchMode } : {}),
+        });
+      }
       continue;
     }
 

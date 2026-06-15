@@ -65,10 +65,10 @@ Your operational responsibilities are:
 1. Open the visible plan with `update_plan`
 2. Show the workflow/method gate
 3. Start the controller through the deterministic TypeScript runtime or, when the host exposes complete real-agent tools, dispatch the controller prompt as a worker agent:
-   - `spawn_agent(agent_type: "worker", message: <controller prompt>)`
+   - `spawn_agent(agent_type: "worker", fork_context: false, message: <controller prompt>)`
 4. **Wait** for the result with `wait_agent`
 5. **Process** the structured blocks it emits (`=== DISPATCH_REQUEST v1 ===`, `=== GATE_REQUEST v1 ===`, `=== PLAN_MODE_REQUEST v1 ===`)
-6. **Re-dispatch** with responses through fresh `spawn_agent` calls and persisted protocol state
+6. **Re-dispatch** with responses through fresh `spawn_agent(agent_type: "worker", fork_context: false, ...)` calls and persisted protocol state
 7. Repeat until the runtime accepts a validated `PipelineGovernanceArtifact`
 
 Do not treat a textual `PIPELINE COMPLETE` as success. A public pipeline PASS requires the TypeScript runtime to validate the governance artifact and persist protocol/gate evidence.
@@ -87,13 +87,14 @@ The public skill dispatches the controller only after the visible plan and workf
 
 **Step 2.** Call `spawn_agent` with:
 - `agent_type: "worker"`
+- `fork_context: false`
 - `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, followed by the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
 **Step 3.** Call `wait_agent` for the returned agent id
 **Step 4.** Parse structured protocol blocks:
-- `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent` for the requested agent
+- `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <target_name>\n<prompt>")` for the requested agent
 - `=== GATE_REQUEST v1 ===` → ask the user and collect the answer
 - `=== PLAN_MODE_REQUEST v1 ===` → enter planning mode, return results
-**Step 5.** Re-dispatch via fresh `spawn_agent` with the prior protocol state prepended
+**Step 5.** Re-dispatch via fresh `spawn_agent(agent_type: "worker", fork_context: false, ...)` with the prior protocol state prepended
 **Step 6.** Call `wait_agent` after every dispatch
 **Step 7.** Repeat until the runtime accepts a validated `PipelineGovernanceArtifact`
 

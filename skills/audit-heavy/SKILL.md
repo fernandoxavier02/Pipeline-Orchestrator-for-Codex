@@ -67,15 +67,15 @@ If at any step the agent finds itself about to write production code or refactor
 
 | # | Step | File | execution_mode | agent_type | Output | Gate? |
 |---|------|------|----------------|------------|--------|-------|
-| 1 | Intake + Spec + Inventory | [steps/01-intake-spec-inventario.md](steps/01-intake-spec-inventario.md) | subagent | `pipeline-orchestrator-for-codex:executor/type-specific:audit-intake` | `AuditIntake` | **yes (SCOPE APPROVAL)** |
-| 2 | Architecture + Module Boundaries + Dependencies | [steps/02-arquitetura-limites-dependencias.md](steps/02-arquitetura-limites-dependencias.md) | subagent | `pipeline-orchestrator-for-codex:executor/type-specific:audit-domain-analyzer` | `DependencyImpactAudit` | no |
-| 3 | Domain + Business Rules + SSOT + Decisions | [steps/03-dominio-regras-ssot-decisoes.md](steps/03-dominio-regras-ssot-decisoes.md) | subagent | `pipeline-orchestrator-for-codex:executor/type-specific:audit-domain-analyzer` | `DecisionSSOTAudit` | no |
-| 4 | Contracts + APIs + Endpoints + Validations | [steps/04-contratos-apis-endpoints-validacoes.md](steps/04-contratos-apis-endpoints-validacoes.md) | subagent | `pipeline-orchestrator-for-codex:executor/type-specific:audit-domain-analyzer` | `ContractGovernanceAudit` | no |
-| 5 | Data + Migrations + Integrity + Security | [steps/05-dados-migracoes-integridade-seguranca.md](steps/05-dados-migracoes-integridade-seguranca.md) | subagent | `pipeline-orchestrator-for-codex:executor/type-specific:audit-compliance-checker` | `DataGovernanceAudit` | no |
-| 6 | Frontend + State + Accessibility + PWA | [steps/06-frontend-estado-acessibilidade-pwa.md](steps/06-frontend-estado-acessibilidade-pwa.md) | subagent | `pipeline-orchestrator-for-codex:executor/type-specific:audit-compliance-checker` | `FrontendDeepAudit` | no |
-| 7 | Backend + Services + Errors + Auth + Observability | [steps/07-backend-servicos-erros-auth-observabilidade.md](steps/07-backend-servicos-erros-auth-observabilidade.md) | subagent | `pipeline-orchestrator-for-codex:executor/type-specific:audit-compliance-checker` | `BackendDeepAudit` | no |
-| 8 | Governance + Tests + CI/CD + Documentation | [steps/08-governanca-testes-ci-cd-documentacao.md](steps/08-governanca-testes-ci-cd-documentacao.md) | subagent | `pipeline-orchestrator-for-codex:executor/type-specific:audit-compliance-checker` | `DeliveryGovernanceAudit` | no |
-| 9 | Pa de Cal + Risk Matrix + Priority Backlog | [steps/09-pa-de-cal-matriz-de-risco.md](steps/09-pa-de-cal-matriz-de-risco.md) | subagent | `pipeline-orchestrator-for-codex:executor/type-specific:audit-risk-matrix-generator` | `AuditMasterSeal` | **yes (GO/CONDITIONAL/NO-GO on report)** |
+| 1 | Intake + Spec + Inventory | [steps/01-intake-spec-inventario.md](steps/01-intake-spec-inventario.md) | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:audit-intake` | `AuditIntake` | **yes (SCOPE APPROVAL)** |
+| 2 | Architecture + Module Boundaries + Dependencies | [steps/02-arquitetura-limites-dependencias.md](steps/02-arquitetura-limites-dependencias.md) | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:audit-domain-analyzer` | `DependencyImpactAudit` | no |
+| 3 | Domain + Business Rules + SSOT + Decisions | [steps/03-dominio-regras-ssot-decisoes.md](steps/03-dominio-regras-ssot-decisoes.md) | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:audit-domain-analyzer` | `DecisionSSOTAudit` | no |
+| 4 | Contracts + APIs + Endpoints + Validations | [steps/04-contratos-apis-endpoints-validacoes.md](steps/04-contratos-apis-endpoints-validacoes.md) | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:audit-domain-analyzer` | `ContractGovernanceAudit` | no |
+| 5 | Data + Migrations + Integrity + Security | [steps/05-dados-migracoes-integridade-seguranca.md](steps/05-dados-migracoes-integridade-seguranca.md) | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:audit-compliance-checker` | `DataGovernanceAudit` | no |
+| 6 | Frontend + State + Accessibility + PWA | [steps/06-frontend-estado-acessibilidade-pwa.md](steps/06-frontend-estado-acessibilidade-pwa.md) | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:audit-compliance-checker` | `FrontendDeepAudit` | no |
+| 7 | Backend + Services + Errors + Auth + Observability | [steps/07-backend-servicos-erros-auth-observabilidade.md](steps/07-backend-servicos-erros-auth-observabilidade.md) | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:audit-compliance-checker` | `BackendDeepAudit` | no |
+| 8 | Governance + Tests + CI/CD + Documentation | [steps/08-governanca-testes-ci-cd-documentacao.md](steps/08-governanca-testes-ci-cd-documentacao.md) | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:audit-compliance-checker` | `DeliveryGovernanceAudit` | no |
+| 9 | Pa de Cal + Risk Matrix + Priority Backlog | [steps/09-pa-de-cal-matriz-de-risco.md](steps/09-pa-de-cal-matriz-de-risco.md) | subagent | `pipeline-orchestrator-for-codex:executor:type-specific:audit-risk-matrix-generator` | `AuditMasterSeal` | **yes (GO/CONDITIONAL/NO-GO on report)** |
 
 ## Execution rules (8 enforcement rules — non-negotiable)
 
@@ -101,7 +101,7 @@ Beyond the 8 rules above, this skill carries a 9th non-negotiable invariant uniq
 1. The skill is invoked via `/pipeline-orchestrator-for-codex:audit-heavy "<scope description>"` (or via `/pipeline-orchestrator-for-codex:audit --heavy` after pipeline-controller dispatch, or via auto-escalation from `audit-light` step 9).
 2. The orchestrator reads `sequence:` and walks the steps.
 3. For each step, the orchestrator opens `steps/0X-*.md`, reads the frontmatter, and:
-   - calls spawn_agent with the declared `agent_type:` and passes `expected_inputs` from previous steps
+   - calls `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <declared agent_type>\n...")` and passes `expected_inputs` from previous steps; the declared `agent_type:` is the pipeline FQN marker, not the Codex host agent type
    - the audit agent produces the typed JSON deliverable plus narrative
 4. Outputs accumulate; `expected_next` chains the next step.
 5. Gates (steps 1 and 9) raise GATE_REQUEST before transitioning.

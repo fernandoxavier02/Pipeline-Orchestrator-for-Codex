@@ -103,7 +103,7 @@ When escalation is recommended, GATE_REQUEST at step 9 surfaces it as the recomm
 
 1. The skill is invoked via `/pipeline-orchestrator-for-codex:audit-light "<scope description>"` (or via `/pipeline-orchestrator-for-codex:audit --light` after pipeline-controller dispatch).
 2. The orchestrator reads `sequence:` from this file and walks the steps.
-3. For each step, the orchestrator opens `steps/0X-*.md`, reads the frontmatter, and calls spawn_agent with the declared `agent_type:` plus `light_mode: true` (when steps 2–4) and passes `expected_inputs` from previous steps.
+3. For each step, the orchestrator opens `steps/0X-*.md`, reads the frontmatter, and calls `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <declared agent_type>\n...")` plus `light_mode: true` in the message/body (when steps 2-4) and passes `expected_inputs` from previous steps. The declared `agent_type:` is the pipeline FQN marker, not the Codex host agent type.
 4. Outputs are accumulated; `expected_next` chains to the following step.
 5. Gates (steps 1, 9) raise GATE_REQUEST before transitioning out.
 6. On any failure, the STOP RULE may halt the pipeline.

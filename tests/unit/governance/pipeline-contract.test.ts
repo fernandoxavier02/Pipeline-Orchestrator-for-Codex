@@ -96,6 +96,38 @@ describe("pipeline governance contract", () => {
     expect(result.missing_capabilities).toContain("subagent_artifact_collection");
   });
 
+  it("blocks wait_agent when the adapter exposes a local wait function without declared host proof", () => {
+    const result = evaluateCapabilities({
+      agentRuntime: {
+        capabilities: {
+          spawnAgent: true,
+          collectArtifacts: true,
+          structuredFinalState: true,
+        },
+        async spawnAgent(request) {
+          return {
+            mode: "single-agent",
+            role: request.role,
+            output: { status: "approved" },
+          };
+        },
+        async waitAgent(dispatch) {
+          return dispatch;
+        },
+        async collectArtifacts(dispatches) {
+          return dispatches.map((dispatch) => dispatch.output);
+        },
+      },
+      stores: {
+        gateLog: { append: async () => undefined },
+        checkpoints: { save: async () => undefined },
+      },
+    });
+
+    expect(result.status).toBe("BLOCKED");
+    expect(result.missing_capabilities).toContain("wait_agent");
+  });
+
   it("manual fallback never counts as a valid pipeline", () => {
     const artifact = createBlockedPipelineArtifact({
       reason: "blocked-no-agent-runtime",

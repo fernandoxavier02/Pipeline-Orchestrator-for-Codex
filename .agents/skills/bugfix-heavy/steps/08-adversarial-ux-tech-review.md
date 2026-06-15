@@ -31,12 +31,12 @@ Try to "break" the fix mentally from three independent expert angles in parallel
 
 Three specialized subagents read the diff and surrounding code from independent adversarial perspectives. They run in PARALLEL: one parent turn containing three `spawn_agent` dispatches, one per agent. Latency = max(individual), not sum.
 
-Parallel spawn pattern (single message, three spawn_agent calls):
+Parallel spawn pattern (single message, three spawn_agent calls). Each call MUST use `agent_type: "worker"` and `fork_context: false`; the pipeline agent identity goes only in the first message line:
 
 ```
-spawn_agent -> pipeline-orchestrator-for-codex:executor:type-specific:adversarial-security-scanner
-spawn_agent -> pipeline-orchestrator-for-codex:executor:type-specific:adversarial-architecture-critic
-spawn_agent -> pipeline-orchestrator-for-codex:executor:type-specific:adversarial-quality-reviewer
+spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:executor:type-specific:adversarial-security-scanner\n<explicit scope>")
+spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:executor:type-specific:adversarial-architecture-critic\n<explicit scope>")
+spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:quality:adversarial-quality-reviewer\n<explicit scope>")
 ```
 
 Each receives the fix_diff + context from steps 6–7 and reports back independent findings.

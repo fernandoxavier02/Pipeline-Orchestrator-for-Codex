@@ -16,7 +16,7 @@
   "interface": {
     "displayName": "Pipeline Orchestrator for Codex",
     "shortDescription": "4-phase Codex pipeline with 45 agent prompts, Spec gates, protocol events, TRACE.md, and adversarial review",
-    "longDescription": "Codex pipeline orchestrator targeting Claude Code Pipeline Orchestrator v5.2 parity: 4 execution phases (Classification, Proposal, Execution, Validation), 45 agent prompts including brainstorm and Spec lifecycle reviewers, GATE_REQUEST/DISPATCH_REQUEST/PLAN_MODE_REQUEST protocol event persistence, brainstorm run directories, TRACE.md validation, confidence scoring with non-invention rules, TDD-driven gates, adversarial review loops, frontmatter hook enforcement, execution identity tracing, and strict real-agent blocking when spawn_agent is unavailable.",
+    "longDescription": "Codex pipeline orchestrator targeting Claude Code Pipeline Orchestrator v5.2 parity: 4 execution phases (Classification, Proposal, Execution, Validation), 45 agent prompts including brainstorm and Spec lifecycle reviewers, GATE_REQUEST/DISPATCH_REQUEST/PLAN_MODE_REQUEST protocol event persistence, brainstorm run directories, TRACE.md validation, confidence scoring with non-invention rules, TDD-driven gates, adversarial review loops, frontmatter hook enforcement, execution identity tracing, and strict real-agent blocking when spawn_agent, wait_agent, artifact collection, gate recording, hook/checkpoint recording, or structured final state is unavailable.",
     "developerName": "Fernando Xavier - FX Studio AI",
     "category": "Coding",
     "capabilities": ["Interactive", "Write"],
@@ -25,8 +25,8 @@
     "termsOfServiceURL": "https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex/blob/main/LICENSE",
     "defaultPrompt": [
       "Run /pipeline-orchestrator-for-codex:pipeline for this repository.",
-      "Classify the request, present the WORKFLOW_METHOD_GATE, then execute in phases with spawn_agent.",
-      "If spawn_agent is unavailable, stop with blocked-no-agent-runtime instead of executing inline."
+      "Classify the request, present the WORKFLOW_METHOD_GATE, then execute in phases with spawn_agent and wait_agent.",
+      "If complete real-agent runtime capabilities are unavailable, stop with blocked-no-agent-runtime instead of executing inline."
     ],
     "brandColor": "#14532D",
     "composerIcon": "./assets/pipeline-icon.svg",

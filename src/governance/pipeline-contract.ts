@@ -1,4 +1,10 @@
 import type { AgentRuntimeAdapter, DispatchResult } from "../dispatcher/dispatcher-types.js";
+import {
+  REQUIRED_WORKFLOW_GATES,
+  REQUIRED_WORKFLOW_HOOKS,
+  evaluateWorkflowEvidence,
+  requiredWorkflowEventsFromArtifact,
+} from "./workflow-enforcement.js";
 
 export const MANUAL_FALLBACK_NOTICE =
   "This is a manual fallback review, not a valid pipeline execution.";
@@ -12,28 +18,8 @@ export const REQUIRED_PIPELINE_CAPABILITIES = [
   "structured_final_state",
 ] as const;
 
-export const REQUIRED_PIPELINE_GATES = [
-  "CAPABILITY_GATE",
-  "INTAKE_GATE",
-  "SCOPE_GATE",
-  "EVIDENCE_GATE",
-  "ADVERSARIAL_GATE",
-  "FINAL_VERDICT_GATE",
-] as const;
-
-const CHECKPOINT_PHASES = [
-  "intake",
-  "planning",
-  "agent_dispatch",
-  "artifact_collection",
-  "adversarial_review",
-  "final_verdict",
-] as const;
-
-export const REQUIRED_PIPELINE_HOOKS = CHECKPOINT_PHASES.flatMap((phase) => [
-  `${phase}:before`,
-  `${phase}:after`,
-] as const);
+export const REQUIRED_PIPELINE_GATES = REQUIRED_WORKFLOW_GATES;
+export const REQUIRED_PIPELINE_HOOKS = REQUIRED_WORKFLOW_HOOKS;
 
 export type PipelineCapability = typeof REQUIRED_PIPELINE_CAPABILITIES[number];
 export type PipelineGateId = typeof REQUIRED_PIPELINE_GATES[number];
@@ -121,9 +107,9 @@ function hasCapability(runtime: PipelineCapabilityRuntime | undefined, capabilit
     case "spawn_agent":
       return typeof adapter?.spawnAgent === "function";
     case "wait_agent":
-      return typeof adapter?.waitAgent === "function";
+      return typeof adapter?.waitAgent === "function" && declared?.waitAgent === true;
     case "subagent_artifact_collection":
-      return typeof adapter?.collectArtifacts === "function";
+      return typeof adapter?.collectArtifacts === "function" && declared?.collectArtifacts === true;
     case "gate_recording":
       return typeof runtime?.stores?.gateLog?.append === "function";
     case "hook_checkpoint_recording":
@@ -228,15 +214,22 @@ export function validatePipelineArtifact(
   artifact: PipelineGovernanceArtifact,
   options: { adversarial?: boolean; security?: boolean } = {},
 ) {
-  const gateById = new Map(artifact.gates.map((gate) => [gate.gate, gate]));
-  const hookById = new Map(artifact.hooks.map((hook) => [hook.checkpoint, hook]));
-  const agentByRole = new Map(artifact.agents.map((agent) => [agent.role, agent]));
-  const missing_gates = REQUIRED_PIPELINE_GATES.filter((gate) => !gateById.has(gate));
-  const missing_hooks = REQUIRED_PIPELINE_HOOKS.filter((hook) => !hookById.has(hook));
-  const missing_agents = requiredAgentRoles(options).filter((role) => {
-    const agent = agentByRole.get(role);
-    return !agent || agent.status !== "PASS" || agent.independent !== true;
+  const workflowEvidence = evaluateWorkflowEvidence({
+    events: requiredWorkflowEventsFromArtifact(artifact),
+    requiredGates: REQUIRED_PIPELINE_GATES,
+    requiredHooks: REQUIRED_PIPELINE_HOOKS,
+    requireAdversarialReview: options.adversarial,
+    requireSecurityReview: options.security,
   });
+  const missing_gates = workflowEvidence.missingEvents
+    .filter((event) => event.startsWith("gate:"))
+    .map((event) => event.slice("gate:".length));
+  const missing_hooks = workflowEvidence.missingEvents
+    .filter((event) => event.startsWith("hook:"))
+    .map((event) => event.slice("hook:".length));
+  const missing_agents = workflowEvidence.missingEvents
+    .filter((event) => event.startsWith("agent:"))
+    .map((event) => event.slice("agent:".length));
   const gateFailures = artifact.gates.filter((gate) => gate.status !== "PASS");
   const hookFailures = artifact.hooks.filter((hook) => hook.status !== "PASS");
   const verdictBlocked = artifact.final_verdict.status !== "PASS";
@@ -252,6 +245,7 @@ export function validatePipelineArtifact(
     && missing_agents.length === 0
     && presentStatuses(artifact.gates)
     && presentStatuses(artifact.hooks)
+    && workflowEvidence.status === "PASS"
     && !verdictBlocked
     && artifact.manual_fallback_counts_as_pipeline === false;
 

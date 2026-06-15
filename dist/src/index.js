@@ -1,4 +1,4 @@
-import { existsSync, lstatSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { basename, join } from "node:path";
@@ -24,6 +24,8 @@ import { createConfidenceScoreStore } from "./state/confidence-score.js";
 import { createGateLog, inferDecidedBy } from "./state/gate-log.js";
 import { resolveRequireRealAgent } from "./runtime/strict-resolution.js";
 import { createCodexAgentRuntimeAdapter, detectCodexAgentRuntime, } from "./adapters/codex-agent-runtime.js";
+import { validatePipelineArtifact, } from "./governance/pipeline-contract.js";
+import { validatePipelineLedgerEvidence } from "./governance/ledger-evidence.js";
 import { createSessionStore } from "./state/session-store.js";
 import { createSentinelStateStore } from "./sentinel/sentinel-state.js";
 import { writeTrace } from "./trace/trace.js";
@@ -240,7 +242,20 @@ function dispatchOutputText(output) {
         .join("\n\n");
 }
 function containsPipelineCompletion(text) {
-    return /\bPIPELINE COMPLETE\b/u.test(text);
+    return /\bPIPELINE COMPLETE\b/u.test(text)
+        || /\bFinal decision:\s*(?:GO|CONDITIONAL)\b/iu.test(text)
+        || /\bpipeline_valid\s*[:=]\s*true\b/iu.test(text);
+}
+function outputAttemptsPipelineCompletion(output) {
+    if (containsPipelineCompletion(dispatchOutputText(output))) {
+        return true;
+    }
+    if (output.pipeline_valid === true || output.pipelineValid === true) {
+        return true;
+    }
+    return output.pipelineGovernanceArtifact !== undefined
+        || output.governanceArtifact !== undefined
+        || output.pipeline_governance_artifact !== undefined;
 }
 function hasNonEmptyRegularFile(path) {
     try {
@@ -251,6 +266,46 @@ function hasNonEmptyRegularFile(path) {
         return false;
     }
 }
+function readJsonlFile(path) {
+    try {
+        const stats = lstatSync(path);
+        if (stats.isSymbolicLink() || !stats.isFile() || stats.size === 0) {
+            return [];
+        }
+        return readFileSync(path, "utf8")
+            .split("\n")
+            .filter((line) => line.trim().length > 0)
+            .flatMap((line) => {
+            try {
+                return [JSON.parse(line)];
+            }
+            catch {
+                return [];
+            }
+        });
+    }
+    catch {
+        return [];
+    }
+}
+function readCheckpointLedger(stateDir) {
+    const checkpointDir = join(stateDir, "checkpoints");
+    try {
+        return readdirSync(checkpointDir, { withFileTypes: true })
+            .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+            .flatMap((entry) => {
+            try {
+                return [JSON.parse(readFileSync(join(checkpointDir, entry.name), "utf8"))];
+            }
+            catch {
+                return [];
+            }
+        });
+    }
+    catch {
+        return [];
+    }
+}
 function validatePipelineCompletionEvidence(input) {
     const missing = [];
     if (!hasNonEmptyRegularFile(join(input.stateDir, "protocol-events.jsonl"))) {
@@ -259,16 +314,34 @@ function validatePipelineCompletionEvidence(input) {
     if (!hasNonEmptyRegularFile(join(input.stateDir, "gate-decisions.jsonl"))) {
         missing.push("gate-decisions.jsonl");
     }
+    if (!hasNonEmptyRegularFile(join(input.stateDir, "hook-events.jsonl"))) {
+        missing.push("hook-events.jsonl");
+    }
+    if (input.runtimeMode !== "real-agent") {
+        missing.push(`runtime_mode:${input.runtimeMode ?? "missing"}`);
+    }
     const artifact = input.output.pipelineGovernanceArtifact
         ?? input.output.governanceArtifact
         ?? input.output.pipeline_governance_artifact;
-    const artifactValid = !!artifact
-        && typeof artifact === "object"
-        && artifact.pipeline_requested === true
-        && artifact.pipeline_valid === true
-        && artifact.status === "PASS";
-    if (!artifactValid) {
+    const artifactValidation = artifact && typeof artifact === "object"
+        ? validatePipelineArtifact(artifact, { adversarial: true })
+        : undefined;
+    if (artifactValidation?.pipeline_valid !== true) {
         missing.push("PipelineGovernanceArtifact");
+        if (artifactValidation) {
+            missing.push(...artifactValidation.missing_gates.map((gate) => `gate:${gate}`), ...artifactValidation.missing_hooks.map((hook) => `hook:${hook}`), ...artifactValidation.missing_agents.map((agent) => `agent:${agent}`));
+        }
+    }
+    else {
+        const ledgerValidation = validatePipelineLedgerEvidence(artifact, {
+            protocolEvents: readJsonlFile(join(input.stateDir, "protocol-events.jsonl")),
+            gateDecisions: readJsonlFile(join(input.stateDir, "gate-decisions.jsonl")),
+            hookEvents: readJsonlFile(join(input.stateDir, "hook-events.jsonl")),
+            checkpoints: readCheckpointLedger(input.stateDir),
+        });
+        if (ledgerValidation.status !== "PASS") {
+            missing.push(...ledgerValidation.missing_evidence);
+        }
     }
     return {
         ok: missing.length === 0,
@@ -489,17 +562,17 @@ export function createPipelineRuntime(options) {
                 prompt: await withRuntimePrompt(member.role, member.prompt),
             })))
             : undefined;
+        const activeAgentRuntime = request.agentRuntime ?? options.agentRuntime;
         const result = await runRole({
             ...request,
             requireRealAgent: resolveRequireRealAgent(options, request),
-            agentRuntime: request.agentRuntime ?? options.agentRuntime,
+            agentRuntime: activeAgentRuntime,
             prompt,
             team,
         });
         // R5 AC 5.3/5.4 — tag persisted DISPATCH_REQUEST events with the actual
-        // runtime mode. agentRuntime presence is the canonical signal (matches
-        // gate-log provenance — see src/state/gate-log.ts).
-        const runtimeDispatchMode = options.agentRuntime ? "real" : "emulated";
+        // runtime mode. An adapter object alone is not proof of real subagents.
+        const runtimeDispatchMode = activeAgentRuntime?.runtimeMode === "real-agent" ? "real" : "emulated";
         const protocolBlocks = await persistProtocolBlocksFromDispatch({
             stateRoot: stateDir,
             dispatch: result,
@@ -508,7 +581,7 @@ export function createPipelineRuntime(options) {
         });
         let pendingProtocolBlocks = protocolBlocks;
         let parentDispatchResults = [];
-        if (options.agentRuntime && protocolBlocks.some((block) => block.kind === "DISPATCH_REQUEST")) {
+        if (activeAgentRuntime && protocolBlocks.some((block) => block.kind === "DISPATCH_REQUEST")) {
             const dispatchViaRuntime = async (protocolRequest) => {
                 const childResult = await runtimeRunRole({
                     mode: "single-agent",
@@ -528,7 +601,7 @@ export function createPipelineRuntime(options) {
                     filesInScope: [],
                     authorityLevel: "reviewer",
                     requireRealAgent: true,
-                    agentRuntime: options.agentRuntime,
+                    agentRuntime: activeAgentRuntime,
                 });
                 return childResult.output;
             };
@@ -583,10 +656,11 @@ export function createPipelineRuntime(options) {
         }
         if (pendingProtocolBlocks.length === 0) {
             const attemptedOutputText = dispatchOutputText(result.output);
-            if (isOperationalPipelineDispatch(request) && containsPipelineCompletion(attemptedOutputText)) {
+            if (isOperationalPipelineDispatch(request) && outputAttemptsPipelineCompletion(result.output)) {
                 const completionEvidence = validatePipelineCompletionEvidence({
                     stateDir,
                     output: result.output,
+                    runtimeMode: activeAgentRuntime?.runtimeMode,
                 });
                 if (!completionEvidence.ok) {
                     return {

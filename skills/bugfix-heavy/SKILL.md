@@ -90,7 +90,7 @@ These rules are baked into the frontmatter contract. The dispatch-guard hook + s
 2. The orchestrator reads `sequence:` and walks the steps.
 3. For each step, the orchestrator opens `steps/0X-*.md`, reads the frontmatter, and:
    - if `execution_mode: inline`, the agent processes the step body in main context using `allowed_tools` from the step
-   - if `execution_mode: subagent`, the agent calls spawn_agent with `agent_type:` and passes `expected_inputs` from previous steps
+   - if `execution_mode: subagent`, the agent calls `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <declared agent_type>\n...")` and passes `expected_inputs` from previous steps. The declared `agent_type:` is the pipeline FQN marker, not the Codex host agent type
    - for step 8 (parallel), three spawn_agent calls are spawned in a SINGLE message (security-scanner + architecture-critic + quality-reviewer)
 4. Outputs accumulate; `expected_next` chains the next step.
 5. Gates (steps 4, 8, 10) raise GATE_REQUEST before transitioning.

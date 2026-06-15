@@ -230,6 +230,7 @@ Você DEVE iniciar o workflow governado por uma destas duas formas equivalentes:
 1. Usar o comando /pipeline-orchestrator-for-codex:pipeline com a solicitação do usuário.
 2. Ou chamar diretamente spawn_agent com:
    - agent_type="worker"
+   - fork_context=false
    - message iniciando com:
      PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller
 3. Chamar wait_agent para obter o resultado do controller antes de processar qualquer bloco.
@@ -265,10 +266,10 @@ YOUR FIRST ACTION must be:
 2. Present the WORKFLOW_METHOD_GATE for pipeline and wait for approval or workflow switch
 3. Find the agents directory using PLUGIN_ROOT/agents/ (CODEX_PLUGIN_ROOT and CLAUDE_PLUGIN_ROOT are compatibility fallbacks only)
 4. Read agents/core/pipeline-controller.md
-5. Call spawn_agent(agent_type="worker", message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
+5. Call spawn_agent(agent_type="worker", fork_context=false, message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
 6. Call wait_agent for the returned agent id
 7. Process every GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST block before advancing
-8. Re-dispatch with spawn_agent and persisted protocol state when continuation is required
+8. Re-dispatch with spawn_agent(agent_type="worker", fork_context=false, ...) and persisted protocol state when continuation is required
 
 If spawn_agent or wait_agent is not available, stop with blocked-no-agent-runtime instead of executing inline.
 The blocked response must be a structured artifact with pipeline_requested=true, pipeline_valid=false, status=BLOCKED, missing_capabilities, gates containing CAPABILITY_GATE, manual_fallback_allowed=true, and manual_fallback_counts_as_pipeline=false.

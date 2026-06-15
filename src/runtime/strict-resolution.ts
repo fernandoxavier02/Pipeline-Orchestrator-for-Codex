@@ -14,6 +14,7 @@
 // isOperationalPipelineDispatch.
 
 import type { DispatchRequest } from "../dispatcher/dispatcher-types.js";
+import { isExplicitPipelineRequest } from "../governance/pipeline-contract.js";
 
 export function isOperationalPipelineDispatch(request: DispatchRequest): boolean {
   const rawRequestField = request.input?.request;
@@ -32,7 +33,7 @@ export function isOperationalPipelineDispatch(request: DispatchRequest): boolean
   const requestText = typeof rawRequestField === "string"
     ? rawRequestField.trim()
     : "";
-  if (!requestText.startsWith("/pipeline-orchestrator-for-codex:pipeline")) {
+  if (!isExplicitPipelineRequest(requestText)) {
     return false;
   }
   return !requestText.startsWith("/pipeline-orchestrator-for-codex:pipeline diagnostic");

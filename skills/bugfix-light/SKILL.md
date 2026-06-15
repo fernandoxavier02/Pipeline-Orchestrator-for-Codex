@@ -71,7 +71,7 @@ If any of these does not hold, the workflow auto-escalates at step 7 (Complexity
 These rules are baked into the frontmatter contract. The dispatch-guard hook + sentinel-hook validate them at runtime. Violations are blocked deterministically — there is no agent discretion.
 
 1. **Sequence lock** — steps execute strictly in order 1→2→3→4→5→6→7→8. No skip, no reorder. Validated via `sequence:` + `sequence_lock: true` in this SKILL.md plus `expected_next:` in each step.
-2. **Execution-mode lock** — each step declares `execution_mode: inline | subagent` in its frontmatter. The agent CANNOT swap modes at runtime. Inline steps run in main context; subagent steps call spawn_agent with the declared `agent_type`.
+2. **Execution-mode lock** — each step declares `execution_mode: inline | subagent` in its frontmatter. The agent CANNOT swap modes at runtime. Inline steps run in main context; subagent steps call `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <declared agent_type>\n...")`. The declared `agent_type` is the pipeline FQN marker, not the Codex host agent type.
 3. **Agent-type whitelist** — when `execution_mode: subagent`, the step declares the EXACT `agent_type:` allowed. dispatch-guard rejects any other agent.
 4. **Output schema** — each step declares `expected_outputs:`. The next step verifies inputs match before proceeding. Fail-closed.
 5. **GATE_REQUEST gates obrigatórios** — steps 7 and 8 declare `gate_required: true`. The skill MUST emit a GATE_REQUEST at those points. Prose substitution is forbidden.
@@ -85,7 +85,7 @@ These rules are baked into the frontmatter contract. The dispatch-guard hook + s
 2. The orchestrator reads `sequence:` from this file and walks the steps.
 3. For each step, the orchestrator opens `steps/0X-*.md`, reads the frontmatter, and:
    - if `execution_mode: inline`, the agent processes the step body in main context using `allowed_tools` from the step
-   - if `execution_mode: subagent`, the agent calls spawn_agent with `agent_type:` and passes `expected_inputs` from previous steps
+   - if `execution_mode: subagent`, the agent calls `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <declared agent_type>\n...")` and passes `expected_inputs` from previous steps. The declared `agent_type:` is the pipeline FQN marker, not the Codex host agent type
 4. Outputs are accumulated; `expected_next` chains to the following step.
 5. Gates (steps 7, 8) raise GATE_REQUEST before transitioning out.
 6. On any failure, the STOP RULE rule may halt the pipeline.

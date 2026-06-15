@@ -906,7 +906,7 @@ export function createPipelineController(runtime) {
                 agentRuntime: runtime?.agentRuntime,
                 capabilityRuntimeMode: capabilityGate?.runtime_mode,
             });
-            const bootstrapState = explicitPipelineRequested
+            const bootstrapState = explicitPipelineRequested && mode !== "continue"
                 ? {
                     sessionId: `pipeline-${randomUUID()}`,
                     runId: randomUUID(),
@@ -1477,6 +1477,24 @@ export function createPipelineController(runtime) {
                                 gateLog: runStores.gateLog,
                                 confidence: runStores.confidence,
                                 stateAdapter: runStores.stateAdapter,
+                            },
+                            executionController: runtime?.executionController,
+                        },
+                        session,
+                        mode,
+                    });
+                }
+                if (session.currentPhase === "phase-2" && session.pendingDecision === "phase-2-ready") {
+                    return executeApprovedContinuation({
+                        runtime: {
+                            workspaceRoot: runtime?.workspaceRoot,
+                            stores: {
+                                session: runStores.session,
+                                checkpoints: runStores.checkpoints,
+                                gateLog: runStores.gateLog,
+                                confidence: runStores.confidence,
+                                stateAdapter: runStores.stateAdapter,
+                                sentinel: runStores.sentinel,
                             },
                             executionController: runtime?.executionController,
                         },

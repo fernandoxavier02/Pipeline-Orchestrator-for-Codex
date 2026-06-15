@@ -1,7 +1,8 @@
 ---
 name: pipeline
-description: "Automated pipeline orchestrator for any project. Operational execution requires real Codex spawn_agent support and blocks with blocked-no-agent-runtime when unavailable. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. The public command /pipeline-orchestrator-for-codex:pipeline auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. Always use this for tasks affecting 2+ files or requiring careful orchestration. Even if the user doesn't mention 'pipeline' — if the task is non-trivial, this skill applies."
+description: "Automated Codex pipeline orchestrator for any project. Requires complete real-agent runtime: spawn_agent, wait_agent, artifact collection, gate recording, hook/checkpoint recording, and structured final state. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. The public command /pipeline-orchestrator-for-codex:pipeline auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. If mandatory runtime capabilities are missing, it blocks with blocked-no-agent-runtime; manual fallback is not a valid pipeline execution."
 agent_type: worker
+allowed-tools: update_plan, spawn_agent, wait_agent
 gates_at: [phase-0, phase-1, phase-1.5, phase-2, phase-3]
 sentinel_checkpoints: [post_orchestrator, phase_0_to_1, phase_1_to_2, phase_2_to_3, post_final_validator]
 ---
@@ -27,35 +28,50 @@ When this workflow reaches any terminal state, emit the `NEXT_STEP` block define
 <MANDATORY-SUBAGENT-RULE>
 ## Subagent Delegation Behavior
 
-When the user invokes `/pipeline-orchestrator-for-codex:pipeline`, they are requesting structured execution. The plugin supports two runtime modes:
+When the user invokes `/pipeline-orchestrator-for-codex:pipeline`, they are requesting structured execution. The plugin supports two strictly separated modes:
 
-### `strictAgents = true` (Operational)
+### Codex Operational (complete real-agent runtime available)
 - **ALWAYS** call `spawn_agent` for every phase.
+- **ALWAYS** call `wait_agent` and collect artifacts before processing a phase result.
 - **NEVER** execute agent work inline.
-- If `spawn_agent` is unavailable, stop with `blocked-no-agent-runtime` and tell the user that real Codex agent support is required.
 - This is the production-grade mode with real context isolation between reviewers and implementers.
+- Requires `multi_agent = true` in `~/.codex/config.toml`.
 
-### `strictAgents = false` (Diagnostic/Test Harness Only)
+### Test Harness (`strictAgents = false`)
 - The runtime uses **local emulation** via TypeScript heuristic functions.
 - "Agents" run as async functions in the same Node process with **zero context isolation**.
 - This is a **test harness and contract validator**, not production multi-agent execution.
-- Emulation accurately models gate logic, protocol blocks, and confidence scoring, but does NOT provide real adversarial review independence.
-
-**Operational default:** production-grade use requires `strictAgents = true` and `multi_agent = true` in `~/.codex/config.toml`. Harness mode is allowed only for diagnostics or tests.
+- Harness output MUST NOT return `pipeline_valid: true` for explicit `/pipeline-orchestrator-for-codex:pipeline` requests.
 
 Do not present emulation mode as real multi-agent execution. Always document which mode is active in execution logs.
 </MANDATORY-SUBAGENT-RULE>
 
-You are the **PIPELINE SKILL** — a thin delegator. Your ONLY job is:
+<HOST-DETECTION>
+## Codex Runtime Capability Gate
+
+This plugin is a Codex plugin. A valid `/pipeline-orchestrator-for-codex:pipeline` execution requires the complete Codex real-agent runtime: `spawn_agent`, `wait_agent`, subagent artifact collection, gate recording, hook/checkpoint recording, and structured final state.
+
+Before Step 1, run `CAPABILITY_GATE`. If any mandatory capability is missing, stop with `status: BLOCKED`, `reason: blocked-no-agent-runtime`, and a structured artifact that includes `missing_capabilities`, `manual_fallback_allowed: true`, and `manual_fallback_counts_as_pipeline: false`.
+
+Do not route this Codex plugin through host-equivalent tools and do not continue inline. If a manual auxiliary review is offered, it must be separate and labeled `manual_fallback_not_pipeline`.
+</HOST-DETECTION>
+
+You are the **PIPELINE SKILL** — the public Codex workflow surface for the TypeScript state machine.
+
+The enforcement source of truth is `src/controller/pipeline-controller.ts` plus the runtime stores, gates, hooks, sentinel state, protocol logs, and `validatePipelineArtifact` in `src/governance/pipeline-contract.ts`. Markdown explains and constrains the workflow, but it is not sufficient evidence that a pipeline was valid.
+
+Your operational responsibilities are:
 
 1. Open the visible plan (`update_plan`)
 2. Show the workflow/method gate
-3. **Read** `agents/core/pipeline-controller.md`
-4. **Dispatch** it as a worker agent via `spawn_agent(agent_type: "worker", message: <controller prompt>)`
+3. Start the controller through the deterministic TypeScript runtime or, when the host exposes complete real-agent tools, dispatch the controller prompt as a worker agent:
+   - `spawn_agent(agent_type: "worker", fork_context: false, message: <controller prompt>)`
+4. **Wait** for the result with `wait_agent`
 5. **Process** the structured blocks it emits (`=== DISPATCH_REQUEST v1 ===`, `=== GATE_REQUEST v1 ===`, `=== PLAN_MODE_REQUEST v1 ===`)
-6. **Re-dispatch** the same agent with responses prepended until it emits `PIPELINE COMPLETE`
+6. **Re-dispatch** with responses through fresh `spawn_agent(agent_type: "worker", fork_context: false, ...)` calls and persisted protocol state
+7. Repeat until the runtime accepts a validated `PipelineGovernanceArtifact`
 
-You do NOT classify tasks. You do NOT review code. You do NOT run builds. You do NOT write code. **The pipeline-controller agent does ALL of that.** You are the protocol handler.
+Do not treat a textual `PIPELINE COMPLETE` as success. A public pipeline PASS requires the TypeScript runtime to validate the governance artifact and persist protocol/gate evidence.
 
 <task>
 $ARGUMENTS
@@ -63,19 +79,21 @@ $ARGUMENTS
 
 ## How to Dispatch the Pipeline Controller
 
-**Step 1.** Read `agents/core/pipeline-controller.md`
+**Step 1.** Use the TypeScript runtime/state machine as the authority for classification, gates, session state, sentinel state, runtime mode, and artifact validation.
 **Step 2.** Call `spawn_agent` with:
 - `agent_type: "worker"`
+- `fork_context: false`
 - `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, followed by the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
-**Step 3.** Wait for the controller to return its output
+**Step 3.** Call `wait_agent` for the returned agent id
 **Step 4.** Parse structured protocol blocks:
-- `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent` for the requested agent
+- `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <target_name>\n<prompt>")` for the requested agent
 - `=== GATE_REQUEST v1 ===` → ask the user and collect the answer
 - `=== PLAN_MODE_REQUEST v1 ===` → enter planning mode (read-only research), return results
-**Step 5.** Re-dispatch the controller with responses prepended
-**Step 6.** Repeat until `PIPELINE COMPLETE` block is emitted
+**Step 5.** Re-dispatch the controller with `spawn_agent(agent_type: "worker", fork_context: false, ...)` and responses prepended
+**Step 6.** Call `wait_agent` after every dispatch
+**Step 7.** Repeat until the runtime accepts a validated `PipelineGovernanceArtifact`
 
-If `spawn_agent` fails or is unavailable, tell the user: "blocked-no-agent-runtime: spawn_agent is not available in this session. The pipeline requires real Codex agent support. Check that multi_agent = true in ~/.codex/config.toml." Do not continue inline.
+If `spawn_agent`, `wait_agent`, artifact collection, gate recording, checkpoint recording, or structured final state is unavailable, return the structured `BLOCKED` artifact. Any optional manual review must say exactly: "This is a manual fallback review, not a valid pipeline execution." Do not continue inline.
 
 ## Protocol Processing Rules
 
@@ -163,8 +181,9 @@ If absent, auto-detect from package.json / Makefile.
 You are a **PROTOCOL HANDLER**, not an executor. For EVERY invocation:
 
 1. **Read** `agents/core/pipeline-controller.md`
-2. **Call `spawn_agent`** with the controller as worker
-3. **Process** protocol blocks (DISPATCH_REQUEST, GATE_REQUEST, PLAN_MODE_REQUEST)
-4. **Re-dispatch** until PIPELINE COMPLETE
+2. **Run CAPABILITY_GATE:** complete Codex real-agent runtime available? If no, return `BLOCKED`.
+3. **Call `spawn_agent`** with the controller as worker
+4. **Call `wait_agent`** and process protocol blocks (DISPATCH_REQUEST, GATE_REQUEST, PLAN_MODE_REQUEST)
+5. **Re-dispatch** until the runtime validates the `PipelineGovernanceArtifact`
 
-**Self-check before responding:** Did you call `spawn_agent` at least once? If no, you violated the pipeline contract.
+**Self-check before responding:** Did you dispatch at least one agent with `spawn_agent`, call `wait_agent`, and receive its result? If no, you violated the pipeline contract. Executing the controller's work inline is NEVER acceptable.

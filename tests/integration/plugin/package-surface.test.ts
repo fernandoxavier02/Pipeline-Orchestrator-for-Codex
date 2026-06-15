@@ -24,6 +24,10 @@ describe("plugin package surface", () => {
     const files = npmPackDryRunFiles();
 
     expect(files).toContain("dist/src/governance/pipeline-contract.js");
+    expect(files).toContain("dist/src/governance/ledger-evidence.js");
+    expect(files).toContain("dist/src/governance/workflow-enforcement.js");
+    expect(files).toContain("src/governance/ledger-evidence.ts");
+    expect(files).toContain("src/governance/workflow-enforcement.ts");
     expect(files.some((file) => file.startsWith("security-audit/"))).toBe(false);
     expect(files.some((file) => file.startsWith("evals/telemetry/"))).toBe(false);
   });

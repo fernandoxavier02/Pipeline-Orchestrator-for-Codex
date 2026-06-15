@@ -25,7 +25,8 @@ import type {
 import { AgentRuntimeUnavailableError } from "../dispatcher/run-role.js";
 
 export interface SpawnAgentInput {
-  fqn: string;
+  agent_type: "worker";
+  fork_context: false;
   message: string;
 }
 
@@ -34,10 +35,13 @@ export interface SpawnAgentResult {
 }
 
 export type SpawnAgentCallable = (input: SpawnAgentInput) => Promise<SpawnAgentResult>;
+export type WaitAgentCallable = (dispatch: DispatchResult) => Promise<SpawnAgentResult | DispatchResult>;
 
 export interface CodexAgentRuntimeOptions {
   /** Real spawn_agent function exposed by the Codex host. */
   spawnAgent: SpawnAgentCallable;
+  /** Real wait_agent function exposed by the Codex host. */
+  waitAgent?: WaitAgentCallable;
   /**
    * Pipeline plugin namespace used when assembling FQN markers
    * (`<pluginNamespace>:<folder>:<leaf>`). Defaults to
@@ -115,6 +119,33 @@ function isDispatchResult(value: unknown): value is DispatchResult {
   );
 }
 
+function toDispatchResult(value: unknown, fallback: DispatchResult): DispatchResult {
+  if (isDispatchResult(value)) {
+    return value;
+  }
+
+  if (
+    value
+    && typeof value === "object"
+    && "output" in value
+  ) {
+    const output = (value as SpawnAgentResult).output;
+    if (isDispatchResult(output)) {
+      return output;
+    }
+
+    return {
+      ...fallback,
+      output:
+        output && typeof output === "object"
+          ? (output as Record<string, unknown>)
+          : { output },
+    };
+  }
+
+  return fallback;
+}
+
 export function createCodexAgentRuntimeAdapter(
   options: CodexAgentRuntimeOptions,
 ): AgentRuntimeAdapter {
@@ -129,7 +160,7 @@ export function createCodexAgentRuntimeAdapter(
     runtimeMode: "real-agent",
     capabilities: {
       spawnAgent: true,
-      waitAgent: true,
+      waitAgent: typeof options.waitAgent === "function",
       collectArtifacts: true,
       recordGates: true,
       recordCheckpoints: true,
@@ -137,9 +168,14 @@ export function createCodexAgentRuntimeAdapter(
     },
     async spawnAgent(request: AgentDispatchRequest): Promise<DispatchResult> {
       try {
+        const fqn = buildFqn(namespace, request.role);
         const response = await options.spawnAgent({
-          fqn: buildFqn(namespace, request.role),
-          message: serializeRequest(request),
+          agent_type: "worker",
+          fork_context: false,
+          message: [
+            `PIPELINE_AGENT_FQN: ${fqn}`,
+            serializeRequest(request),
+          ].join("\n"),
         });
 
         if (isDispatchResult(response.output)) {
@@ -165,7 +201,14 @@ export function createCodexAgentRuntimeAdapter(
       }
     },
     async waitAgent(dispatch: DispatchResult): Promise<DispatchResult> {
-      return dispatch;
+      if (typeof options.waitAgent !== "function") {
+        throw new AgentRuntimeUnavailableError(
+          dispatch.role,
+          "wait_agent callable was not provided by the Codex host",
+        );
+      }
+
+      return toDispatchResult(await options.waitAgent(dispatch), dispatch);
     },
     async collectArtifacts(dispatches: DispatchResult[]): Promise<Record<string, unknown>[]> {
       return dispatches.map((dispatch) => dispatch.output);
@@ -185,6 +228,14 @@ const CAPTURED_CODEX_SPAWN_AGENT = (() => {
   const codexScope = (globalThis as Record<string, unknown>).codex;
   if (codexScope && typeof codexScope === "object") {
     return (codexScope as Record<string, unknown>).spawn_agent;
+  }
+  return undefined;
+})();
+const CAPTURED_WAIT_AGENT = (globalThis as Record<string, unknown>).wait_agent;
+const CAPTURED_CODEX_WAIT_AGENT = (() => {
+  const codexScope = (globalThis as Record<string, unknown>).codex;
+  if (codexScope && typeof codexScope === "object") {
+    return (codexScope as Record<string, unknown>).wait_agent;
   }
   return undefined;
 })();
@@ -212,22 +263,37 @@ export function detectCodexAgentRuntime(
         "[codex-agent-runtime] WARNING: globalThis.spawn_agent reference changed since module load — possible hijack.\n",
       );
     }
+    const waitCandidate = globalScope.wait_agent;
+    if (CAPTURED_WAIT_AGENT !== undefined && waitCandidate !== CAPTURED_WAIT_AGENT) {
+      process.stderr.write(
+        "[codex-agent-runtime] WARNING: globalThis.wait_agent reference changed since module load — possible hijack.\n",
+      );
+    }
     return {
       spawnAgent: directCandidate as SpawnAgentCallable,
+      waitAgent: typeof waitCandidate === "function" ? waitCandidate as WaitAgentCallable : undefined,
       detectionMode: "auto",
     };
   }
   const codexScope = globalScope.codex;
   if (codexScope && typeof codexScope === "object") {
-    const nested = (codexScope as Record<string, unknown>).spawn_agent;
+    const nestedScope = codexScope as Record<string, unknown>;
+    const nested = nestedScope.spawn_agent;
     if (typeof nested === "function") {
       if (CAPTURED_CODEX_SPAWN_AGENT !== undefined && nested !== CAPTURED_CODEX_SPAWN_AGENT) {
         process.stderr.write(
           "[codex-agent-runtime] WARNING: globalThis.codex.spawn_agent reference changed since module load — possible hijack.\n",
         );
       }
+      const nestedWait = nestedScope.wait_agent;
+      if (CAPTURED_CODEX_WAIT_AGENT !== undefined && nestedWait !== CAPTURED_CODEX_WAIT_AGENT) {
+        process.stderr.write(
+          "[codex-agent-runtime] WARNING: globalThis.codex.wait_agent reference changed since module load — possible hijack.\n",
+        );
+      }
       return {
         spawnAgent: nested as SpawnAgentCallable,
+        waitAgent: typeof nestedWait === "function" ? nestedWait as WaitAgentCallable : undefined,
         detectionMode: "auto",
       };
     }

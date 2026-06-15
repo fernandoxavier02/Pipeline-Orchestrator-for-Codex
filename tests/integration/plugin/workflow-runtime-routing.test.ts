@@ -16,7 +16,12 @@ async function withTempWorkspace<T>(fn: (root: string) => Promise<T>) {
 
 function completeAgentRuntime() {
   return {
-    capabilities: { structuredFinalState: true },
+    capabilities: {
+      spawnAgent: true,
+      waitAgent: true,
+      collectArtifacts: true,
+      structuredFinalState: true,
+    },
     async spawnAgent(request: any) {
       return { mode: "single-agent" as const, role: request.role, output: { status: "approved" } };
     },
