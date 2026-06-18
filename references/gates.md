@@ -28,6 +28,7 @@ claim that every canonical gate already has an end-to-end runtime emitter.
 | `INFO_GATE_OK` | `SOFT` | `phase-0` | `pass` | `none` |
 | `INTAKE_GATE` | `MANDATORY` | `phase-0` | `block` | `manual` |
 | `MICRO_GATE_GAP` | `HARD` | `phase-2` | `block` | `revalidate` |
+| `PLAN_GATE_ACTIVE` | `HARD` | `phase-1.5` | `block` | `replan` |
 | `PLAN_REJECTED` | `HARD` | `phase-1.5` | `block` | `replan` |
 | `REDUCED_VALIDATION_USAGE` | `SOFT` | `phase-3` | `pass` | `none` |
 | `SCOPE_GATE` | `MANDATORY` | `phase-1` | `block` | `replan` |

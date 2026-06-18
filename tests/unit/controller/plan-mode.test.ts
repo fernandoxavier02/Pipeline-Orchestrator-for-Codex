@@ -1,11 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
+  createExecutionPlanGate,
   createImplementationPlan,
   createPlanModeRequest,
   getPlanModeStatus,
+  isExecutionPlanGateSatisfied,
+  requiresExecutionPlanGate,
 } from "../../../src/controller/plan-mode.js";
 
 describe("plan mode", () => {
+  it("requires an approved execution plan gate for code-writing workflows", () => {
+    expect(requiresExecutionPlanGate("Feature")).toBe(true);
+    expect(requiresExecutionPlanGate("Bug Fix")).toBe(true);
+    expect(requiresExecutionPlanGate("Spec")).toBe(true);
+    expect(requiresExecutionPlanGate("Audit")).toBe(false);
+
+    const armed = createExecutionPlanGate({ type: "Feature" });
+    expect(armed).toMatchObject({
+      required: true,
+      executed: false,
+      approved: false,
+      decision: null,
+    });
+    expect(isExecutionPlanGateSatisfied(armed)).toBe(false);
+    expect(isExecutionPlanGateSatisfied(createExecutionPlanGate({ type: "Feature", decision: "APPROVED" }))).toBe(true);
+  });
+
   it("derives a required plan gate for explicit plan requests", () => {
     expect(getPlanModeStatus("--plan", "MEDIA")).toBe("required");
   });

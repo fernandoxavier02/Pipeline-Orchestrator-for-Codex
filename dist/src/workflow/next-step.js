@@ -202,8 +202,8 @@ export const WORKFLOW_NEXT_STEPS = Object.freeze({
     },
     spec: {
         workflow: "spec",
-        next: specExecutionVariant,
-        reason: "Spec shortcut classified; run the selected spec execution depth.",
+        next: "spec-init",
+        reason: "Spec authoring starts a new contract-grade specification before any implementation workflow.",
         defaultMode: "suggest",
         requiresApproval: true,
     },

@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { basename, join } from "node:path";
 import { loadPipelineConfig } from "./config/load-pipeline-config.js";
@@ -39,6 +40,7 @@ import {
   type PipelineRuntimeMode,
 } from "./governance/pipeline-contract.js";
 import { validatePipelineLedgerEvidence } from "./governance/ledger-evidence.js";
+import { resolveSentinelIntegrityHmacKey } from "./security/ledger-integrity.js";
 import { createSessionStore } from "./state/session-store.js";
 import { createSentinelStateStore } from "./sentinel/sentinel-state.js";
 import { writeTrace } from "./trace/trace.js";
@@ -371,10 +373,61 @@ function dispatchOutputText(output: Record<string, unknown>) {
     .join("\n\n");
 }
 
+const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
+
+function canonicalizeIntegrityPayload(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalizeIntegrityPayload(entry)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalizeIntegrityPayload(entry)}`).join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function sentinelIntegrityVerified(stateDir: string) {
+  const key = resolveSentinelIntegrityHmacKey();
+  if (!key) return true;
+
+  const sentinel = readJsonFile(join(stateDir, "sentinel-state.json"));
+  if (!sentinel || typeof sentinel !== "object" || Array.isArray(sentinel)) return false;
+
+  const integrity = (sentinel as { _integrity?: unknown })._integrity;
+  if (!integrity || typeof integrity !== "object" || Array.isArray(integrity)) return false;
+
+  const algorithm = (integrity as { algorithm?: unknown }).algorithm;
+  const signature = (integrity as { signature?: unknown }).signature;
+  if (
+    algorithm !== "hmac-sha256"
+    || typeof signature !== "string"
+    || !HMAC_SHA256_HEX_SIGNATURE.test(signature)
+  ) {
+    return false;
+  }
+
+  const unsignedState = { ...(sentinel as Record<string, unknown>) };
+  delete unsignedState._integrity;
+  const expected = createHmac("sha256", key).update(canonicalizeIntegrityPayload(unsignedState)).digest("hex");
+  const expectedBytes = Buffer.from(expected, "hex");
+  const actualBytes = Buffer.from(signature, "hex");
+  return actualBytes.length > 0
+    && expectedBytes.length === actualBytes.length
+    && timingSafeEqual(expectedBytes, actualBytes);
+}
+
 function containsPipelineCompletion(text: string) {
   return /\bPIPELINE COMPLETE\b/u.test(text)
+    || /\b(?:PIPELINE[\s_-]*STATUS|FINAL[\s_-]*(?:REVIEW|ADVERSARIAL[\s_-]*(?:REPORT|REVIEW)|REPORT|VERDICT|DECISION)|FINAL[\s_-]*ADVERSARIAL|ADVERSARIAL[\s_-]*(?:REPORT|REVIEW)|VERDICT|GO\/NO-GO|REVIEW[\s_-]*VERDICT)(?:\s*(?::|=|-|\bis\b|\best[áa]\b)\s*|\s+)(?:GO|NO-GO|CONDITIONAL|PASS|CLEAN|APPROVED)\b/iu.test(text)
+    || /\bno blocking issues remain\b/iu.test(text)
+    || /\bno\s+P0\/P1\/P2\s+(?:remain|remaining)\b/iu.test(text)
+    || /\bsem\s+P0\/P1\/P2\b/iu.test(text)
     || /\bFinal decision:\s*(?:GO|CONDITIONAL)\b/iu.test(text)
-    || /\bpipeline_valid\s*[:=]\s*true\b/iu.test(text);
+    || /["']?pipeline_valid["']?\s*[:=]\s*true\b/iu.test(text);
 }
 
 function outputAttemptsPipelineCompletion(output: Record<string, unknown>) {
@@ -419,6 +472,18 @@ function readJsonlFile(path: string) {
   }
 }
 
+function readJsonFile(path: string) {
+  try {
+    const stats = lstatSync(path);
+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size === 0) {
+      return undefined;
+    }
+    return JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 function readCheckpointLedger(stateDir: string) {
   const checkpointDir = join(stateDir, "checkpoints");
   try {
@@ -434,6 +499,213 @@ function readCheckpointLedger(stateDir: string) {
   } catch {
     return [];
   }
+}
+
+const STRONG_ACTIVE_IDENTITY_KEYS = new Set([
+  "run_id",
+  "runId",
+  "session_id",
+  "sessionId",
+  "trace_id",
+  "traceId",
+]);
+
+const WEAK_ACTIVE_IDENTITY_KEYS = new Set([
+  "workflow_id",
+  "workflowId",
+]);
+
+const ACTIVE_IDENTITY_ALIASES = new Map([
+  ["run_id", "run"],
+  ["runId", "run"],
+  ["session_id", "session"],
+  ["sessionId", "session"],
+  ["trace_id", "trace"],
+  ["traceId", "trace"],
+  ["workflow_id", "workflow"],
+  ["workflowId", "workflow"],
+]);
+
+const PRIMARY_STRONG_ACTIVE_IDENTITY_DIMENSIONS = ["run", "session"];
+
+type ActiveIdentityContext = {
+  ids: string[];
+  map: Map<string, Set<string>>;
+  keys: Set<string>;
+  conflict?: boolean;
+};
+
+function canonicalActiveIdentityKey(key: string) {
+  return ACTIVE_IDENTITY_ALIASES.get(key) ?? key;
+}
+
+function addActiveIdentityValue(result: Map<string, Set<string>>, key: string, value: unknown) {
+  if (typeof value !== "string" && typeof value !== "number") return;
+  const normalized = String(value).trim();
+  if (normalized.length === 0) return;
+
+  const canonicalKey = canonicalActiveIdentityKey(key);
+  const values = result.get(canonicalKey) ?? new Set<string>();
+  values.add(normalized);
+  result.set(canonicalKey, values);
+}
+
+function collectDirectActiveIdentityMap(value: unknown, keys: Set<string>) {
+  const result = new Map<string, Set<string>>();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return result;
+  for (const [key, entry] of Object.entries(value)) {
+    if (!keys.has(key)) continue;
+    addActiveIdentityValue(result, key, entry);
+  }
+  return result;
+}
+
+function collectActiveIdentityMap(value: unknown, depth = 0, keys: Set<string>): Map<string, Set<string>> {
+  const result = new Map<string, Set<string>>();
+  if (depth > 8 || value === undefined || value === null) return result;
+  if (Array.isArray(value)) {
+    return mergeActiveIdentityMaps(...value.map((entry) => collectActiveIdentityMap(entry, depth + 1, keys)));
+  }
+  if (typeof value !== "object") return result;
+
+  for (const [key, entry] of Object.entries(value)) {
+    const nested = collectActiveIdentityMap(entry, depth + 1, keys);
+    for (const [nestedKey, nestedValues] of nested.entries()) {
+      const values = result.get(nestedKey) ?? new Set<string>();
+      for (const nestedValue of nestedValues) values.add(nestedValue);
+      result.set(nestedKey, values);
+    }
+    if (keys.has(key)) addActiveIdentityValue(result, key, entry);
+  }
+  return result;
+}
+
+function valuesFromActiveIdentityMap(identityMap: Map<string, Set<string>>) {
+  return [...new Set([...identityMap.values()].flatMap((values) => [...values]))];
+}
+
+function activeIdentityMapsConflict(leftMap: Map<string, Set<string>>, rightMap: Map<string, Set<string>>) {
+  for (const [key, leftValues] of leftMap.entries()) {
+    const rightValues = rightMap.get(key);
+    if (!rightValues || rightValues.size === 0) continue;
+    if (leftValues.size !== rightValues.size) return true;
+    if ([...leftValues].some((value) => !rightValues.has(value))) return true;
+  }
+  return false;
+}
+
+function activeIdentityMapsHaveSameKeys(leftMap: Map<string, Set<string>>, rightMap: Map<string, Set<string>>) {
+  if (leftMap.size !== rightMap.size) return false;
+  return [...leftMap.keys()].every((key) => {
+    const rightValues = rightMap.get(key);
+    return rightValues && rightValues.size > 0;
+  });
+}
+
+function mergeActiveIdentityMaps(...identityMaps: Array<Map<string, Set<string>>>) {
+  const result = new Map<string, Set<string>>();
+  for (const identityMap of identityMaps) {
+    for (const [key, values] of identityMap.entries()) {
+      const existing = result.get(key) ?? new Set<string>();
+      for (const value of values) existing.add(value);
+      result.set(key, existing);
+    }
+  }
+  return result;
+}
+
+function activeRunIdentityContext(stateDir: string): ActiveIdentityContext {
+  const sentinel = readJsonFile(join(stateDir, "sentinel-state.json"));
+  const session = readJsonFile(join(stateDir, "session.json"));
+  const sentinelStrongMap = collectDirectActiveIdentityMap(sentinel, STRONG_ACTIVE_IDENTITY_KEYS);
+  const sessionStrongMap = collectDirectActiveIdentityMap(session, STRONG_ACTIVE_IDENTITY_KEYS);
+  const sentinelStrongIds = valuesFromActiveIdentityMap(sentinelStrongMap);
+  const sessionStrongIds = valuesFromActiveIdentityMap(sessionStrongMap);
+
+  if (sentinelStrongIds.length > 0 && sessionStrongIds.length > 0) {
+    if (
+      !activeIdentityMapsHaveSameKeys(sentinelStrongMap, sessionStrongMap)
+      || activeIdentityMapsConflict(sentinelStrongMap, sessionStrongMap)
+    ) {
+      return {
+        ids: [],
+        map: new Map(),
+        keys: STRONG_ACTIVE_IDENTITY_KEYS,
+        conflict: true,
+      };
+    }
+    const strongMap = mergeActiveIdentityMaps(sentinelStrongMap, sessionStrongMap);
+    return {
+      ids: valuesFromActiveIdentityMap(strongMap),
+      map: strongMap,
+      keys: STRONG_ACTIVE_IDENTITY_KEYS,
+    };
+  }
+
+  if (sentinelStrongIds.length > 0) {
+    return {
+      ids: sentinelStrongIds,
+      map: sentinelStrongMap,
+      keys: STRONG_ACTIVE_IDENTITY_KEYS,
+    };
+  }
+
+  if (sessionStrongIds.length > 0) {
+    return {
+      ids: sessionStrongIds,
+      map: sessionStrongMap,
+      keys: STRONG_ACTIVE_IDENTITY_KEYS,
+    };
+  }
+
+  const sentinelWeakMap = collectDirectActiveIdentityMap(sentinel, WEAK_ACTIVE_IDENTITY_KEYS);
+  const sentinelWeakIds = valuesFromActiveIdentityMap(sentinelWeakMap);
+  if (sentinelWeakIds.length > 0) {
+    return {
+      ids: sentinelWeakIds,
+      map: sentinelWeakMap,
+      keys: WEAK_ACTIVE_IDENTITY_KEYS,
+    };
+  }
+
+  const sessionWeakMap = collectDirectActiveIdentityMap(session, WEAK_ACTIVE_IDENTITY_KEYS);
+  return {
+    ids: valuesFromActiveIdentityMap(sessionWeakMap),
+    map: sessionWeakMap,
+    keys: WEAK_ACTIVE_IDENTITY_KEYS,
+  };
+}
+
+function activeIdentityHasPrimaryStrongIdentity(identityContext: ActiveIdentityContext) {
+  return PRIMARY_STRONG_ACTIVE_IDENTITY_DIMENSIONS.some((key) => {
+    const values = identityContext.map.get(key);
+    return values && values.size > 0;
+  });
+}
+
+function activeIdentityHasUnprovenPrimaryIdentity(
+  artifactMap: Map<string, Set<string>>,
+  identityContext: ActiveIdentityContext,
+) {
+  return PRIMARY_STRONG_ACTIVE_IDENTITY_DIMENSIONS.some((key) => {
+    const artifactValues = artifactMap.get(key);
+    return artifactValues && artifactValues.size > 0 && !identityContext.map.has(key);
+  });
+}
+
+function artifactMatchesActiveRunIdentity(artifact: unknown, identityContext: ActiveIdentityContext) {
+  if (identityContext.conflict) return false;
+  if (identityContext.ids.length === 0) return true;
+  if (!activeIdentityHasPrimaryStrongIdentity(identityContext)) return false;
+
+  const artifactMap = collectActiveIdentityMap(artifact, 0, identityContext.keys);
+  if (activeIdentityHasUnprovenPrimaryIdentity(artifactMap, identityContext)) return false;
+  for (const [key, activeValues] of identityContext.map.entries()) {
+    const artifactValues = artifactMap.get(key);
+    if (!artifactValues || artifactValues.size === 0) return false;
+    if ([...artifactValues].some((value) => !activeValues.has(value))) return false;
+  }
+  return true;
 }
 
 function validatePipelineCompletionEvidence(input: {
@@ -454,6 +726,9 @@ function validatePipelineCompletionEvidence(input: {
   if (input.runtimeMode !== "real-agent") {
     missing.push(`runtime_mode:${input.runtimeMode ?? "missing"}`);
   }
+  if (!sentinelIntegrityVerified(input.stateDir)) {
+    missing.push("sentinel_integrity:hmac-sha256");
+  }
 
   const artifact = input.output.pipelineGovernanceArtifact
     ?? input.output.governanceArtifact
@@ -471,6 +746,10 @@ function validatePipelineCompletionEvidence(input: {
       );
     }
   } else {
+    const activeIdentity = activeRunIdentityContext(input.stateDir);
+    if (!artifactMatchesActiveRunIdentity(artifact, activeIdentity)) {
+      missing.push("current_run_identity");
+    }
     const ledgerValidation = validatePipelineLedgerEvidence(artifact as PipelineGovernanceArtifact, {
       protocolEvents: readJsonlFile(join(input.stateDir, "protocol-events.jsonl")),
       gateDecisions: readJsonlFile(join(input.stateDir, "gate-decisions.jsonl")),

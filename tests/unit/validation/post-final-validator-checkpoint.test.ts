@@ -4,6 +4,11 @@ import { recordPostFinalValidatorCheckpoint } from "../../../src/validation/fina
 import { runFinalValidator } from "../../../src/validation/final-validator.js";
 
 type SavedState = {
+  session_id?: string;
+  run_id?: string;
+  workflow_id?: string;
+  created_by_runtime?: boolean;
+  runtime_mode?: "real-agent" | "harness" | "blocked-no-agent-runtime" | "dev-bypass";
   pipelineActive: boolean;
   currentPhase: "phase-0" | "phase-1" | "phase-1.5" | "phase-2" | "phase-3";
   currentAgent: string;
@@ -77,6 +82,39 @@ describe("recordPostFinalValidatorCheckpoint", () => {
     expect(saved.completedPhases).toEqual(
       expect.arrayContaining(["phase-0", "phase-1", "phase-2", "phase-3"]),
     );
+  });
+
+  it("TDD: preserves prior execution identity on the post-final sentinel checkpoint", async () => {
+    const prior: SavedState = {
+      session_id: "session-current",
+      run_id: "run-current",
+      workflow_id: "full",
+      created_by_runtime: true,
+      runtime_mode: "real-agent",
+      pipelineActive: true,
+      currentPhase: "phase-3",
+      currentAgent: "pipeline-controller",
+      expectedNext: ["final_verdict"],
+      completedPhases: ["phase-0", "phase-1", "phase-2"],
+      gateSummary: ["SENTINEL_CHECKPOINT"],
+      batchState: { batchIndex: 3, status: "phase-3" },
+      consecutiveCorrections: 1,
+      lastCheckpoint: "phase_2_to_3",
+      updatedAt: "2026-04-25T00:00:00.000Z",
+    };
+    const store = makeStore(prior);
+
+    await recordPostFinalValidatorCheckpoint({
+      sentinelStore: store,
+      decision: "GO",
+    });
+
+    const saved = store.saves[0];
+    expect(saved.session_id).toBe("session-current");
+    expect(saved.run_id).toBe("run-current");
+    expect(saved.workflow_id).toBe("full");
+    expect(saved.created_by_runtime).toBe(true);
+    expect(saved.runtime_mode).toBe("real-agent");
   });
 
   it("marks pipelineActive=false when decision is GO and =true on NO-GO", async () => {

@@ -64,4 +64,27 @@ describe("session store", () => {
         expect(gate.execution_identity?.trace_id).toBe(session.execution_identity?.trace_id);
         expect(gate.execution_identity?.event_id).not.toBe(session.execution_identity?.event_id);
     });
+    it("preserves run identity when later phase saves omit it", async () => {
+        const root = mkdtempSync(join(tmpdir(), "pipeline-state-identity-"));
+        const store = createSessionStore(root);
+        await store.save({
+            sessionId: "session-1",
+            run_id: "run-1",
+            runtime_mode: "real-agent",
+            currentPhase: "phase-1",
+            mode: "full",
+            variant: "implement-heavy",
+            confidenceScore: 1,
+        });
+        await store.save({
+            sessionId: "session-1",
+            currentPhase: "phase-2",
+            mode: "full",
+            variant: "implement-heavy",
+            confidenceScore: 1,
+        });
+        const session = await store.load();
+        expect(session.run_id).toBe("run-1");
+        expect(session.runtime_mode).toBe("real-agent");
+    });
 });

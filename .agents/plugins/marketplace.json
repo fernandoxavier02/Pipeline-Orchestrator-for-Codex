@@ -3,7 +3,7 @@
     {
       "name": "pipeline-orchestrator-for-codex",
       "displayName": "Pipeline Orchestrator for Codex",
-      "description": "Prompt-driven Codex pipeline orchestrator with governed workflows, hooks, gates, Paperclip skills, and adversarial review.",
+      "description": "Prompt-driven Codex pipeline orchestrator with governed workflows, HMAC-backed sentinel/ledger integrity, hooks, gates, Paperclip skills, and adversarial review.",
       "source": {
         "source": "local",
         "path": "."

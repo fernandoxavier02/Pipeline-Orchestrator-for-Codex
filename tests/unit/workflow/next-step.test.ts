@@ -20,6 +20,11 @@ describe("workflow next-step contract", () => {
   });
 
   it("keeps the spec lifecycle intelligible from brainstorm through execution", () => {
+    expect(resolveNextStep({ workflow: "spec", status: "passed", runId: "001-checkout" })).toMatchObject({
+      mode: "suggest",
+      nextWorkflow: "spec-init",
+      command: "/pipeline-orchestrator-for-codex:spec-init 001-checkout",
+    });
     expect(resolveNextStep({ workflow: "brainstorm", status: "passed", runId: "001-checkout" })).toMatchObject({
       mode: "suggest",
       nextWorkflow: "spec-init",

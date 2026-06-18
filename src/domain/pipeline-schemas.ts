@@ -59,6 +59,15 @@ const workflowSelectionSchema = z.object({
   })),
 });
 
+const executionPlanGateSchema = z.object({
+  required: z.boolean(),
+  executed: z.boolean(),
+  approved: z.boolean(),
+  decision: z.enum(["APPROVED", "REJECTED"]).nullable(),
+  approvedAt: z.string().nullable(),
+  reason: z.string(),
+});
+
 const planModeRequestSchema = z.object({
   kind: z.literal("PLAN_MODE_REQUEST"),
   protocol_version: z.literal(1),
@@ -169,6 +178,7 @@ export const sessionStateSchema = z.object({
   proposal: proposalSchema.optional(),
   approvalProof: controllerManagedTransitionSchema.optional(),
   executionProof: executionProofSchema.optional(),
+  executionPlanGate: executionPlanGateSchema.optional(),
   closeout: closeoutSummarySchema.optional(),
   unresolvedBlockers: z.array(z.string()).default([]),
   pendingDecision: z.string().optional(),
@@ -208,6 +218,7 @@ export const sentinelStateSchema = z.object({
   expectedNext: z.array(z.string()).default([]),
   completedPhases: z.array(pipelinePhaseSchema).default([]),
   gateSummary: z.array(z.string()).default([]),
+  executionPlanGate: executionPlanGateSchema.optional(),
   batchState: z.object({
     batchIndex: z.number().int().nonnegative(),
     status: z.string(),

@@ -16,6 +16,8 @@ Promessas publicas precisam corresponder ao runtime. README, plugin manifest, do
 
 Eval Gate local e evidencia, nao promessa global. Mudancas em workflow, plugin, skill, hook, command, script, telemetry, gate, trace, batch ou review devem passar pelo runner local antes de qualquer declaracao de PASS. Hooks locais so contam como automaticos quando a confianca em `/hooks` estiver verificada; sem isso, registre telemetry manual.
 
+Integridade de conclusao deve ser uniforme. Se uma conclusao PASS depende de HMAC, runtime TypeScript, CLI, hooks CJS, writer de sentinel e testes precisam aplicar a mesma politica: sentinel usa `PIPELINE_SENTINEL_HMAC_KEY` quando existir e cai para `PIPELINE_INTEGRITY_HMAC_KEY`; ledgers usam `PIPELINE_INTEGRITY_HMAC_KEY` com fallback compativel. Drift entre essas superficies e bug de governanca.
+
 ## Limites de Seguranca
 
 Nunca commitar secrets, tokens, chaves de API ou configuracoes privadas.

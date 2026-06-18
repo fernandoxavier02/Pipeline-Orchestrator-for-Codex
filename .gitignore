@@ -31,6 +31,13 @@ dist/src/protocol/*
 !dist/src/run/
 dist/src/run/*
 !dist/src/run/run-directory.js
+!dist/src/security/
+dist/src/security/*
+!dist/src/security/prompt-injection-guard.js
+!dist/src/security/ledger-integrity.js
+!dist/src/sentinel/
+dist/src/sentinel/*
+!dist/src/sentinel/sentinel-state.js
 !dist/src/trace/
 dist/src/trace/*
 !dist/src/trace/trace.js
@@ -39,5 +46,7 @@ dist/src/workflow/*
 !dist/src/workflow/next-step.js
 coverage/
 .codex/pipeline/
+.codex/pipeline-archives/
 .worktrees/
 .parity-audit/
+__pycache__/

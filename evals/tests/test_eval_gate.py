@@ -428,6 +428,82 @@ class EvalGateRunnerTests(unittest.TestCase):
 
         self.assert_fails_with("final report claims HMAC change without matching telemetry evidence")
 
+    def test_report_hmac_claim_rejects_test_only_evidence(self) -> None:
+        report = VALID_REPORT.replace(
+            "Eval Gate files only.",
+            "Added optional sentinel HMAC verification.",
+        )
+        (self.root / "evals" / "outputs" / "latest_output.md").write_text(report, encoding="utf-8")
+        changed_files = [
+            "evals/outputs/latest_output.md",
+            "tests/unit/sentinel/sentinel-state.test.ts",
+            "tests/unit/hooks/completion-checklist.test.ts",
+        ]
+        (self.root / "evals" / "telemetry" / "changed_files.txt").write_text(
+            "\n".join(changed_files) + "\n",
+            encoding="utf-8",
+        )
+        telemetry = {
+            **VALID_TELEMETRY,
+            "changed_files": changed_files,
+            "scope_review": {
+                "allowed_prefixes": ["evals/", "tests/unit/"],
+                "unexpected_files": [],
+                "scope_justifications": {},
+            },
+            "validated_target": {
+                "ref": "working-tree",
+                "commit": "fixture",
+                "changed_files": changed_files,
+            },
+        }
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        self.assert_fails_with("final report claims HMAC change without matching telemetry evidence")
+
+    def test_report_hmac_claim_accepts_sentinel_and_stop_hook_evidence(self) -> None:
+        report = VALID_REPORT.replace(
+            "Eval Gate files only.",
+            "Added sentinel HMAC verification in `src/sentinel/sentinel-state.ts` and `hooks/completion-checklist.cjs`.",
+        )
+        (self.root / "evals" / "outputs" / "latest_output.md").write_text(report, encoding="utf-8")
+        changed_files = [
+            "evals/outputs/latest_output.md",
+            "src/sentinel/sentinel-state.ts",
+            "hooks/completion-checklist.cjs",
+            "tests/unit/sentinel/sentinel-state.test.ts",
+            "tests/unit/hooks/completion-checklist.test.ts",
+        ]
+        (self.root / "evals" / "telemetry" / "changed_files.txt").write_text(
+            "\n".join(changed_files) + "\n",
+            encoding="utf-8",
+        )
+        telemetry = {
+            **VALID_TELEMETRY,
+            "changed_files": changed_files,
+            "scope_review": {
+                "allowed_prefixes": ["evals/", "src/sentinel/", "hooks/", "tests/unit/"],
+                "unexpected_files": [],
+                "scope_justifications": {},
+            },
+            "validated_target": {
+                "ref": "working-tree",
+                "commit": "fixture",
+                "changed_files": changed_files,
+            },
+        }
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps(telemetry),
+            encoding="utf-8",
+        )
+
+        result = self.run_eval()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("EVAL RESULT: PASS", result.stdout)
+
     def test_npm_test_timeout_can_pass_with_focused_evidence(self) -> None:
         telemetry = json.loads(json.dumps(VALID_TELEMETRY))
         telemetry["validation_evidence"]["commands"]["npm test"] = {

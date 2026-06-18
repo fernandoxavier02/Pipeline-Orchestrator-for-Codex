@@ -1,3 +1,28 @@
+const READ_ONLY_WORKFLOW_TYPES = new Set(["Audit", "UX Simulation"]);
+export function requiresExecutionPlanGate(type) {
+    if (!type || typeof type !== "string") {
+        return true;
+    }
+    return !READ_ONLY_WORKFLOW_TYPES.has(type);
+}
+export function createExecutionPlanGate(input) {
+    const required = requiresExecutionPlanGate(input.type);
+    const decision = input.decision ?? null;
+    const approved = required ? decision === "APPROVED" : false;
+    return {
+        required,
+        executed: decision !== null,
+        approved,
+        decision,
+        approvedAt: approved ? input.timestamp ?? new Date().toISOString() : null,
+        reason: required
+            ? "Code-writing workflows require an approved implementation plan before execution."
+            : "Read-only workflows do not require a production-code execution plan gate.",
+    };
+}
+export function isExecutionPlanGateSatisfied(gate) {
+    return !!gate && (!gate.required || gate.approved === true);
+}
 export function getPlanModeStatus(mode, complexity) {
     if (mode === "--plan") {
         return "required";

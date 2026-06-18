@@ -78,6 +78,14 @@ const IMPLEMENTATION_PATTERNS = [
   /\b(botão|button|tela|screen|página|page|componente|component)/i,
 ];
 
+const OPERATIONAL_AUDIT_PATTERNS = [
+  /\b(analis\w*|reanalis\w*|audit\w*|reaudit\w*|review\w*|rereview\w*|validat\w*|check\w*|debug\w*|examin\w*|diagnos\w*|analy[sz]\w*|reanaly[sz]\w*|assess\w*|reassess\w*|evaluat\w*|reevaluat\w*|probe\w*|inspect\w*|triage\w*|troubleshoot\w*|look into|take a look|revis\w*|rerevis\w*|verific\w*|verifiq\w*|investig\w*|reinvestig\w*|avali\w*|reavali\w*|valid\w*|revalid\w*|confir\w*|reconfir\w*|confer\w*|reconfer\w*|olhad\w*|olh\w*|vej\w*|chec\w*|cheq\w*|diagnost\w*|rediagnost\w*|causa raiz|root cause)\b/i,
+  /\b(look\s+(?:at|over|through)|look\b[\s\S]{1,120}\bover|go\s+over|walk\s+through|walk\s+(?:me|us)\s+through|walkthrough|once[-\s]over|have\s+a\s+look\s+at|take(?:\s+\w+){0,3}\s+look\s+at|give\b[\s\S]{1,120}\b(?:(?:a|another)(?:\s+\w+){0,3}|one\s+more|final|second)\s+look)\b/i,
+  /\b(varredura|vasculh\w*|pente[-\s]fino)\b[\s\S]{0,120}\b(workflow|fluxo)\b/i,
+  /\b(nao esta funcionando|nao funciona|precario|nao cumprem)\b/i,
+  /\b(\.\w{1,4})\b.*\b(fix|bug|erro|alter|criar|remov|refator)/i,
+];
+
 // ============================================================
 // FUNÇÕES
 // ============================================================
@@ -131,6 +139,20 @@ function normalizeWorkflowName(name) {
   return WORKFLOW_ALIASES.get(normalized);
 }
 
+function normalizePromptText(prompt) {
+  return (prompt || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function matchesAnyPromptPattern(prompt, patterns) {
+  const raw = (prompt || '').trim();
+  const normalized = normalizePromptText(prompt);
+  return patterns.some((pattern) => pattern.test(raw) || pattern.test(normalized));
+}
+
 function detectPluginFrontDoorMention(prompt) {
   const canonicalUri = 'pipeline-orchestrator-for-codex(?=[)@/?#])[^)]*';
   const mentionBoundary = '(?=$|[\\s,.;:!?])';
@@ -182,15 +204,26 @@ function detectExplicitWorkflow(prompt) {
 }
 
 function isImplementationRequest(prompt) {
-  const trimmed = prompt.trim();
+  return matchesAnyPromptPattern(prompt, IMPLEMENTATION_PATTERNS);
+}
 
-  for (const pattern of IMPLEMENTATION_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      return true;
-    }
-  }
+function isOperationalAuditRequest(prompt) {
+  return matchesAnyPromptPattern(prompt, OPERATIONAL_AUDIT_PATTERNS);
+}
 
-  return false;
+function isInformationalOnlyPrompt(prompt) {
+  const normalized = normalizePromptText(prompt);
+
+  if (!normalized) return false;
+  if (isImplementationRequest(normalized)) return false;
+  if (isOperationalAuditRequest(normalized)) return false;
+
+  const informationalPatterns = [
+    /\b(explique|explica|o que e|oque e|what is|define|defina|conceito|conceitue)\b/i,
+    /\b(como funciona|how does|how do)\b/i,
+  ];
+
+  return informationalPatterns.some((pattern) => pattern.test(normalized));
 }
 
 function isPipelineWorthy(prompt) {
@@ -198,15 +231,14 @@ function isPipelineWorthy(prompt) {
 
   if (!trimmed) return false;
   if (isImplementationRequest(trimmed)) return true;
+  if (isOperationalAuditRequest(trimmed)) return true;
+  if (isInformationalOnlyPrompt(trimmed)) return false;
 
   // Requests longas geralmente pedem analise/execucao mais disciplinada
   if (trimmed.length >= 140) return true;
 
   const pipelineWorthyPatterns = [
-    /\b(analise|analisar|auditar|auditoria|revisar|verificar|investigar|diagnostic|causa raiz|root cause)\b/i,
     /\b(pipeline|agentes|orquestrador|orchestrator|classifier|executor|observabilidade|logs|tracing|correlation|runlog)\b/i,
-    /\b(nao esta funcionando|nao funciona|precario|nao cumprem)\b/i,
-    /\b(\.\w{1,4})\b.*\b(fix|bug|erro|alter|criar|remov|refator)/i,
   ];
 
   for (const pattern of pipelineWorthyPatterns) {
@@ -290,6 +322,96 @@ function advisoryOutput(systemMessage) {
   };
 }
 
+function blockingOutput(stopReason, systemMessage) {
+  return {
+    continue: false,
+    stopReason,
+    hook_enforcement_mode: 'blocking',
+    pipeline_valid: false,
+    systemMessage,
+  };
+}
+
+function promptStringValue(values) {
+  return values
+    .filter((value) => typeof value === 'string' && value.trim())
+    .map((value) => value.trim())
+    .join('\n');
+}
+
+function pushStringField(target, value) {
+  if (typeof value === 'string' && value.trim()) {
+    target.push(value.trim());
+  }
+}
+
+function collectPromptEnvelope(data, depth = 0) {
+  if (!data || typeof data !== 'object' || Array.isArray(data) || depth > 4) {
+    return { malformed: true, values: [] };
+  }
+
+  const values = [];
+  let malformed = false;
+  for (const field of ['prompt', 'arguments', 'input', 'text', 'content']) {
+    if (!Object.prototype.hasOwnProperty.call(data, field)) continue;
+    if (typeof data[field] !== 'string') {
+      malformed = true;
+      continue;
+    }
+    pushStringField(values, data[field]);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'message')) {
+    const message = data.message;
+    if (typeof message === 'string') {
+      pushStringField(values, message);
+    } else if (message && typeof message === 'object' && !Array.isArray(message)) {
+      const nested = collectPromptEnvelope(message, depth + 1);
+      malformed = malformed || nested.malformed;
+      values.push(...nested.values);
+    } else {
+      malformed = true;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(data, 'messages')) {
+    const messages = data.messages;
+    if (!Array.isArray(messages)) {
+      malformed = true;
+    } else {
+      for (const message of messages) {
+        if (typeof message === 'string') {
+          pushStringField(values, message);
+        } else if (message && typeof message === 'object' && !Array.isArray(message)) {
+          const nested = collectPromptEnvelope(message, depth + 1);
+          malformed = malformed || nested.malformed;
+          values.push(...nested.values);
+        } else {
+          malformed = true;
+        }
+      }
+    }
+  }
+
+  for (const field of ['payload', 'data', 'body']) {
+    if (!Object.prototype.hasOwnProperty.call(data, field)) continue;
+    const nestedPayload = data[field];
+    if (!nestedPayload || typeof nestedPayload !== 'object' || Array.isArray(nestedPayload)) {
+      malformed = true;
+      continue;
+    }
+    const nested = collectPromptEnvelope(nestedPayload, depth + 1);
+    malformed = malformed || nested.malformed;
+    values.push(...nested.values);
+  }
+
+  return { malformed, values };
+}
+
+function hasMalformedPromptField(data) {
+  return collectPromptEnvelope(data).malformed;
+}
+
 function workflowSkillMessage(workflow) {
   if (workflow === 'pipeline') {
     return PIPELINE_SKILL_MESSAGE;
@@ -345,15 +467,37 @@ process.stdin.on('end', () => {
     if (raw) {
       try {
         const data = JSON.parse(raw);
-        prompt =
-          data.prompt ||
-          data.arguments ||
-          data.input ||
-          data.text ||
-          data.message ||
-          '';
+        const promptEnvelope = collectPromptEnvelope(data);
+        if (promptEnvelope.malformed || promptEnvelope.values.length === 0) {
+          recordHookEvent({
+            hook: 'force-pipeline-agents',
+            event: 'UserPromptSubmit',
+            decision: 'block_malformed_prompt_payload',
+            reason: promptEnvelope.malformed ? 'non-string prompt field' : 'missing prompt field',
+          });
+          console.log(JSON.stringify(blockingOutput(
+            'malformed-prompt-payload',
+            'Malformed UserPromptSubmit payload: prompt-bearing fields must be strings. Inline execution is blocked; re-submit with /pipeline-orchestrator-for-codex:pipeline if this was an engineering request.',
+          )));
+          return;
+        }
+        prompt = promptStringValue(promptEnvelope.values);
       } catch {
-        prompt = raw;
+        if (!/^\s*[{[]/u.test(raw)) {
+          prompt = raw;
+        } else {
+        recordHookEvent({
+          hook: 'force-pipeline-agents',
+          event: 'UserPromptSubmit',
+          decision: 'block_malformed_prompt_payload',
+          reason: 'invalid json payload',
+        });
+        console.log(JSON.stringify(blockingOutput(
+          'malformed-prompt-payload',
+          'Malformed UserPromptSubmit payload: hook input must be valid JSON or plain text. Inline execution is blocked; re-submit with /pipeline-orchestrator-for-codex:pipeline if this was an engineering request.',
+        )));
+        return;
+        }
       }
     }
 
@@ -407,10 +551,17 @@ process.stdin.on('end', () => {
       recordHookEvent({
         hook: 'force-pipeline-agents',
         event: 'UserPromptSubmit',
-        decision: 'inject_pipeline_message',
+        decision: 'block_pipeline_required',
         reason: 'pipeline-worthy prompt',
       });
-      console.log(JSON.stringify(advisoryOutput(ENFORCEMENT_MESSAGE)));
+      console.log(JSON.stringify(blockingOutput(
+        'pipeline-required',
+        [
+          ENFORCEMENT_MESSAGE,
+          '',
+          'A execução inline deste pedido está bloqueada. Reenvie pela porta canônica /pipeline-orchestrator-for-codex:pipeline ou use spawn_agent/wait_agent conforme o contrato acima.',
+        ].join('\n'),
+      )));
       return;
     }
 
@@ -424,12 +575,13 @@ process.stdin.on('end', () => {
     console.log(JSON.stringify(advisoryOutput("💡 Considere usar /pipeline-orchestrator-for-codex:pipeline para classificar esta solicitação.")));
 
   } catch (e) {
-    // Em caso de erro, não bloqueia
+    // Em caso de erro, falha fechado: este hook protege a porta de entrada.
     console.log(JSON.stringify({
-      continue: true,
-      hook_enforcement_mode: 'advisory',
+      continue: false,
+      stopReason: 'pipeline-hook-error',
+      hook_enforcement_mode: 'blocking',
       pipeline_valid: false,
-      systemMessage: 'force-pipeline-agents hook failed internally; advisory hook enforcement was not proven and cannot count as a valid pipeline.',
+      systemMessage: 'force-pipeline-agents hook failed internally; inline execution is blocked because prompt enforcement could not be proven.',
     }));
   }
 });

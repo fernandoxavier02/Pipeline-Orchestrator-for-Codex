@@ -77,13 +77,27 @@ describe("pipeline controller", () => {
         expect(existsSync(join(stateDir, "session-lock.json"))).toBe(true);
         expect(existsSync(join(stateDir, "session.json"))).toBe(true);
         expect(existsSync(join(stateDir, "sentinel-state.json"))).toBe(true);
+        expect(existsSync(join(stateDir, "required-first-actions.json"))).toBe(true);
         expect(existsSync(join(stateDir, "gate-decisions.jsonl"))).toBe(true);
         const lock = JSON.parse(readFileSync(join(stateDir, "session-lock.json"), "utf8"));
         const session = JSON.parse(readFileSync(join(stateDir, "session.json"), "utf8"));
         const sentinel = JSON.parse(readFileSync(join(stateDir, "sentinel-state.json"), "utf8"));
+        const firstActions = JSON.parse(readFileSync(join(stateDir, "required-first-actions.json"), "utf8"));
         expect(session.sessionId).toBe(lock.session_id);
         expect(sentinel.session_id).toBe(lock.session_id);
         expect(session.runtime_mode).toBe("real-agent");
+        expect(firstActions).toMatchObject({
+            pipeline_requested: true,
+            session_id: lock.session_id,
+            run_id: session.run_id,
+            runtime_mode: "real-agent",
+        });
+        expect(firstActions.required_actions.map((action) => action.id)).toEqual([
+            "visible_plan",
+            "workflow_method_gate",
+            "capability_gate",
+            "controller_dispatch",
+        ]);
     });
     it("RED: explicit pipeline with strictAgents=false is harness and cannot pass capability gate", async () => {
         const cwd = mkdtempSync(join(tmpdir(), "pipeline-controller-harness-"));
@@ -144,6 +158,183 @@ describe("pipeline controller", () => {
         expect(complexResult.proposal.planModeRequest).toMatchObject({
             kind: "PLAN_MODE_REQUEST",
         });
+    });
+    it("arms the execution plan gate on proposal and approves it before light workflow execution", async () => {
+        const cwd = mkdtempSync(join(tmpdir(), "pipeline-controller-plan-gate-"));
+        const runtime = createPipelineRuntime({
+            cwd,
+            codexHome: cwd,
+        });
+        await runtime.controller.start("/pipeline --simples add label copy");
+        let session = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "session.json"), "utf8"));
+        let sentinel = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "sentinel-state.json"), "utf8"));
+        expect(session.executionPlanGate).toMatchObject({
+            required: true,
+            approved: false,
+            decision: null,
+        });
+        expect(sentinel.executionPlanGate).toMatchObject({
+            required: true,
+            approved: false,
+        });
+        await runtime.controller.start("yes");
+        session = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "session.json"), "utf8"));
+        sentinel = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "sentinel-state.json"), "utf8"));
+        expect(session.currentPhase).toBe("phase-2");
+        expect(session.executionPlanGate).toMatchObject({
+            required: true,
+            executed: true,
+            approved: true,
+            decision: "APPROVED",
+        });
+        expect(sentinel.executionPlanGate).toMatchObject({
+            required: true,
+            approved: true,
+            decision: "APPROVED",
+        });
+    });
+    it("blocks phase-2 execution when the execution plan gate is still open", async () => {
+        const appendedGateEntries = [];
+        let executeCalled = false;
+        let sessionState = {
+            sessionId: "plan-gate-open",
+            currentPhase: "phase-1.5",
+            phase: "phase-1.5",
+            mode: "--no-plan",
+            variant: "feature-light",
+            confidenceScore: 1,
+            pendingDecision: "phase-2-ready",
+            proposal: {
+                summary: "add feature",
+                affectedFiles: ["src/controller/pipeline-controller.ts"],
+                validationIntent: "standard",
+                batchSize: 1,
+                workflowSelection: {
+                    status: "awaiting-user-confirmation",
+                    selectedWorkflow: {
+                        type: "Feature",
+                        complexity: "MEDIA",
+                        variant: "feature-light",
+                        label: "Feature",
+                        reason: "test",
+                    },
+                    message: "test",
+                    question: "test",
+                    options: [],
+                },
+            },
+            approvalProof: {
+                kind: "controller-managed-transition",
+                from: "phase-1",
+                to: "phase-1.5",
+            },
+            executionPlanGate: {
+                required: true,
+                executed: false,
+                approved: false,
+                decision: null,
+                approvedAt: null,
+                reason: "test",
+            },
+            unresolvedBlockers: [],
+            touchedFiles: ["src/controller/pipeline-controller.ts"],
+        };
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => sessionState,
+                    save: async (nextSession) => {
+                        sessionState = nextSession;
+                    },
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+                gateLog: {
+                    append: async (entry) => {
+                        appendedGateEntries.push(entry);
+                    },
+                    list: async () => appendedGateEntries,
+                },
+                confidence: {
+                    save: async () => undefined,
+                },
+            },
+            executionController: {
+                executeApprovedWork: async () => {
+                    executeCalled = true;
+                    return { status: "completed" };
+                },
+            },
+        });
+        const result = await controller.start("/pipeline continue");
+        expect(result).toMatchObject({
+            status: "blocked",
+            blockedBy: "PLAN_GATE_ACTIVE",
+        });
+        expect(executeCalled).toBe(false);
+        expect(appendedGateEntries).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                gate: "PLAN_GATE_ACTIVE",
+                decision: "block",
+                hardness: "HARD",
+            }),
+        ]));
+    });
+    it("keeps legacy continue sessions without executionPlanGate on the existing execution path", async () => {
+        let executeCalled = false;
+        const sessionState = {
+            sessionId: "legacy-session",
+            currentPhase: "phase-1.5",
+            phase: "phase-1.5",
+            mode: "--no-plan",
+            variant: "feature-light",
+            confidenceScore: 1,
+            pendingDecision: "phase-2-ready",
+            proposal: {
+                summary: "legacy add feature",
+                affectedFiles: ["src/controller/pipeline-controller.ts"],
+                validationIntent: "standard",
+                batchSize: 1,
+            },
+            approvalProof: {
+                kind: "controller-managed-transition",
+                from: "phase-1",
+                to: "phase-1.5",
+            },
+            executionProof: {
+                approvedScenarios: ["tests/unit/controller/pipeline-controller.test.ts"],
+                tddApproval: "APPROVED",
+                redValidation: {
+                    status: "approved",
+                    reasons: [],
+                },
+                checkpointEvidence: [],
+                fixAttempts: [],
+            },
+            unresolvedBlockers: [],
+            touchedFiles: ["src/controller/pipeline-controller.ts"],
+        };
+        const controller = createPipelineController({
+            stores: {
+                session: {
+                    load: async () => sessionState,
+                    save: async () => undefined,
+                },
+                checkpoints: {
+                    list: async () => [],
+                },
+            },
+            executionController: {
+                executeApprovedWork: async () => {
+                    executeCalled = true;
+                    return { status: "completed" };
+                },
+            },
+        });
+        const result = await controller.start("/pipeline continue");
+        expect(executeCalled).toBe(true);
+        expect(result.blockedBy).not.toBe("PLAN_GATE_ACTIVE");
     });
     it("records COMPLEXITY_GATE as partial when a mode override downgrades the classifier", async () => {
         const appendedGateEntries = [];
@@ -370,6 +561,14 @@ describe("pipeline controller", () => {
                 checkpointEvidence: [],
                 fixAttempts: [],
             },
+            executionPlanGate: {
+                required: true,
+                executed: true,
+                approved: true,
+                decision: "APPROVED",
+                approvedAt: "2026-06-17T00:00:00.000Z",
+                reason: "test",
+            },
             unresolvedBlockers: [],
             touchedFiles: ["src/payments/checkout.ts"],
         };
@@ -426,6 +625,14 @@ describe("pipeline controller", () => {
                 },
                 checkpointEvidence: [],
                 fixAttempts: [],
+            },
+            executionPlanGate: {
+                required: true,
+                executed: true,
+                approved: true,
+                decision: "APPROVED",
+                approvedAt: "2026-06-17T00:00:00.000Z",
+                reason: "test",
             },
             unresolvedBlockers: [],
             touchedFiles: ["src/payments/checkout.ts"],

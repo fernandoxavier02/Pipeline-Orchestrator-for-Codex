@@ -1122,6 +1122,8 @@ describe("closeout confirmation", () => {
     );
     expect(result.decision).toBe("GO");
     expect(result.missingEvidence).toEqual([]);
+    expect(result.text).toContain("Closeout decision: GO");
+    expect(result.text).not.toContain("Final decision: GO");
   });
 
   it("does not let an injected non-authoritative execution controller mint final-review proof", async () => {

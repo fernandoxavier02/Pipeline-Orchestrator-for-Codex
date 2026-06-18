@@ -3,6 +3,7 @@ import { join } from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
 import { createExecutionIdentity } from "../observability/execution-identity.js";
+import { signLedgerEntry } from "../security/ledger-integrity.js";
 
 const protocolKindSchema = z.enum(["GATE_REQUEST", "DISPATCH_REQUEST", "PLAN_MODE_REQUEST"]);
 
@@ -180,7 +181,7 @@ export function createProtocolEventLog(root: string) {
       };
 
       await mkdir(root, { recursive: true });
-      await appendFile(file, `${JSON.stringify(enriched)}\n`, "utf8");
+      await appendFile(file, `${JSON.stringify(signLedgerEntry(enriched))}\n`, "utf8");
     },
     async list() {
       try {

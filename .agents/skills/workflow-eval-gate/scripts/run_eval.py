@@ -383,15 +383,17 @@ def validate_report_behavior_claims(report_text: str, changed_files: Iterable[st
         return []
 
     evidence_paths = telemetry_evidence_paths(changed_files, telemetry)
-    has_hmac_surface = any(
+    has_hmac_runtime_surface = any(
         path in {
             "src/cli/pipeline-cli.ts",
             "dist/src/cli/pipeline-cli.js",
-            "tests/unit/cli/pipeline-cli.test.ts",
+            "src/sentinel/sentinel-state.ts",
+            "dist/src/sentinel/sentinel-state.js",
+            "hooks/completion-checklist.cjs",
         }
         for path in evidence_paths
     )
-    if has_hmac_surface:
+    if has_hmac_runtime_surface:
         return []
     return ["final report claims HMAC change without matching telemetry evidence"]
 

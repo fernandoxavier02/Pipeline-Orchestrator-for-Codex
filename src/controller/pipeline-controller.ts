@@ -1,7 +1,7 @@
 import { PIPELINE_MODES, type PipelineMode, type PipelinePhase } from "../domain/pipeline-types.js";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { buildExecWindow } from "../security/exec-window.js";
 import { createExecWindowStore } from "../security/exec-window-store.js";
@@ -13,7 +13,15 @@ import { classifyRequest } from "./classify-request.js";
 import { applyClassificationOverrides } from "./classification-overrides.js";
 import { confirmProposal } from "./confirm-proposal.js";
 import { runDesignInterrogation } from "./design-interrogator.js";
-import { getPlanModeStatus, createImplementationPlan, type ChangeContract, type PlanModeBypass } from "./plan-mode.js";
+import {
+  createExecutionPlanGate,
+  getPlanModeStatus,
+  isExecutionPlanGateSatisfied,
+  createImplementationPlan,
+  type ChangeContract,
+  type ExecutionPlanGate,
+  type PlanModeBypass,
+} from "./plan-mode.js";
 import { defaultBatchSizeForWorkflow, resolveWorkflowSwitch } from "./workflow-selection.js";
 import { parseMode } from "./parse-mode.js";
 import { deriveContinuationOutcome } from "./continuation-outcome.js";
@@ -171,6 +179,7 @@ interface PipelineSessionState {
     }>;
     fixAttempts?: boolean[];
   };
+  executionPlanGate?: ExecutionPlanGate;
   closeout?: {
     decision: "GO" | "CONDITIONAL" | "NO-GO";
     missingEvidence: string[];
@@ -244,8 +253,16 @@ async function saveSentinelState(
   } | undefined,
   input: Omit<SentinelState, "updatedAt">,
 ) {
+  const prior = await loadSentinelState(runtime);
   await runtime?.stores?.sentinel?.save?.({
     ...input,
+    session_id: input.session_id ?? prior?.session_id,
+    run_id: input.run_id ?? prior?.run_id,
+    workflow_id: input.workflow_id ?? prior?.workflow_id,
+    created_by_runtime: typeof input.created_by_runtime === "boolean"
+      ? input.created_by_runtime
+      : prior?.created_by_runtime,
+    runtime_mode: input.runtime_mode ?? prior?.runtime_mode,
     updatedAt: new Date().toISOString(),
   });
 }
@@ -256,6 +273,70 @@ function getExpectedSentinelToken(session?: PipelineSessionState) {
   }
 
   return "proposal-response";
+}
+
+function getSessionWorkflowType(session: PipelineSessionState): PipelineClassification["type"] | undefined {
+  return session.proposal?.workflowSelection?.selectedWorkflow.type;
+}
+
+function armExecutionPlanGate(session: PipelineSessionState, decision: "APPROVED" | "REJECTED" | null = null) {
+  return createExecutionPlanGate({
+    type: getSessionWorkflowType(session),
+    decision,
+  });
+}
+
+async function blockIfExecutionPlanGateOpen(input: {
+  runtime: Parameters<typeof createPipelineController>[0] | undefined;
+  session: PipelineSessionState;
+  mode: string;
+}): Promise<{ blocked: false } | Record<string, unknown>> {
+  if (!input.session.executionPlanGate) {
+    return { blocked: false };
+  }
+
+  const gate = input.session.executionPlanGate;
+  if (isExecutionPlanGateSatisfied(gate)) {
+    return { blocked: false };
+  }
+
+  const detail = "Execution is blocked because this workflow requires an approved implementation plan before production-code execution.";
+  await persistGateAndConfidence(
+    {
+      stores: {
+        gateLog: input.runtime?.stores?.gateLog,
+        confidence: input.runtime?.stores?.confidence,
+        stateAdapter: input.runtime?.stores?.stateAdapter,
+      },
+    },
+    [
+      toGateLogEntry({
+        gate: "PLAN_GATE_ACTIVE",
+        hardness: "HARD",
+        phase: "phase-1.5",
+        decision: "block",
+        detail,
+      }),
+    ],
+    input.session.confidenceScore ?? 1,
+  );
+
+  await input.runtime?.stores?.session?.save?.({
+    ...input.session,
+    executionPlanGate: gate,
+    unresolvedBlockers: [...new Set([...(input.session.unresolvedBlockers ?? []), detail])],
+    pendingDecision: "phase-1.5-approval-required",
+    touchedFiles: input.session.touchedFiles ?? input.session.proposal?.affectedFiles ?? [],
+  });
+
+  return {
+    mode: input.mode,
+    status: "blocked",
+    phase: input.session.currentPhase,
+    blockedBy: "PLAN_GATE_ACTIVE",
+    executionPlanGate: gate,
+    reason: detail,
+  };
 }
 
 async function executeApprovedContinuation(input: {
@@ -274,6 +355,15 @@ async function executeApprovedContinuation(input: {
   session: PipelineSessionState;
   mode: string;
 }) {
+  const planGateBlock = await blockIfExecutionPlanGateOpen({
+    runtime: input.runtime,
+    session: input.session,
+    mode: input.mode,
+  });
+  if (planGateBlock.blocked !== false) {
+    return planGateBlock;
+  }
+
   if (
     input.session.pendingDecision === "phase-1.5-approval-required"
     || input.session.pendingDecision === "phase-1.5-reapproval-required"
@@ -619,6 +709,45 @@ async function bootstrapExplicitPipelineState(input: {
       session_id: input.sessionId,
       now,
     }),
+  );
+
+  const controllerActionId = input.runtimeMode === "real-agent"
+    ? "controller_dispatch"
+    : "blocked_runtime_artifact";
+  writeFileSync(
+    join(input.stateRoot, "required-first-actions.json"),
+    JSON.stringify({
+      pipeline_requested: true,
+      session_id: input.sessionId,
+      run_id: input.runId,
+      request: input.request,
+      runtime_mode: input.runtimeMode,
+      required_actions: [
+        {
+          id: "visible_plan",
+          status: "required",
+          evidence_ref: "codex.plan",
+        },
+        {
+          id: "workflow_method_gate",
+          status: "required",
+          evidence_ref: "WORKFLOW_METHOD_GATE",
+        },
+        {
+          id: "capability_gate",
+          status: "required",
+          evidence_ref: "runtime.capabilities",
+        },
+        {
+          id: controllerActionId,
+          status: "required",
+          evidence_ref: controllerActionId === "controller_dispatch"
+            ? "spawn_agent:pipeline-controller"
+            : "PipelineGovernanceArtifact:BLOCKED",
+        },
+      ],
+    }),
+    "utf8",
   );
 
   await input.runtime?.stores?.session?.save?.({
@@ -1402,6 +1531,9 @@ export function createPipelineController(runtime?: {
             runtime_mode: runtimeMode,
             missing_capabilities: capabilityGate.missing_capabilities,
             capabilityGate: capabilityGate.gate,
+            run_id: bootstrapState?.runId,
+            session_id: bootstrapState?.sessionId,
+            workflow_id: mode,
           }),
           blockedBy: "CAPABILITY_GATE",
         };
@@ -1464,6 +1596,7 @@ export function createPipelineController(runtime?: {
             phase: "phase-1",
             variant: nextClassification.variant,
             proposal: nextProposal,
+            executionPlanGate: createExecutionPlanGate({ type: nextClassification.type }),
             pendingDecision: "proposal-confirmation",
             touchedFiles: nextProposal.affectedFiles,
           });
@@ -1474,6 +1607,7 @@ export function createPipelineController(runtime?: {
             expectedNext: ["proposal-response"],
             completedPhases: ["phase-0"],
             gateSummary: ["WORKFLOW_SWITCH"],
+            executionPlanGate: createExecutionPlanGate({ type: nextClassification.type }),
             batchState: {
               batchIndex: session.batchIndex ?? 0,
               status: "awaiting-proposal-confirmation",
@@ -1588,6 +1722,7 @@ export function createPipelineController(runtime?: {
 
         if (session?.currentPhase === "phase-1") {
           const planModeStatus = session.proposal?.planModeStatus;
+          const armedPlanGate = session.executionPlanGate ?? armExecutionPlanGate(session);
 
           if (
             normalizedResponse === "yes"
@@ -1606,6 +1741,7 @@ export function createPipelineController(runtime?: {
               unresolvedBlockers: session.unresolvedBlockers ?? [],
               pendingDecision: "phase-1.5-approval-required",
               touchedFiles: session.touchedFiles ?? session.proposal?.affectedFiles ?? [],
+              executionPlanGate: armedPlanGate,
               approvalProof: {
                 kind: "controller-managed-transition",
                 from: "phase-1",
@@ -1620,6 +1756,7 @@ export function createPipelineController(runtime?: {
               expectedNext: ["phase-1.5-response"],
               completedPhases: ["phase-0", "phase-1"],
               gateSummary: ["SENTINEL_CHECKPOINT"],
+              executionPlanGate: armedPlanGate,
               batchState: {
                 batchIndex: session.batchIndex ?? 0,
                 status: "awaiting-plan-approval",
@@ -1653,6 +1790,7 @@ export function createPipelineController(runtime?: {
           }
 
           if (normalizedResponse === "yes") {
+            const approvedPlanGate = armExecutionPlanGate(session, "APPROVED");
             await runtime?.stores?.session?.save?.({
               sessionId: session.sessionId ?? `phase-1:${session.variant ?? "proposal"}`,
               runStartedAt: session.runStartedAt ?? new Date().toISOString(),
@@ -1669,6 +1807,7 @@ export function createPipelineController(runtime?: {
               // that has no checkpoints yet.
               pendingDecision: "phase-2-ready",
               touchedFiles: session.touchedFiles ?? session.proposal?.affectedFiles ?? [],
+              executionPlanGate: approvedPlanGate,
               approvalProof: {
                 kind: "controller-managed-transition",
                 from: "phase-1",
@@ -1688,6 +1827,7 @@ export function createPipelineController(runtime?: {
               expectedNext: ["continue"],
               completedPhases: ["phase-0", "phase-1"],
               gateSummary: ["SENTINEL_CHECKPOINT"],
+              executionPlanGate: approvedPlanGate,
               batchState: {
                 batchIndex: session.batchIndex ?? 0,
                 status: "execution-approved",
@@ -1717,12 +1857,20 @@ export function createPipelineController(runtime?: {
             throw new Error("phase-1.5 session is missing controller-managed transition proof");
           }
 
+          const planGateDecision = normalizedResponse === "yes"
+            ? "APPROVED"
+            : normalizedResponse === "no"
+              ? "REJECTED"
+              : null;
+          const nextPlanGate = armExecutionPlanGate(session, planGateDecision);
+
           await runtime?.stores?.session?.save?.({
             ...session,
             currentPhase: "phase-1.5",
             phase: "phase-1.5",
             pendingDecision: normalizedResponse === "yes" ? undefined : "phase-1.5-reapproval-required",
             touchedFiles: session.touchedFiles ?? session.proposal?.affectedFiles ?? [],
+            executionPlanGate: nextPlanGate,
               executionProof:
                 normalizedResponse === "yes"
                 ? approveExecutionScenarios({
@@ -1739,6 +1887,7 @@ export function createPipelineController(runtime?: {
             expectedNext: normalizedResponse === "yes" ? ["continue"] : ["phase-1.5-response"],
             completedPhases: ["phase-0", "phase-1", "phase-1.5"],
             gateSummary: ["SENTINEL_CHECKPOINT"],
+            executionPlanGate: nextPlanGate,
             batchState: {
               batchIndex: session.batchIndex ?? 0,
               status: normalizedResponse === "yes" ? "execution-approved" : "awaiting-plan-reapproval",
@@ -2068,6 +2217,9 @@ export function createPipelineController(runtime?: {
             affectedFiles: reviewOnlyChangedFiles,
           }
         : proposal;
+      const executionPlanGate = createExecutionPlanGate({
+        type: classificationResult.classification.type,
+      });
 
       const gateEntries = [
         ...(capabilityGate?.status === "PASS" ? [pipelineGateToLogEntry(capabilityGate.gate)] : []),
@@ -2341,6 +2493,7 @@ export function createPipelineController(runtime?: {
         expectedNext: ["proposal-response"],
         completedPhases: ["phase-0"],
         gateSummary: gateEntries.map((entry) => entry.gate),
+        executionPlanGate,
         batchState: {
           batchIndex: 0,
           status: "awaiting-proposal-confirmation",
@@ -2378,6 +2531,7 @@ export function createPipelineController(runtime?: {
           ...authoritativeProposal,
           awaitingUserConfirmation: true,
         },
+        executionPlanGate,
         unresolvedBlockers: infoGate.status === "blocked" ? [infoGate.reason] : [],
         pendingDecision: "proposal-confirmation",
         touchedFiles: authoritativeProposal.affectedFiles,

@@ -14,6 +14,8 @@ O valor do plugin e confiabilidade operacional: cada etapa deve deixar claro o q
 
 O Eval Gate local reforca esse valor dentro deste repositorio: ele valida evidencias de mudancas em workflows, skills, hooks, commands, telemetry, gates, traces, batches e reviews antes de aceitar uma declaracao de PASS. Ele e uma camada local de garantia, nao uma nova promessa publica do plugin sem verificacao de runtime.
 
+Na pratica, um PASS publico nao e so texto final: precisa de artefato governado, ledgers compativeis, prova de agentes reais quando exigida e sentinel verificavel pela mesma politica de HMAC usada pelo runtime e pelos hooks.
+
 ## Experiencia Esperada
 
 O comando `/pipeline-orchestrator-for-codex:pipeline` deve ser previsivel:

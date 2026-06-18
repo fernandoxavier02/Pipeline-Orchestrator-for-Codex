@@ -24,7 +24,8 @@ describe("render closeout", () => {
       validationIntent: "standard",
     });
 
-    expect(text).toContain("Final decision: CONDITIONAL");
+    expect(text).toContain("Closeout decision: CONDITIONAL");
+    expect(text).not.toContain("Final decision: CONDITIONAL");
     expect(text).toContain("Confidence: medium (0.71)");
     expect(text).toContain("Verification evidence: npm run build, npm test");
     expect(text).toContain("Missing evidence: final-review");

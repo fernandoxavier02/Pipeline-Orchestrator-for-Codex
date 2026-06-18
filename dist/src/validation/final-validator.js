@@ -141,6 +141,11 @@ export async function recordPostFinalValidatorCheckpoint(input) {
     }
     const completed = Array.from(new Set([...(prior?.completedPhases ?? []), "phase-2", "phase-3"]));
     await input.sentinelStore.save({
+        ...(prior?.session_id ? { session_id: prior.session_id } : {}),
+        ...(prior?.run_id ? { run_id: prior.run_id } : {}),
+        ...(prior?.workflow_id ? { workflow_id: prior.workflow_id } : {}),
+        ...(typeof prior?.created_by_runtime === "boolean" ? { created_by_runtime: prior.created_by_runtime } : {}),
+        ...(prior?.runtime_mode ? { runtime_mode: prior.runtime_mode } : {}),
         pipelineActive: input.decision === "NO-GO" ? true : false,
         currentPhase: "phase-3",
         currentAgent: "final-validator",

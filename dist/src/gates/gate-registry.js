@@ -111,6 +111,14 @@ const GATE_REGISTRY = {
         confidenceImpactOnSkip: 0,
         rollback: "replan",
     },
+    PLAN_GATE_ACTIVE: {
+        gate: "PLAN_GATE_ACTIVE",
+        hardness: "HARD",
+        phase: "phase-1.5",
+        defaultDecision: "block",
+        confidenceImpactOnSkip: 0,
+        rollback: "replan",
+    },
     STOP_RULE: {
         gate: "STOP_RULE",
         hardness: "CIRCUIT_BREAKER",

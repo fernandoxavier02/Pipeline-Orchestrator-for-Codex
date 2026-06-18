@@ -15,22 +15,36 @@ function runHook(cwd: string, prompt: string) {
   });
 }
 
+function runHookPayload(cwd: string, payload: unknown) {
+  return spawnSync(process.execPath, [HOOK], {
+    cwd,
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+  });
+}
+
 function parseOutput(result: ReturnType<typeof spawnSync>) {
   expect(result.status).toBe(0);
   return JSON.parse(String(result.stdout).trim());
 }
 
 describe("force pipeline agents hook", () => {
-  it("records pipeline-worthy prompt decisions as JSONL", () => {
+  it("BDD: blocks pipeline-worthy prompts outside the canonical front door", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-"));
 
     const result = runHook(cwd, "analise este plugin e implemente os gates");
 
     expect(result.status).toBe(0);
     const output = parseOutput(result);
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.hook_enforcement_mode).toBe("blocking");
+    expect(output.pipeline_valid).toBe(false);
     expect(output.systemMessage).toContain("autorização explícita para delegação por subagentes");
+    expect(output.systemMessage).toContain("/pipeline-orchestrator-for-codex:pipeline");
     expect(output.systemMessage).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller");
     expect(output.systemMessage).toContain("blocked-no-agent-runtime");
+    expect(output.systemMessage).toContain("execução inline");
     expect(output.systemMessage).not.toContain("task-orchestrator");
     const eventsPath = join(cwd, ".codex", "pipeline", "hook-events.jsonl");
     expect(existsSync(eventsPath)).toBe(true);
@@ -38,8 +52,250 @@ describe("force pipeline agents hook", () => {
     expect(event).toMatchObject({
       hook: "force-pipeline-agents",
       event: "UserPromptSubmit",
-      decision: "inject_pipeline_message",
+      decision: "block_pipeline_required",
     });
+  });
+
+  it("TDD: malformed non-string prompt payload fails closed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-malformed-"));
+
+    const result = runHookPayload(cwd, { prompt: { text: "analise e implemente gates" } });
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("malformed-prompt-payload");
+    expect(output.hook_enforcement_mode).toBe("blocking");
+    expect(output.pipeline_valid).toBe(false);
+    expect(output.systemMessage).toContain("Malformed UserPromptSubmit payload");
+  });
+
+  it("TDD: malformed JSON payload fails closed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-malformed-json-"));
+
+    const result = spawnSync(process.execPath, [HOOK], {
+      cwd,
+      input: "{",
+      encoding: "utf8",
+    });
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("malformed-prompt-payload");
+    expect(output.hook_enforcement_mode).toBe("blocking");
+    expect(output.pipeline_valid).toBe(false);
+    expect(output.systemMessage).toContain("Malformed UserPromptSubmit payload");
+  });
+
+  it.each([
+    {
+      label: "array",
+      payload: [{ prompt: "Review the current workflow" }],
+    },
+    {
+      label: "string scalar",
+      payload: "Review the current workflow",
+    },
+  ])("TDD: valid JSON non-object payload fails closed $label", ({ payload }) => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-malformed-json-shape-"));
+
+    const result = runHookPayload(cwd, payload);
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("malformed-prompt-payload");
+    expect(output.hook_enforcement_mode).toBe("blocking");
+    expect(output.pipeline_valid).toBe(false);
+    expect(output.systemMessage).toContain("Malformed UserPromptSubmit payload");
+  });
+
+  it("RED: allows informational CI/CD pipeline explanations without pipeline-required", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-informational-"));
+
+    const result = runHook(cwd, "Explique o que é pipeline em CI/CD");
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).not.toBe("pipeline-required");
+    expect(output.systemMessage).not.toContain("execução inline deste pedido está bloqueada");
+  });
+
+  it("RED: blocks mixed informational and audit prompts as pipeline-required", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-mixed-audit-"));
+
+    const result = runHook(cwd, "Explique o que e pipeline em CI/CD e audite meu workflow atual");
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-required");
+  });
+
+  it("RED: blocks operational audit hidden behind an informational prompt field", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-secondary-field-"));
+
+    const result = runHookPayload(cwd, {
+      prompt: "Explique o que e pipeline em CI/CD",
+      arguments: "audite meu workflow atual",
+    });
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-required");
+  });
+
+  it.each([
+    {
+      label: "payload.prompt",
+      payload: { payload: { prompt: "Review the current workflow" } },
+    },
+    {
+      label: "data.prompt",
+      payload: { data: { prompt: "Audite o workflow atual" } },
+    },
+    {
+      label: "message.content",
+      payload: { message: { content: "Debug the current workflow" } },
+    },
+    {
+      label: "messages[].content",
+      payload: { messages: [{ role: "user", content: "Review the current workflow" }] },
+    },
+  ])("TDD: blocks nested operational prompt envelope $label", ({ payload }) => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-nested-operational-"));
+
+    const result = runHookPayload(cwd, payload);
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-required");
+  });
+
+  it("TDD: JSON object payloads with no recognized prompt text fail closed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-missing-prompt-"));
+
+    const result = runHookPayload(cwd, { payload: { ignored: "Review the current workflow" } });
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("malformed-prompt-payload");
+  });
+
+  it.each([
+    "Verifique meu workflow atual",
+    "Investigue meu workflow atual",
+    "Revise meu workflow atual",
+    "Faça uma análise do workflow atual",
+    "Avalie meu workflow atual",
+    "Valide meu workflow atual",
+    "Cheque meu workflow atual",
+    "O workflow não está funcionando",
+    "Investigação do workflow atual",
+    "Validação do workflow atual",
+    "Revisão do workflow atual",
+    "Checagem do workflow atual",
+    "Diagnóstico do workflow atual",
+    "Avaliacao do workflow atual",
+    "Diagnostique o workflow atual",
+    "Diagnosticar o workflow atual",
+    "Analisa o workflow atual",
+    "Audita o workflow atual",
+    "Investiga o workflow atual",
+    "Avalia o workflow atual",
+    "Valida o workflow atual",
+    "Checa o workflow atual",
+    "Revisa o workflow atual",
+    "Verifica o workflow atual",
+    "Diagnostica o workflow atual",
+    "Reavalie o workflow atual",
+    "Reanalise o workflow atual",
+    "Reaudite o workflow atual",
+    "Faça uma probe do workflow atual",
+    "Faça um pente-fino no workflow atual",
+    "Faça um pente fino no fluxo atual",
+  ])("RED: blocks operational Portuguese audit prompt %s", (prompt) => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-pt-audit-"));
+
+    const result = runHook(cwd, prompt);
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-required");
+  });
+
+  it.each([
+    "Review the current workflow",
+    "Validate the current workflow",
+    "Check the current workflow",
+    "Diagnose the current workflow",
+    "Analyze the current workflow",
+    "Assess the current workflow",
+    "Evaluate the current workflow",
+    "Audit the current workflow",
+    "Investigate the current workflow",
+    "Inspect the current workflow",
+    "Look into the current workflow",
+    "Triage the current workflow",
+    "Debug the current workflow",
+    "Examine the current workflow",
+    "Confira o workflow atual",
+    "Dê uma olhada no workflow atual",
+    "Olhe o workflow atual",
+    "Veja o workflow atual",
+    "Confere o workflow atual",
+    "Take a look at the current workflow",
+    "Please look at the current workflow",
+    "Have a look at the current workflow",
+    "Take a quick look at the current workflow",
+    "Give the current workflow a look",
+    "Look over the current workflow",
+    "Please look over the current workflow",
+    "Give the current workflow another look",
+    "Look the current workflow over",
+    "Look through the current workflow",
+    "Troubleshoot the current workflow",
+    "Reaudit the current workflow",
+    "Reevaluate the current workflow",
+    "Reanalyse the current workflow",
+    "Probe the current workflow",
+    "Give the current workflow a quick look",
+    "Go over the current workflow for issues",
+    "Walk through the current workflow for issues",
+    "Faça uma varredura no workflow atual",
+    "Give the current workflow a once-over",
+    "Give the current workflow one more look",
+    "Please do a walkthrough of the current workflow",
+    "Walk me through the current workflow for issues",
+  ])("TDD: blocks operational English audit prompt %s", (prompt) => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-en-audit-"));
+
+    const result = runHook(cwd, prompt);
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-required");
+  });
+
+  it("BDD: still blocks operational CI/CD pipeline work", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-operational-"));
+
+    const result = runHook(cwd, "Implemente o pipeline de CI/CD para rodar lint e testes");
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.systemMessage).toContain("/pipeline-orchestrator-for-codex:pipeline");
+  });
+
+  it("RED: ignores empty prompt fields and blocks operational arguments payloads", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-empty-prompt-"));
+
+    const result = runHookPayload(cwd, {
+      prompt: "",
+      arguments: "analise este plugin e implemente os gates",
+    });
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-required");
   });
 
   it("preserves explicit brainstorm requests made through the plugin mention", () => {

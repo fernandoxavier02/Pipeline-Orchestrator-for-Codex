@@ -141,6 +141,21 @@ describe("pipeline governance contract", () => {
     expect(validatePipelineArtifact(artifact).pipeline_valid).toBe(false);
   });
 
+  it("TDD: blocked artifacts carry the active execution identity when provided", () => {
+    const artifact = createBlockedPipelineArtifact({
+      reason: "blocked-no-agent-runtime",
+      missing_capabilities: ["spawn_agent", "wait_agent"],
+      run_id: "run-current",
+      session_id: "pipeline-session-current",
+      workflow_id: "full",
+    });
+
+    expect(artifact.run_id).toBe("run-current");
+    expect(artifact.session_id).toBe("pipeline-session-current");
+    expect(artifact.workflow_id).toBe("full");
+    expect(artifact.pipeline_valid).toBe(false);
+  });
+
   it("RED: the passing artifact helper cannot mint a valid production PASS from defaults", () => {
     const artifact = createPassingPipelineArtifact();
 

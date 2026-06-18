@@ -1,7 +1,7 @@
 {
   "name": "pipeline-orchestrator-for-codex",
-  "version": "0.5.0",
-  "description": "Prompt-driven Codex pipeline orchestrator with 4 phases, 45 agent prompts, v5.2 protocol events, brainstorm run directories, TRACE.md validation, TDD gates, Spec lifecycle gates, adversarial review, and execution identity tracing.",
+  "version": "0.5.1",
+  "description": "Prompt-driven Codex pipeline orchestrator with 4 phases, 45 agent prompts, HMAC-backed sentinel and ledger integrity, v5.2 protocol events, TRACE.md validation, TDD gates, Spec lifecycle gates, adversarial review, and execution identity tracing.",
   "author": {
     "name": "Fernando Xavier - FX Studio AI",
     "email": "",
@@ -15,8 +15,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Pipeline Orchestrator for Codex",
-    "shortDescription": "4-phase Codex pipeline with 45 agent prompts, Spec gates, protocol events, TRACE.md, and adversarial review",
-    "longDescription": "Codex pipeline orchestrator targeting Claude Code Pipeline Orchestrator v5.2 parity: 4 execution phases (Classification, Proposal, Execution, Validation), 45 agent prompts including brainstorm and Spec lifecycle reviewers, GATE_REQUEST/DISPATCH_REQUEST/PLAN_MODE_REQUEST protocol event persistence, brainstorm run directories, TRACE.md validation, confidence scoring with non-invention rules, TDD-driven gates, adversarial review loops, frontmatter hook enforcement, execution identity tracing, and strict real-agent blocking when spawn_agent, wait_agent, artifact collection, gate recording, hook/checkpoint recording, or structured final state is unavailable.",
+    "shortDescription": "4-phase Codex pipeline with 45 agent prompts, HMAC integrity, Spec gates, protocol events, TRACE.md, and adversarial review",
+    "longDescription": "Codex pipeline orchestrator targeting Claude Code Pipeline Orchestrator v5.2 parity: 4 execution phases (Classification, Proposal, Execution, Validation), 45 agent prompts including brainstorm and Spec lifecycle reviewers, HMAC-backed sentinel and ledger integrity, GATE_REQUEST/DISPATCH_REQUEST/PLAN_MODE_REQUEST protocol event persistence, brainstorm run directories, TRACE.md validation, confidence scoring with non-invention rules, TDD-driven gates, adversarial review loops, frontmatter hook enforcement, execution identity tracing, and strict real-agent blocking when spawn_agent, wait_agent, artifact collection, gate recording, hook/checkpoint recording, or structured final state is unavailable.",
     "developerName": "Fernando Xavier - FX Studio AI",
     "category": "Coding",
     "capabilities": ["Interactive", "Write"],

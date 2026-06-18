@@ -180,6 +180,27 @@ async function withSentinelHmac<T>(key: string, callback: () => Promise<T>) {
   }
 }
 
+async function withSharedIntegrityHmac<T>(key: string, callback: () => Promise<T>) {
+  const previousSentinel = process.env.PIPELINE_SENTINEL_HMAC_KEY;
+  const previousIntegrity = process.env.PIPELINE_INTEGRITY_HMAC_KEY;
+  delete process.env.PIPELINE_SENTINEL_HMAC_KEY;
+  process.env.PIPELINE_INTEGRITY_HMAC_KEY = key;
+  try {
+    return await callback();
+  } finally {
+    if (previousSentinel === undefined) {
+      delete process.env.PIPELINE_SENTINEL_HMAC_KEY;
+    } else {
+      process.env.PIPELINE_SENTINEL_HMAC_KEY = previousSentinel;
+    }
+    if (previousIntegrity === undefined) {
+      delete process.env.PIPELINE_INTEGRITY_HMAC_KEY;
+    } else {
+      process.env.PIPELINE_INTEGRITY_HMAC_KEY = previousIntegrity;
+    }
+  }
+}
+
 async function withAgentRuntimeAdapter<T>(adapterPath: string, callback: () => Promise<T>) {
   const previous = process.env.CODEX_AGENT_RUNTIME_ADAPTER;
   process.env.CODEX_AGENT_RUNTIME_ADAPTER = adapterPath;
@@ -568,6 +589,33 @@ describe("pipeline CLI exit code", () => {
     }
   });
 
+  it("routes bare yes when only the shared integrity HMAC key is configured and state is signed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-shared-hmac-signed-sentinel-"));
+
+    try {
+      await seedPendingProposal(root, "yes");
+      await signSentinelState(root, "test-key");
+
+      const result = await withSharedIntegrityHmac("test-key", () => runPipelineCli({
+        cwd: root,
+        codexHome: root,
+        strictAgents: true,
+        task: "yes",
+        agentRuntime: completeAgentRuntime(),
+      }));
+
+      expect(result).toMatchObject({
+        phase: "phase-2",
+        confirmation: {
+          status: "APPROVED",
+          response: "yes",
+        },
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("blocks bare yes when a signed sentinel is tampered", async () => {
     const root = await mkdtemp(join(tmpdir(), "pipeline-cli-tampered-sentinel-"));
 
@@ -584,6 +632,44 @@ describe("pipeline CLI exit code", () => {
         JSON.stringify({
           ...state,
           expectedNext: ["phase-2-response"],
+        }),
+        "utf8",
+      );
+
+      const result = await withSentinelHmac("test-key", () => runPipelineCli({
+        cwd: root,
+        codexHome: root,
+        strictAgents: true,
+        task: "yes",
+        agentRuntime: completeAgentRuntime(),
+      }));
+
+      expect(result.status).toBe("BLOCKED");
+      expect(result.reason).toBe("blocked-invalid-pending-gate-state");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks bare yes when a signed sentinel has a malformed HMAC signature", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pipeline-cli-malformed-hmac-sentinel-"));
+
+    try {
+      await seedPendingProposal(root, "yes");
+      await signSentinelState(root, "test-key");
+
+      const file = join(root, ".codex", "pipeline", "sentinel-state.json");
+      const state = JSON.parse(await readFile(file, "utf8")) as {
+        _integrity: { signature: string };
+      };
+      await writeFile(
+        file,
+        JSON.stringify({
+          ...state,
+          _integrity: {
+            ...state._integrity,
+            signature: `${state._integrity.signature}zz`,
+          },
         }),
         "utf8",
       );

@@ -33,6 +33,8 @@ Nao prometa "multi-agent real" se a sessao ou runtime nao tiver suporte efetivo 
 
 Preserve SSOT: `commands/pipeline.md` deve continuar curto e discoverable; comportamento detalhado deve ficar no skill, runtime TypeScript, hooks, prompts, agentes e referencias adequadas.
 
+Preserve a paridade de integridade entre runtime e hooks. PASS governado depende de ledgers assinados e sentinel verificavel: `PIPELINE_SENTINEL_HMAC_KEY` assina/verifica o sentinel quando existir; se ausente, o sentinel usa `PIPELINE_INTEGRITY_HMAC_KEY`, o mesmo segredo dos ledgers. Nao introduza uma terceira regra de HMAC em CLI, Stop hook, PreToolUse hook, writer ou testes.
+
 ## Eval Gate Local
 
 Este repositório tem uma camada local de Eval Gate em `.codex/**`, `.agents/skills/workflow-eval-gate/**` e `evals/**`. Ela avalia mudanças no orquestrador, workflows, plugin, skills, hooks, commands, scripts, telemetry, gates, traces, batches e reviews sem reescrever o runtime.

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-06-18
+
+### Governance integrity release
+
+Closes the runtime/Stop-hook parity gap found in adversarial review after the pipeline invocation enforcement work.
+
+### Changed
+
+- Sentinel HMAC verification now uses one canonical policy across TypeScript runtime, CLI, Stop hook, PreToolUse sentinel hook, and sentinel state writer.
+- `PIPELINE_SENTINEL_HMAC_KEY` remains the sentinel-specific key when configured; otherwise sentinel signing and verification fall back to `PIPELINE_INTEGRITY_HMAC_KEY`, matching ledger integrity.
+- README, manifest metadata, SessionStart banner, version consistency tests, and local project context now describe the HMAC-backed sentinel/ledger integrity chain.
+
+### Tests
+
+- Added focused runtime, CLI, Stop hook, sentinel hook, and sentinel writer coverage for shared-key sentinel integrity and unsigned/malformed sentinel rejection.
+
 ## [0.5.0] — 2026-05-19
 
 ### Trust restoration release

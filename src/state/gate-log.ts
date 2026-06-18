@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { gateDecisionSchema } from "../domain/pipeline-schemas.js";
 import { createExecutionIdentity } from "../observability/execution-identity.js";
+import { signLedgerEntry } from "../security/ledger-integrity.js";
 import { resolveValidatedRoot } from "./path-validation.js";
 
 // Spec: pipeline-trust-restoration / R1 — Distinguishable Emulated Dispatches.
@@ -151,7 +152,7 @@ export function createGateLog(root: string) {
     // single-process constraint.
     await withAppendLock(async () => {
       await mkdir(root, { recursive: true });
-      await appendFile(file, `${JSON.stringify(enriched)}\n`, "utf8");
+      await appendFile(file, `${JSON.stringify(signLedgerEntry(enriched))}\n`, "utf8");
     });
   }
 

@@ -1,5 +1,5 @@
 import type { PipelineMode } from "../domain/pipeline-types.js";
-import type { PipelineComplexity } from "./classification-overrides.js";
+import type { PipelineClassification, PipelineComplexity } from "./classification-overrides.js";
 import type { ProposalConfirmationStatus } from "./confirm-proposal.js";
 
 export type PlanModeStatus = "required" | "optional" | "skipped";
@@ -45,6 +45,52 @@ export interface ImplementationPlan {
   tasks: string[];
   risks: string[];
   approvalNotes: string;
+}
+
+export type ExecutionPlanGateDecision = "APPROVED" | "REJECTED" | null;
+
+export interface ExecutionPlanGate {
+  required: boolean;
+  executed: boolean;
+  approved: boolean;
+  decision: ExecutionPlanGateDecision;
+  approvedAt: string | null;
+  reason: string;
+}
+
+const READ_ONLY_WORKFLOW_TYPES = new Set(["Audit", "UX Simulation"]);
+
+export function requiresExecutionPlanGate(type?: PipelineClassification["type"] | string): boolean {
+  if (!type || typeof type !== "string") {
+    return true;
+  }
+
+  return !READ_ONLY_WORKFLOW_TYPES.has(type);
+}
+
+export function createExecutionPlanGate(input: {
+  type?: PipelineClassification["type"] | string;
+  decision?: ExecutionPlanGateDecision;
+  timestamp?: string;
+}): ExecutionPlanGate {
+  const required = requiresExecutionPlanGate(input.type);
+  const decision = input.decision ?? null;
+  const approved = required ? decision === "APPROVED" : false;
+
+  return {
+    required,
+    executed: decision !== null,
+    approved,
+    decision,
+    approvedAt: approved ? input.timestamp ?? new Date().toISOString() : null,
+    reason: required
+      ? "Code-writing workflows require an approved implementation plan before execution."
+      : "Read-only workflows do not require a production-code execution plan gate.",
+  };
+}
+
+export function isExecutionPlanGateSatisfied(gate?: ExecutionPlanGate): boolean {
+  return !!gate && (!gate.required || gate.approved === true);
 }
 
 export function getPlanModeStatus(mode: PipelineMode, complexity: PipelineComplexity): PlanModeStatus {

@@ -40,6 +40,10 @@ python .agents/skills/workflow-eval-gate/scripts/run_eval.py
 
 `evals/**` contem casos, README, outputs, telemetry e testes Python do Eval Gate. `evals/outputs/latest_output.md` e `evals/telemetry/**` sao evidencia operacional, nao fonte canonica de produto.
 
+## Integridade HMAC
+
+`src/security/ledger-integrity.ts` e `hooks/ledger-integrity.cjs` sao os pontos compartilhados para assinatura/verificacao de evidencias. Ledgers usam `PIPELINE_INTEGRITY_HMAC_KEY` com fallback compativel para `PIPELINE_SENTINEL_HMAC_KEY`. Sentinel usa `PIPELINE_SENTINEL_HMAC_KEY` quando existir e cai para `PIPELINE_INTEGRITY_HMAC_KEY`; runtime, CLI, Stop hook, PreToolUse hook e writer de sentinel devem preservar essa paridade.
+
 ## Estado Local
 
 O estado de execucao do pipeline fica em `.codex/pipeline/` e e ignorado pelo git. Nao use esse diretorio como fonte canonica de produto; use-o como evidencia operacional de uma execucao.

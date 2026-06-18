@@ -20,7 +20,7 @@ export function renderCloseout(input: {
     .filter((evidence) => evidence.passed)
     .map((evidence) => evidence.label ?? evidence.kind);
   const lines = [
-    `Final decision: ${input.closeout.decision}`,
+    `Closeout decision: ${input.closeout.decision}`,
     `Confidence: ${input.closeout.confidenceBand} (${input.closeout.confidenceScore.toFixed(2)})`,
     `Validation profile: ${input.validationIntent === "reduced" ? "reduced" : "standard"}`,
     `Verification evidence: ${passedEvidence.join(", ") || "none recorded"}`,

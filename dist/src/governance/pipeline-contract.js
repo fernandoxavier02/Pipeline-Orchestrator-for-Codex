@@ -80,6 +80,14 @@ export function createBlockedPipelineArtifact(input) {
         evidence_ref: "runtime.capabilities",
     };
     return {
+        ...(input.workflow_id ? { workflow_id: input.workflow_id } : {}),
+        ...(input.workflowId ? { workflowId: input.workflowId } : {}),
+        ...(input.run_id ? { run_id: input.run_id } : {}),
+        ...(input.runId ? { runId: input.runId } : {}),
+        ...(input.session_id ? { session_id: input.session_id } : {}),
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.trace_id ? { trace_id: input.trace_id } : {}),
+        ...(input.traceId ? { traceId: input.traceId } : {}),
         pipeline_requested: true,
         pipeline_valid: false,
         runtime_mode: input.runtime_mode ?? (reason === "dev-bypass" ? "dev-bypass" : "blocked-no-agent-runtime"),

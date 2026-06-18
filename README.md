@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Codex_CLI-Plugin-14532D?style=for-the-badge&logo=openai&logoColor=white" alt="Codex Plugin" />
   <img src="https://img.shields.io/badge/Kimi_CLI-Skill-0066FF?style=for-the-badge" alt="Kimi Skill" />
-  <img src="https://img.shields.io/badge/version-0.5.0-blue?style=for-the-badge" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.1-blue?style=for-the-badge" alt="Version" />
   <img src="https://img.shields.io/badge/agents-45-orange?style=for-the-badge" alt="Agents" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License" />
 </p>
@@ -11,7 +11,7 @@
 > **Full-depth, prompt-driven multi-agent pipeline for OpenAI Codex CLI and Kimi Code CLI.**
 > Ported toward parity with the local canonical Claude Code Pipeline Orchestrator v5.2.0, with runtime-native constraints made explicit for each platform.
 
-A single `/pipeline-orchestrator-for-codex:pipeline` command classifies any task, confirms a proposal with you, then orchestrates **45 agent prompts** across **4 structured phases** when a real `spawn_agent` adapter is available. Without that adapter, operational pipeline execution blocks as `blocked-no-agent-runtime` rather than simulating multi-agent parity. The runtime now includes v5.2 protocol events, brainstorm run directories, Spec lifecycle gates, TRACE.md validation, TDD gates, adversarial review loops, confidence scoring, and Go/No-Go validation.
+A single `/pipeline-orchestrator-for-codex:pipeline` command classifies any task, confirms a proposal with you, then orchestrates **45 agent prompts** across **4 structured phases** when a real `spawn_agent` adapter is available. Without that adapter, operational pipeline execution blocks as `blocked-no-agent-runtime` rather than simulating multi-agent parity. The runtime now includes HMAC-backed sentinel and ledger integrity, v5.2 protocol events, brainstorm run directories, Spec lifecycle gates, TRACE.md validation, TDD gates, adversarial review loops, confidence scoring, and Go/No-Go validation.
 
 **New: Kimi Code CLI port** — the same 4-phase pipeline is now available as a Kimi skill (`.kimi/skills/pipeline/`), with 13 agent prompts adapted for Kimi's `coder`/`explore` subagent types, deterministic exec-window scripts, and a parent handler loop that processes `GATE_REQUEST`, `DISPATCH_REQUEST`, and `PLAN_MODE_REQUEST` blocks.
 
@@ -57,12 +57,12 @@ codex install fx-studio-ai/pipeline-orchestrator-for-codex
 git clone https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git
 
 # Install into Codex plugins cache
-mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.0
-cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.0/
+mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.1
+cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.1/
 
 # Optional: Install Node.js dependencies (only needed for TypeScript development/testing)
 # The plugin works WITHOUT npm install — hooks use only Node.js builtins (fs, path)
-# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.0
+# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.1
 # npm install --production
 ```
 
@@ -75,7 +75,7 @@ npm install
 
 # Create a symlink in the plugins cache
 mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex
-ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.0
+ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.1
 ```
 
 #### Verify Installation
@@ -108,6 +108,12 @@ This repository also includes a local Eval Gate around the orchestrator. It live
 The Eval Gate is intentionally local. It does not rewrite the TypeScript runtime, does not replace `/pipeline-orchestrator-for-codex:pipeline`, and is not proof that plugin hooks are globally active. Codex hook activation still requires the manual `/hooks` trust step for `.codex/hooks.json`.
 
 See [`evals/README.md`](./evals/README.md) for how the hooks, telemetry, deterministic runner, validation commands, and trust boundary work. The implementation contract for this layer is documented in [`docs/pipeline-orchestrator-codex/11-eval-gate-plan.md`](./docs/pipeline-orchestrator-codex/11-eval-gate-plan.md).
+
+---
+
+## Integrity Policy
+
+PASS evidence is accepted only when the runtime and hooks agree on the same integrity chain. Ledger entries use `PIPELINE_INTEGRITY_HMAC_KEY` when configured. Sentinel state uses `PIPELINE_SENTINEL_HMAC_KEY` when present and otherwise falls back to `PIPELINE_INTEGRITY_HMAC_KEY`, so one operational secret can sign both surfaces without creating runtime/Stop-hook drift.
 
 ---
 
@@ -330,7 +336,7 @@ Layer 3: SKILL.md bottom (self-check + anti-patterns)
 ```
 pipeline-orchestrator-for-codex/
 ├── .codex-plugin/
-│   └── plugin.json              # Plugin manifest (v0.5.0)
+│   └── plugin.json              # Plugin manifest (v0.5.1)
 ├── .kimi/                       # Kimi Code CLI skill tree
 │   └── skills/                  #   Skills for Kimi (pipeline, bugfix, feature, audit, review, spec)
 │       ├── pipeline/

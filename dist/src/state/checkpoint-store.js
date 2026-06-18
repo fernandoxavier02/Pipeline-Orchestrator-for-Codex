@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { checkpointListSchema, checkpointSchema } from "../domain/pipeline-schemas.js";
+import { signLedgerEntry } from "../security/ledger-integrity.js";
 import { resolveValidatedRoot } from "./path-validation.js";
 const PHASE_ORDER = {
     "phase-0": 0,
@@ -59,7 +60,7 @@ export function createCheckpointStore(root) {
             const parsed = checkpointSchema.parse(checkpoint);
             await mkdir(dir, { recursive: true });
             const filename = `${parsed.phase}-${parsed.batchIndex}-${Date.now()}-${randomUUID()}.json`;
-            await writeFile(join(dir, filename), JSON.stringify(parsed), "utf8");
+            await writeFile(join(dir, filename), JSON.stringify(signLedgerEntry(parsed)), "utf8");
         },
         async list() {
             try {

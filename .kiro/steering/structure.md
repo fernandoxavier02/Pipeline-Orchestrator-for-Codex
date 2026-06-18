@@ -22,8 +22,9 @@
 - `src/dispatcher/**`: adaptadores de execucao de papeis/agentes.
 - `src/state/**`: persistencia de sessao, checkpoint, gate log e confidence.
 - `src/review/**`: revisao adversarial e final.
-- `src/security/**`: guardas contra injecao e enforcement relacionado.
+- `src/security/**`: guardas contra injecao e enforcement relacionado; `src/security/ledger-integrity.ts` e o helper TS para HMAC de ledger/sentinel.
 - `src/validation/**`: validacao final.
+- `hooks/ledger-integrity.cjs`: helper CJS equivalente para hooks que precisam da mesma politica HMAC sem depender do build TypeScript.
 
 ## Biblioteca de Agentes e Prompts
 

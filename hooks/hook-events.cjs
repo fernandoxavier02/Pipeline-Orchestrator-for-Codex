@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { signLedgerEntry } = require('./ledger-integrity.cjs');
 
 // B11: bound the size of every free-text field that flows into the JSONL
 // log. The Zod schema for `detail` (and equivalents) intentionally has
@@ -144,7 +145,7 @@ function recordHookEvent(event) {
       reason: clampDetail(event.reason ?? ''),
       execution_identity: createExecutionIdentity(event, timestamp),
     };
-    fs.appendFileSync(path.join(dir, 'hook-events.jsonl'), `${JSON.stringify(entry)}\n`, 'utf8');
+    fs.appendFileSync(path.join(dir, 'hook-events.jsonl'), `${JSON.stringify(signLedgerEntry(entry))}\n`, 'utf8');
   } catch {
     // Hook observability must never break the hook decision itself.
   }

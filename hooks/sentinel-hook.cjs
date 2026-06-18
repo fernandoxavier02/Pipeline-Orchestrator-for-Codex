@@ -22,8 +22,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { recordHookEvent } = require('./hook-events.cjs');
+const { resolveSentinelIntegrityHmacKey, signLedgerEntry } = require('./ledger-integrity.cjs');
 
-const SENTINEL_HMAC_ENV = 'PIPELINE_SENTINEL_HMAC_KEY';
+const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
 const GATE_DETAIL_MAX_CHARS = 200;
 
 // ── Auto-Discovery ──────────────────────────────────────────────────────────
@@ -123,13 +124,18 @@ function signState(state, key) {
 }
 
 function verifyStateIntegrity(state) {
-  const key = process.env[SENTINEL_HMAC_ENV];
+  const key = resolveSentinelIntegrityHmacKey();
   if (!key) {
     return { ok: true, mode: 'unsigned-allowed' };
   }
 
   const integrity = state && typeof state === 'object' ? state._integrity : undefined;
-  if (!integrity || integrity.algorithm !== 'hmac-sha256' || typeof integrity.signature !== 'string') {
+  if (
+    !integrity
+    || integrity.algorithm !== 'hmac-sha256'
+    || typeof integrity.signature !== 'string'
+    || !HMAC_SHA256_HEX_SIGNATURE.test(integrity.signature)
+  ) {
     return { ok: false, reason: 'missing or invalid integrity metadata' };
   }
 
@@ -202,7 +208,7 @@ function recordBootstrapExemptionGate(stateFilePath, detail) {
       detail: sanitizeGateDetail(detail),
       confidence_impact: 0,
     };
-    fs.appendFileSync(path.join(dir, 'gate-decisions.jsonl'), `${JSON.stringify(entry)}\n`, 'utf8');
+    fs.appendFileSync(path.join(dir, 'gate-decisions.jsonl'), `${JSON.stringify(signLedgerEntry(entry))}\n`, 'utf8');
   } catch {
     // Best-effort observability only; the hook decision is still governed by sentinel checks.
   }

@@ -316,6 +316,48 @@ describe("sentinel hook", () => {
     expect(result.stderr.trim()).toBe("");
   });
 
+  it("allows signed sentinel state with the shared ledger HMAC key", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeSignedRuntimeSentinelState(cwd, ["information-gate"], "test-key");
+
+    const result = runSentinelHook(
+      cwd,
+      "pipeline-orchestrator-for-codex:core:information-gate",
+      {
+        PIPELINE_SENTINEL_HMAC_KEY: "",
+        PIPELINE_INTEGRITY_HMAC_KEY: "test-key",
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("");
+    expect(result.stderr.trim()).toBe("");
+  });
+
+  it("denies malformed sentinel HMAC signatures when integrity is required", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
+    writeSignedRuntimeSentinelState(cwd, ["information-gate"], "test-key");
+    const sentinelPath = join(cwd, ".codex", "pipeline", "sentinel-state.json");
+    const sentinel = JSON.parse(readFileSync(sentinelPath, "utf8")) as {
+      _integrity: { signature: string };
+    };
+    sentinel._integrity.signature = `${sentinel._integrity.signature}zz`;
+    writeFileSync(sentinelPath, JSON.stringify(sentinel), "utf8");
+
+    const result = runSentinelHook(
+      cwd,
+      "pipeline-orchestrator-for-codex:core:information-gate",
+      { PIPELINE_SENTINEL_HMAC_KEY: "test-key" },
+    );
+
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toBe(
+      "sentinel internal error — failing closed",
+    );
+  });
+
   it("allows a Codex spawn_agent payload that matches runtime expectedNext", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-sentinel-hook-"));
     writeRuntimeSentinelState(cwd, ["information-gate"]);

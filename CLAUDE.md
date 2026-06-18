@@ -94,6 +94,7 @@ node dist/src/cli/pipeline-cli.js --continue
 - **Mudança mínima, diff mínimo.** Preferir aditivo em schemas/dados.
 - **Definition of Done** (de `.kiro/CONSTITUTION.md`): comportamento no ponto autoritativo correto + testes proporcionais (ou justificativa) + docs consistentes com runtime + sem churn fora de escopo.
 - **Não confundir "publicado" com "presente em disco".** Para responder se o plugin está publicado/ativo/carregado pelo Codex, verificar git, marketplace/cache e caminho efetivo de resolução.
+- **Integridade runtime/hook é política única.** Sentinel e ledgers não podem ter regras divergentes: `PIPELINE_SENTINEL_HMAC_KEY` tem precedência para sentinel; quando ausente, sentinel usa `PIPELINE_INTEGRITY_HMAC_KEY`, igual aos ledgers. Mantenha runtime, CLI, hooks CJS, writer e testes alinhados.
 
 ## Stack
 

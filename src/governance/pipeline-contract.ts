@@ -64,6 +64,14 @@ export interface PipelineFinalVerdict {
 }
 
 export interface PipelineGovernanceArtifact {
+  workflow_id?: string;
+  workflowId?: string;
+  run_id?: string;
+  runId?: string;
+  session_id?: string;
+  sessionId?: string;
+  trace_id?: string;
+  traceId?: string;
   pipeline_requested: boolean;
   pipeline_valid: boolean;
   runtime_mode: PipelineRuntimeMode;
@@ -166,6 +174,14 @@ export function createBlockedPipelineArtifact(input: {
   runtime_mode?: PipelineRuntimeMode;
   missing_capabilities?: PipelineCapability[];
   capabilityGate?: PipelineGateArtifact;
+  workflow_id?: string;
+  workflowId?: string;
+  run_id?: string;
+  runId?: string;
+  session_id?: string;
+  sessionId?: string;
+  trace_id?: string;
+  traceId?: string;
 }): PipelineGovernanceArtifact {
   const reason = input.reason ?? "blocked-no-agent-runtime";
   const gate = input.capabilityGate ?? {
@@ -176,6 +192,14 @@ export function createBlockedPipelineArtifact(input: {
   } satisfies PipelineGateArtifact;
 
   return {
+    ...(input.workflow_id ? { workflow_id: input.workflow_id } : {}),
+    ...(input.workflowId ? { workflowId: input.workflowId } : {}),
+    ...(input.run_id ? { run_id: input.run_id } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
+    ...(input.session_id ? { session_id: input.session_id } : {}),
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.trace_id ? { trace_id: input.trace_id } : {}),
+    ...(input.traceId ? { traceId: input.traceId } : {}),
     pipeline_requested: true,
     pipeline_valid: false,
     runtime_mode: input.runtime_mode ?? (reason === "dev-bypass" ? "dev-bypass" : "blocked-no-agent-runtime"),

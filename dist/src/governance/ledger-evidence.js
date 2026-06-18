@@ -1,7 +1,75 @@
+import { ledgerEntryIntegrityVerified } from "../security/ledger-integrity.js";
 function asRecord(value) {
     return value && typeof value === "object" && !Array.isArray(value)
         ? value
         : undefined;
+}
+const IDENTITY_KEY_ALIASES = new Map([
+    ["run_id", "run"],
+    ["runId", "run"],
+    ["session_id", "session"],
+    ["sessionId", "session"],
+    ["trace_id", "trace"],
+    ["traceId", "trace"],
+    ["workflow_id", "workflow"],
+    ["workflowId", "workflow"],
+]);
+function addIdentityValue(context, key, value) {
+    const canonical = IDENTITY_KEY_ALIASES.get(key);
+    if (!canonical || typeof value !== "string" || value.length === 0)
+        return;
+    const values = context.get(canonical) ?? new Set();
+    values.add(value);
+    context.set(canonical, values);
+}
+function collectDirectArtifactIdentity(artifact) {
+    const context = new Map();
+    const record = artifact;
+    for (const key of IDENTITY_KEY_ALIASES.keys()) {
+        addIdentityValue(context, key, record[key]);
+    }
+    const strongContext = new Map();
+    for (const key of ["run", "session", "trace"]) {
+        const values = context.get(key);
+        if (values)
+            strongContext.set(key, values);
+    }
+    return strongContext.size > 0 ? strongContext : context;
+}
+function collectLedgerIdentity(value, depth = 0, context = new Map()) {
+    if (depth > 8 || value === undefined || value === null)
+        return context;
+    if (Array.isArray(value)) {
+        for (const entry of value)
+            collectLedgerIdentity(entry, depth + 1, context);
+        return context;
+    }
+    if (typeof value !== "object")
+        return context;
+    for (const [key, entry] of Object.entries(value)) {
+        addIdentityValue(context, key, entry);
+        collectLedgerIdentity(entry, depth + 1, context);
+    }
+    return context;
+}
+function ledgerMatchesArtifactIdentity(entry, expectedIdentity) {
+    if (expectedIdentity.size === 0)
+        return true;
+    const actualIdentity = collectLedgerIdentity(entry);
+    for (const [dimension, expectedValues] of expectedIdentity.entries()) {
+        const actualValues = actualIdentity.get(dimension);
+        if (!actualValues)
+            return false;
+        for (const expected of expectedValues) {
+            if (!actualValues.has(expected))
+                return false;
+        }
+        for (const actual of actualValues) {
+            if (!expectedValues.has(actual))
+                return false;
+        }
+    }
+    return true;
 }
 function collectStrings(value, depth = 0) {
     if (depth > 8 || value === undefined || value === null) {
@@ -35,24 +103,31 @@ function isPassDecision(value) {
         || value === "confirmed"
         || value === "CONFIRMED";
 }
-function gateHasLedger(gate, ledgers) {
+function gateHasLedger(gate, ledgers, expectedIdentity) {
     return (ledgers.gateDecisions ?? []).some((entry) => {
         const row = asRecord(entry);
-        return row?.gate === gate && isPassDecision(row.decision ?? row.status);
+        return ledgerEntryIntegrityVerified(row)
+            && ledgerMatchesArtifactIdentity(row, expectedIdentity)
+            && row?.gate === gate
+            && isPassDecision(row.decision ?? row.status);
     });
 }
-function checkpointHasLedger(checkpoint, ledgers) {
+function checkpointHasLedger(checkpoint, ledgers, expectedIdentity) {
     return (ledgers.checkpoints ?? []).some((entry) => {
         const row = asRecord(entry);
-        return row?.name === checkpoint
+        return ledgerEntryIntegrityVerified(row)
+            && ledgerMatchesArtifactIdentity(row, expectedIdentity)
+            && row?.name === checkpoint
             && (row.status === "completed" || row.status === "PASS" || row.status === "pass");
     });
 }
-function hookEventHasLedger(checkpoint, ledgers) {
+function hookEventHasLedger(checkpoint, ledgers, expectedIdentity) {
     return (ledgers.hookEvents ?? []).some((entry) => {
         const row = asRecord(entry);
         const decision = row?.decision ?? row?.status;
-        return isPassDecision(decision)
+        return ledgerEntryIntegrityVerified(row)
+            && ledgerMatchesArtifactIdentity(row, expectedIdentity)
+            && isPassDecision(decision)
             && hasAnyString(entry, [
                 checkpoint,
                 `hook:${checkpoint}`,
@@ -60,82 +135,81 @@ function hookEventHasLedger(checkpoint, ledgers) {
             ]);
     });
 }
-function hookHasLedger(checkpoint, ledgers) {
-    return checkpointHasLedger(checkpoint, ledgers) && hookEventHasLedger(checkpoint, ledgers);
+function hookHasLedger(checkpoint, ledgers, expectedIdentity) {
+    return checkpointHasLedger(checkpoint, ledgers, expectedIdentity)
+        && hookEventHasLedger(checkpoint, ledgers, expectedIdentity);
 }
-function dispatchHasLedger(role, dispatchRef, ledgers) {
+function normalizeDispatchRef(dispatchRef) {
+    return dispatchRef.startsWith("dispatch:")
+        ? dispatchRef.slice("dispatch:".length)
+        : dispatchRef;
+}
+function payloadMatchesAgentDispatch(row, role, dispatchRef) {
+    const payload = asRecord(row?.payload);
+    return payload?.dispatchId === normalizeDispatchRef(dispatchRef)
+        && payload.targetName === role
+        && payload.targetKind === "agent";
+}
+function dispatchHasLedger(role, dispatchRef, ledgers, expectedIdentity) {
     return (ledgers.protocolEvents ?? []).some((entry) => {
         const row = asRecord(entry);
         const eventId = row?.event_id;
-        return row?.kind === "DISPATCH_REQUEST"
+        return ledgerEntryIntegrityVerified(row)
+            && ledgerMatchesArtifactIdentity(row, expectedIdentity)
+            && row?.kind === "DISPATCH_REQUEST"
             && row.status === "completed"
             && row.dispatchMode === "real"
             && (typeof eventId !== "string" || !eventId.endsWith("-wait-agent-completed"))
-            && hasAnyString(row, dispatchRefTokens(role, dispatchRef));
+            && payloadMatchesAgentDispatch(row, role, dispatchRef);
     });
 }
-function waitAgentHasLedger(role, dispatchRef, ledgers) {
+function waitAgentHasLedger(role, dispatchRef, ledgers, expectedIdentity) {
     return (ledgers.protocolEvents ?? []).some((entry) => {
         const row = asRecord(entry);
         const payload = asRecord(row?.payload);
         const eventId = row?.event_id;
-        return row?.kind === "DISPATCH_REQUEST"
+        return ledgerEntryIntegrityVerified(row)
+            && ledgerMatchesArtifactIdentity(row, expectedIdentity)
+            && row?.kind === "DISPATCH_REQUEST"
             && row.status === "completed"
             && row.dispatchMode === "real"
             && typeof eventId === "string"
             && eventId.endsWith("-wait-agent-completed")
             && payload?.event === "WAIT_AGENT_COMPLETED"
             && payload.capability === "wait_agent"
-            && hasAnyString(row, [
-                ...dispatchRefTokens(role, dispatchRef),
-                `wait_agent:${role}`,
-            ]);
+            && payloadMatchesAgentDispatch(row, role, dispatchRef);
     });
 }
-function agentHasLedger(role, dispatchRef, ledgers) {
-    return dispatchHasLedger(role, dispatchRef, ledgers) && waitAgentHasLedger(role, dispatchRef, ledgers);
+function agentHasLedger(role, dispatchRef, ledgers, expectedIdentity) {
+    return dispatchHasLedger(role, dispatchRef, ledgers, expectedIdentity)
+        && waitAgentHasLedger(role, dispatchRef, ledgers, expectedIdentity);
 }
-function missingAgentLedger(role, dispatchRef, ledgers) {
+function missingAgentLedger(role, dispatchRef, ledgers, expectedIdentity) {
     const missing = [];
-    if (!dispatchHasLedger(role, dispatchRef, ledgers)) {
+    if (!dispatchHasLedger(role, dispatchRef, ledgers, expectedIdentity)) {
         missing.push(`ledger:dispatch:${role}`);
     }
-    if (!waitAgentHasLedger(role, dispatchRef, ledgers)) {
+    if (!waitAgentHasLedger(role, dispatchRef, ledgers, expectedIdentity)) {
         missing.push(`ledger:wait_agent:${role}`);
     }
     return missing;
 }
-/*
- * The tokens below intentionally require separate persisted facts:
- * DISPATCH_REQUEST completed proves a dispatch result existed, while
- * WAIT_AGENT_COMPLETED proves the parent actually waited for that dispatch.
- */
-function dispatchRefTokens(role, dispatchRef) {
-    const normalizedRef = dispatchRef.startsWith("dispatch:")
-        ? dispatchRef.slice("dispatch:".length)
-        : dispatchRef;
-    return [
-        role,
-        dispatchRef,
-        normalizedRef,
-        `dispatch:${role}`,
-    ];
-}
 export function validatePipelineLedgerEvidence(artifact, ledgers) {
     const missing_evidence = [];
+    const expectedIdentity = collectDirectArtifactIdentity(artifact);
     for (const gate of artifact.gates.filter((entry) => entry.status === "PASS")) {
-        if (!gateHasLedger(gate.gate, ledgers)) {
+        if (!gateHasLedger(gate.gate, ledgers, expectedIdentity)) {
             missing_evidence.push(`ledger:gate:${gate.gate}`);
         }
     }
     for (const hook of artifact.hooks.filter((entry) => entry.status === "PASS")) {
-        if (!hookHasLedger(hook.checkpoint, ledgers)) {
+        if (!hookHasLedger(hook.checkpoint, ledgers, expectedIdentity)) {
             missing_evidence.push(`ledger:hook:${hook.checkpoint}`);
         }
     }
     for (const agent of artifact.agents.filter((entry) => entry.status === "PASS")) {
-        if (!agentHasLedger(agent.role, agent.dispatch_ref, ledgers)) {
-            missing_evidence.push(...missingAgentLedger(agent.role, agent.dispatch_ref, ledgers));
+        if (!agentHasLedger(agent.role, agent.dispatch_ref, ledgers, expectedIdentity)) {
+            missing_evidence.push(...missingAgentLedger(agent.role, agent.dispatch_ref, ledgers, expectedIdentity));
         }
     }
     return {

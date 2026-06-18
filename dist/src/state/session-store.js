@@ -10,14 +10,33 @@ export function createSessionStore(root, defaults = {}) {
     return {
         root: validatedRoot,
         async save(session) {
+            let priorIdentity = {};
+            try {
+                const prior = sessionStateSchema.parse(JSON.parse(await readFile(file, "utf8")));
+                priorIdentity = {
+                    sessionId: prior.sessionId,
+                    ...(prior.run_id ? { run_id: prior.run_id } : {}),
+                    ...(prior.runtime_mode ? { runtime_mode: prior.runtime_mode } : {}),
+                };
+            }
+            catch {
+                priorIdentity = {};
+            }
+            const sessionRecord = session;
+            const identityPreservingSession = {
+                ...priorIdentity,
+                ...sessionRecord,
+                run_id: sessionRecord.run_id ?? priorIdentity.run_id,
+                runtime_mode: sessionRecord.runtime_mode ?? priorIdentity.runtime_mode,
+            };
             const merged = defaults.strictAgents === undefined
-                ? session
+                ? identityPreservingSession
                 : {
-                    ...session,
+                    ...identityPreservingSession,
                     // Explicit caller-set strictAgents (already on the session) wins
                     // over the store default. Otherwise inject the default so the
                     // value persists across save/load cycles.
-                    strictAgents: session?.strictAgents
+                    strictAgents: identityPreservingSession.strictAgents
                         ?? defaults.strictAgents,
                 };
             const parsed = sessionStateSchema.parse(merged);

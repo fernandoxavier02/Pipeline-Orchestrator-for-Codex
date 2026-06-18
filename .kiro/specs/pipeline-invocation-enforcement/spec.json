@@ -1,0 +1,90 @@
+{
+  "feature_name": "pipeline-invocation-enforcement",
+  "version": "0.1.0",
+  "created_at": "2026-06-17T20:41:31-03:00",
+  "status": "tasks-generated",
+  "phase": "tasks",
+  "next_phase": "implementation",
+  "type": "feature",
+  "complexity": "COMPLEXA",
+  "variant": "spec-heavy",
+  "language": "pt-BR",
+  "title": "Pipeline Invocation Enforcement",
+  "summary": "Fechar a brecha em que uma invocacao explicita ou pipeline-worthy pode virar fallback manual, em vez de passar por um front-door deterministico com lock, sentinel, hooks blocking, artifact valido ou bloqueio estruturado.",
+  "source_input": "C:/Users/win/.codex/attachments/dc68a94a-5f2b-4cba-b19f-c86492b65b49/pasted-text.txt",
+  "related_specs": [
+    "codex-runtime-hardening",
+    "pipeline-trust-restoration"
+  ],
+  "initial_findings_count": 10,
+  "requirements_count": 10,
+  "design_components": 10,
+  "tasks_count": 36,
+  "scope": {
+    "primary": [
+      "explicit pipeline invocation fail-closed behavior",
+      "pipeline-worthy prompt front-door enforcement",
+      "SessionStart command-context bootstrap",
+      "early session lock and sentinel creation",
+      "completion stop-hook enforcement",
+      "real-agent runtime capability propagation",
+      "governance artifact validation",
+      "gate taxonomy parity",
+      "installed cache/runtime parity",
+      "gate registry documentation parity"
+    ],
+    "out_of_scope_for_init": [
+      "production runtime patch",
+      "version bump",
+      "marketplace publication",
+      "VPS synchronization"
+    ]
+  },
+  "approvals": {
+    "init": true,
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": false
+    }
+  },
+  "sources": {
+    "local_context": [
+      "AGENTS.md",
+      ".kiro/CONSTITUTION.md",
+      ".kiro/steering/product.md",
+      ".kiro/steering/tech.md",
+      ".kiro/steering/structure.md",
+      "references/openai-codex-kb/INDEX.md",
+      "hooks/hooks.json",
+      "hooks/force-pipeline-agents.cjs",
+      "hooks/completion-checklist.cjs",
+      "hooks/dispatch-guard.cjs",
+      "hooks/sentinel-hook.cjs",
+      "hooks/session-lock-hook.cjs",
+      "src/controller/pipeline-controller.ts",
+      "src/controller/plan-mode.ts",
+      "src/domain/pipeline-schemas.ts",
+      "src/gates/gate-registry.ts",
+      "src/workflow/next-step.ts",
+      "tests/unit/controller/pipeline-controller.test.ts",
+      "tests/unit/controller/plan-mode.test.ts",
+      "tests/unit/workflow/next-step.test.ts",
+      "evals/README.md",
+      ".agents/skills/workflow-eval-gate/SKILL.md"
+    ],
+    "official_codex_docs_checked": [
+      "https://developers.openai.com/codex/hooks",
+      "https://developers.openai.com/codex/config-reference",
+      "https://developers.openai.com/codex/subagents",
+      "https://developers.openai.com/codex/skills"
+    ]
+  }
+}

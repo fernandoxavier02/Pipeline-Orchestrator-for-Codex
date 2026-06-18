@@ -14,6 +14,7 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { loadAgentRuntimeAdapter } from "./agent-runtime-loader.js";
 import { sentinelStateSchema, sessionStateSchema } from "../domain/pipeline-schemas.js";
+import { resolveSentinelIntegrityHmacKey } from "../security/ledger-integrity.js";
 export function resolveCliExitCode(result) {
     if (!result || typeof result !== "object") {
         return 1;
@@ -27,7 +28,7 @@ export function resolveCliExitCode(result) {
     }
     return 0;
 }
-const SENTINEL_HMAC_ENV = "PIPELINE_SENTINEL_HMAC_KEY";
+const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
 const SENTINEL_STALE_THRESHOLD_MS = 300_000;
 function parseArgs(argv) {
     const args = argv.slice(2);
@@ -94,7 +95,7 @@ function canonicalize(value) {
     return JSON.stringify(value);
 }
 function sentinelIntegrityVerified(rawSentinel) {
-    const key = process.env[SENTINEL_HMAC_ENV];
+    const key = resolveSentinelIntegrityHmacKey();
     if (!key)
         return true;
     if (!rawSentinel || typeof rawSentinel !== "object" || Array.isArray(rawSentinel)) {
@@ -106,7 +107,9 @@ function sentinelIntegrityVerified(rawSentinel) {
     }
     const algorithm = integrity.algorithm;
     const signature = integrity.signature;
-    if (algorithm !== "hmac-sha256" || typeof signature !== "string") {
+    if (algorithm !== "hmac-sha256"
+        || typeof signature !== "string"
+        || !HMAC_SHA256_HEX_SIGNATURE.test(signature)) {
         return false;
     }
     const unsignedState = { ...rawSentinel };

@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { gateDecisionSchema } from "../domain/pipeline-schemas.js";
 import { createExecutionIdentity } from "../observability/execution-identity.js";
+import { signLedgerEntry } from "../security/ledger-integrity.js";
 import { resolveValidatedRoot } from "./path-validation.js";
 // Exported so tests can pin the contract instead of duplicating the literal.
 // Post-review (QUAL-005): hardcoding 200 in tests let weak `<=` assertions
@@ -96,7 +97,7 @@ export function createGateLog(root) {
         // single-process constraint.
         await withAppendLock(async () => {
             await mkdir(root, { recursive: true });
-            await appendFile(file, `${JSON.stringify(enriched)}\n`, "utf8");
+            await appendFile(file, `${JSON.stringify(signLedgerEntry(enriched))}\n`, "utf8");
         });
     }
     return {
