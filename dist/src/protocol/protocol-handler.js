@@ -350,6 +350,7 @@ export async function recordProtocolGateResponse(input) {
         ...canonical,
         decision: decisionFromSelectedLabel(input.selectedLabel),
         decided_by: inferDecidedBy({ source: "user" }),
+        provenance: { source: "user" },
         timestamp,
         detail: `via protocol-events GATE_REQUEST gate_id=${input.gateId}`,
         confidence_impact: 0,

@@ -104,6 +104,23 @@ describe("edit-guard-hook", () => {
     }
   });
 
+  it("TDD: denies Edit of canonical pipeline obligation state during an active session", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
+    try {
+      writeSessionLock(cwd, "S3b", Math.floor(Date.now() / 1000) + 3600);
+
+      const result = runHook(cwd, "Edit", join(cwd, ".codex", "pipeline", "workflow-intent.json"));
+
+      expect(result.status).toBe(0);
+      const output = JSON.parse(result.stdout.trim());
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("protected pipeline state files");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain(".codex/pipeline/workflow-intent.json");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("allows Edit inside pipeline-runs/ regardless of window", () => {
     const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
     try {
@@ -300,7 +317,7 @@ describe("edit-guard-hook", () => {
     }
   });
 
-  it("allows file-modifying Bash inside .codex/ regardless of window", () => {
+  it("TDD: denies file-modifying Bash inside .codex/pipeline/ during active sessions", () => {
     const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
     try {
       writeSessionLock(cwd, "S8c", Math.floor(Date.now() / 1000) + 3600);
@@ -315,7 +332,96 @@ describe("edit-guard-hook", () => {
       });
 
       expect(result.status).toBe(0);
-      expect(result.stdout.trim()).toBe("");
+      const output = JSON.parse(result.stdout.trim());
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain(".codex/pipeline");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("TDD: denies node runtime mutations of protected pipeline state through Bash", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
+    try {
+      writeSessionLock(cwd, "S8c2", Math.floor(Date.now() / 1000) + 3600);
+
+      const result = spawnSync(process.execPath, [HOOK], {
+        cwd,
+        input: JSON.stringify({
+          tool_name: "Bash",
+          tool_input: {
+            command: "node -e \"require('fs').rmSync('.codex/pipeline/workflow-intent.json', {force:true})\"",
+          },
+        }),
+        encoding: "utf8",
+      });
+
+      expect(result.status).toBe(0);
+      const output = JSON.parse(result.stdout.trim());
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain(".codex/pipeline");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("TDD: denies Bash deletion of canonical pipeline obligation state even inside .codex/", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
+    try {
+      writeSessionLock(cwd, "S8d", Math.floor(Date.now() / 1000) + 3600);
+
+      const result = spawnSync(process.execPath, [HOOK], {
+        cwd,
+        input: JSON.stringify({
+          tool_name: "Bash",
+          tool_input: { command: "rm -f .codex/pipeline/required-first-actions.json" },
+        }),
+        encoding: "utf8",
+      });
+
+      expect(result.status).toBe(0);
+      const output = JSON.parse(result.stdout.trim());
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("protected pipeline state files");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain(".codex/pipeline/required-first-actions");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    "rm -f .codex/pipeline/workflow-intent.json;",
+    "rm -f .codex/pipeline/required-first-actions.json && echo done",
+    "rm -f .codex/pipeline/sentinel-state.json || true",
+    "rm -f .codex/pipeline/session-lock.json\nrm -f .codex/pipeline/workflow-intent.json",
+    "echo '{}' > .codex/pipeline/required-first-actions.json;",
+    "rm -f .codex/pipeline/workflow-intent.*",
+    "rm -f .codex/pipeline/{workflow-intent,required-first-actions}.json",
+    "rm -f .CODEX/pipeline/SENTINEL-STATE.*",
+    "echo '{}' > .codex/pipeline/session-lock.*",
+    "DIR=.codex/pipeline; BASE=workflow; rm -f \"$DIR/$BASE-intent.json\"",
+    "DIR=.codex/pipeline; BASE=required-first; rm -f \"$DIR/$BASE-actions.json\"",
+    "DIR=.codex/pipeline; BASE=sentinel; rm -f \"$DIR/$BASE-state.json\"",
+    "DIR=.codex/pipeline; BASE=session; rm -f \"$DIR/$BASE-lock.json\"",
+  ])("TDD: denies Bash protected state mutation with shell separator %#", (command) => {
+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
+    try {
+      writeSessionLock(cwd, "S8e", Math.floor(Date.now() / 1000) + 3600);
+      writeExecWindow(cwd, "S8e", Math.floor(Date.now() / 1000) + 300);
+
+      const result = spawnSync(process.execPath, [HOOK], {
+        cwd,
+        input: JSON.stringify({
+          tool_name: "Bash",
+          tool_input: { command },
+        }),
+        encoding: "utf8",
+      });
+
+      expect(result.status).toBe(0);
+      const output = JSON.parse(result.stdout.trim());
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("protected pipeline state files");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

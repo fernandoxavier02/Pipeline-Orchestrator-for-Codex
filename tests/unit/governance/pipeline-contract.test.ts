@@ -239,6 +239,117 @@ describe("pipeline governance contract", () => {
     expect(validation.missing_agents).toContain("adversarial_reviewer");
   });
 
+  it("TDD: blocks PASS artifacts without per-batch checkpoint adversarial review and closed fix loop", () => {
+    const artifact = createPassingPipelineArtifact({
+      testOnly: true,
+      batches: [],
+    });
+
+    const validation = validatePipelineArtifact(artifact, { adversarial: true });
+
+    expect(validation.status).toBe("BLOCKED");
+    expect(validation.missing_batches).toContain("batch_loop:batches");
+    expect(artifact.pipeline_valid).toBe(false);
+  });
+
+  it("TDD: blocks batch loops with unresolved findings or too many fix attempts", () => {
+    const artifact = createPassingPipelineArtifact({
+      testOnly: true,
+      batches: [
+        {
+          name: "batch-1",
+          status: "PASS",
+          checkpoint: {
+            status: "PASS",
+            evidence_ref: "batch:batch-1:checkpoint",
+          },
+          adversarial_review: {
+            status: "PASS",
+            evidence_ref: "batch:batch-1:adversarial_review",
+          },
+          fix_loop: {
+            status: "PASS",
+            open_findings: 1,
+            attempts: 4,
+            evidence_ref: "batch:batch-1:fix_loop",
+          },
+        },
+      ],
+    });
+
+    const validation = validatePipelineArtifact(artifact, { adversarial: true });
+
+    expect(validation.status).toBe("BLOCKED");
+    expect(validation.missing_batches).toContain("batch:batch-1:fix_loop:open_findings:0");
+    expect(validation.missing_batches).toContain("batch:batch-1:fix_loop:attempts<=3");
+  });
+
+  it("TDD: blocks batch loops with missing per-step evidence refs", () => {
+    const artifact = createPassingPipelineArtifact({
+      testOnly: true,
+      batches: [
+        {
+          name: "batch-1",
+          status: "PASS",
+          checkpoint: {
+            status: "PASS",
+            evidence_ref: "",
+          },
+          adversarial_review: {
+            status: "PASS",
+            evidence_ref: "",
+          },
+          fix_loop: {
+            status: "PASS",
+            open_findings: 0,
+            attempts: 1,
+            evidence_ref: "",
+          },
+        },
+      ],
+    });
+
+    const validation = validatePipelineArtifact(artifact, { adversarial: true });
+
+    expect(validation.status).toBe("BLOCKED");
+    expect(validation.missing_batches).toContain("batch:batch-1:checkpoint:evidence_ref");
+    expect(validation.missing_batches).toContain("batch:batch-1:adversarial_review:evidence_ref");
+    expect(validation.missing_batches).toContain("batch:batch-1:fix_loop:evidence_ref");
+  });
+
+  it("TDD: blocks batch loops with generic per-step evidence refs", () => {
+    const artifact = createPassingPipelineArtifact({
+      testOnly: true,
+      batches: [
+        {
+          name: "batch-1",
+          status: "PASS",
+          checkpoint: {
+            status: "PASS",
+            evidence_ref: "PASS",
+          },
+          adversarial_review: {
+            status: "PASS",
+            evidence_ref: "done",
+          },
+          fix_loop: {
+            status: "PASS",
+            open_findings: 0,
+            attempts: 1,
+            evidence_ref: "closed",
+          },
+        },
+      ],
+    });
+
+    const validation = validatePipelineArtifact(artifact, { adversarial: true });
+
+    expect(validation.status).toBe("BLOCKED");
+    expect(validation.missing_batches).toContain("batch:batch-1:checkpoint:evidence_ref");
+    expect(validation.missing_batches).toContain("batch:batch-1:adversarial_review:evidence_ref");
+    expect(validation.missing_batches).toContain("batch:batch-1:fix_loop:evidence_ref");
+  });
+
   it("blocks security review without a security reviewer", () => {
     const artifact = createPassingPipelineArtifact({ testOnly: true });
     const validation = validatePipelineArtifact(artifact, { adversarial: true, security: true });

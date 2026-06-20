@@ -12,7 +12,7 @@ describe("gate log", () => {
             hardness: "MANDATORY",
             phase: "phase-0",
             decision: "block",
-            decided_by: "controller",
+            provenance: { source: "controller" },
             timestamp: "2026-04-01T12:00:00.000Z",
             detail: "Missing reproduction steps",
             confidence_impact: 0,
@@ -26,6 +26,62 @@ describe("gate log", () => {
             source: "runtime",
         });
         expect(entry.execution_identity.trace_id).toMatch(/^pipe-/);
+    });
+    it("infers decided_by from provenance before validating append payloads", async () => {
+        const root = mkdtempSync(join(tmpdir(), "pipeline-gates-provenance-"));
+        const log = createGateLog(root);
+        await expect(log.append({
+            gate: "BATCH_LOOP:batch-1:fix_loop",
+            hardness: "MANDATORY",
+            phase: "execution",
+            decision: "pass",
+            timestamp: "2026-04-01T12:00:00.000Z",
+            detail: "batch review clean",
+            confidence_impact: 0,
+            evidence_ref: "batch:batch-1:fix_loop",
+            open_findings: 0,
+            attempts: 1,
+            provenance: { source: "controller" },
+        })).resolves.toBeUndefined();
+        const raw = readFileSync(join(root, "gate-decisions.jsonl"), "utf8");
+        const entry = JSON.parse(raw.trim());
+        expect(entry.decided_by).toBe("controller");
+        expect(entry.provenance).toBeUndefined();
+    });
+    it("rejects append payloads whose decided_by conflicts with provenance", async () => {
+        const root = mkdtempSync(join(tmpdir(), "pipeline-gates-provenance-conflict-"));
+        const log = createGateLog(root);
+        await expect(log.append({
+            gate: "BATCH_LOOP:batch-1:fix_loop",
+            hardness: "MANDATORY",
+            phase: "execution",
+            decision: "pass",
+            decided_by: "controller",
+            timestamp: "2026-04-01T12:00:00.000Z",
+            detail: "batch review clean",
+            confidence_impact: 0,
+            evidence_ref: "batch:batch-1:fix_loop",
+            open_findings: 0,
+            attempts: 1,
+            provenance: { source: "user" },
+        })).rejects.toThrow(/decided_by conflicts with provenance/);
+    });
+    it("TDD: rejects append payloads with decided_by but no provenance", async () => {
+        const root = mkdtempSync(join(tmpdir(), "pipeline-gates-raw-decided-by-"));
+        const log = createGateLog(root);
+        await expect(log.append({
+            gate: "BATCH_LOOP:batch-1:fix_loop",
+            hardness: "MANDATORY",
+            phase: "execution",
+            decision: "pass",
+            decided_by: "controller",
+            timestamp: "2026-04-01T12:00:00.000Z",
+            detail: "batch review clean",
+            confidence_impact: 0,
+            evidence_ref: "batch:batch-1:fix_loop",
+            open_findings: 0,
+            attempts: 1,
+        })).rejects.toThrow(/provenance is required/);
     });
     it("rejects malformed current gate log rows", async () => {
         const root = mkdtempSync(join(tmpdir(), "pipeline-gates-current-"));

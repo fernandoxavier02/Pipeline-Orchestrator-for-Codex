@@ -428,6 +428,65 @@ export function markAuthoritativeFinalReviewResult(result) {
 export function hasAuthoritativeFinalReviewResult(result) {
     return !!result && typeof result === "object" && authoritativeFinalReviewResultSymbol in result;
 }
+function reviewPassed(review) {
+    if (!review || typeof review !== "object" || !("status" in review))
+        return false;
+    const status = review.status;
+    return typeof status === "string"
+        && ["approved", "pass", "passed", "clean"].includes(status.toLowerCase());
+}
+function reviewOpenFindings(review) {
+    if (review && typeof review === "object" && "findings" in review && Array.isArray(review.findings)) {
+        return (review.findings).length;
+    }
+    if (reviewPassed(review))
+        return 0;
+    return 1;
+}
+async function recordBatchLoopEvidence(input) {
+    if (!input.gateLog?.append)
+        return;
+    const phase = input.phase ?? "phase-2";
+    const timestamp = new Date().toISOString();
+    const steps = [
+        {
+            step: "checkpoint",
+            pass: input.checkpoint.status === "passed",
+            detail: input.checkpoint.status === "passed"
+                ? "Batch checkpoint passed."
+                : "Batch checkpoint did not pass.",
+        },
+        {
+            step: "adversarial_review",
+            pass: reviewPassed(input.batchReview),
+            detail: reviewPassed(input.batchReview)
+                ? "Batch adversarial review passed."
+                : "Batch adversarial review blocked.",
+        },
+        {
+            step: "fix_loop",
+            pass: input.openFindings === 0 && input.attempts <= DEFAULT_FIX_LOOP_MAX_ATTEMPTS,
+            detail: "Batch fix loop closed with no open findings.",
+            open_findings: input.openFindings,
+            attempts: input.attempts,
+        },
+    ];
+    for (const step of steps) {
+        await input.gateLog.append({
+            gate: `BATCH_LOOP:${input.batchName}:${step.step}`,
+            hardness: "MANDATORY",
+            phase,
+            decision: step.pass ? "pass" : "block",
+            provenance: { source: "controller" },
+            timestamp,
+            detail: step.detail,
+            confidence_impact: step.pass ? 0 : -0.2,
+            evidence_ref: `batch:${input.batchName}:${step.step}`,
+            ...("open_findings" in step ? { open_findings: step.open_findings } : {}),
+            ...("attempts" in step ? { attempts: step.attempts } : {}),
+        });
+    }
+}
 async function dispatchExecutorFix(input) {
     if (!input.runRole) {
         return undefined;
@@ -833,6 +892,7 @@ export function createExecutorController(dependencies = {}) {
                     changeContract,
                     reviewLoop: createBatchReviewLoopContext(0),
                 });
+                const batchFixAttemptStart = appliedFixAttempts.length;
                 checkpointEvidence.push({
                     batchName: batch.name,
                     requiredCheckpoints: checkpoint.requiredCheckpoints,
@@ -916,10 +976,7 @@ export function createExecutorController(dependencies = {}) {
                         checkpoint,
                     }),
                 });
-                if (activeBatchReview
-                    && typeof activeBatchReview === "object"
-                    && "status" in activeBatchReview
-                    && activeBatchReview.status === "blocked") {
+                if (!reviewPassed(activeBatchReview)) {
                     if (dependencies.runRole || batchFixAttempts.length > 0) {
                         const isDiffDisciplineRework = isDiffDisciplineReviewBlocked(activeBatchReview);
                         const reviewLoopMaxAttempts = isDiffDisciplineRework
@@ -998,10 +1055,7 @@ export function createExecutorController(dependencies = {}) {
                                     reviewLoop: createBatchReviewLoopContext(attempt, reviewLoopMaxAttempts),
                                 });
                                 currentBatchResult.batchReview = activeBatchReview;
-                                return !(activeBatchReview
-                                    && typeof activeBatchReview === "object"
-                                    && "status" in activeBatchReview
-                                    && activeBatchReview.status === "blocked");
+                                return reviewPassed(activeBatchReview);
                             },
                         });
                         if (fixLoopResult.status === "FIX_LOOP_EXHAUSTED") {
@@ -1107,6 +1161,15 @@ export function createExecutorController(dependencies = {}) {
                         };
                     }
                 }
+                await recordBatchLoopEvidence({
+                    gateLog: input.stores?.gateLog,
+                    phase: input.phase,
+                    batchName: batch.name,
+                    checkpoint: activeCheckpoint,
+                    batchReview: activeBatchReview,
+                    openFindings: reviewOpenFindings(activeBatchReview),
+                    attempts: appliedFixAttempts.length - batchFixAttemptStart,
+                });
                 if (activeCheckpoint.status === "STOP_RULE") {
                     return {
                         status: "STOP_RULE",

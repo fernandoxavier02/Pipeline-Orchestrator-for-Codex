@@ -5,7 +5,8 @@
  * edit-guard-hook.cjs — PreToolUse:Edit|Write|NotebookEdit|MultiEdit guard
  *
  * Blocks edits outside of .codex/pipeline/ and pipeline-runs/ when a pipeline
- * session is active but no exec-window is OPEN.
+ * session is active but no exec-window is OPEN, and always protects canonical
+ * .codex/pipeline state files from tool/Bash mutation while the session is active.
  *
  * Input (stdin JSON):
  *   { tool_name: string, tool_input: { file_path: string } }
@@ -23,6 +24,18 @@ const { recordHookEvent } = require('./hook-events.cjs');
 
 const PROTECTED_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash']);
 const ALLOWED_PATHS = ['.codex', 'pipeline-runs'];
+const PROTECTED_PIPELINE_STATE_FILES = new Set([
+  '.codex/pipeline/workflow-intent.json',
+  '.codex/pipeline/required-first-actions.json',
+  '.codex/pipeline/sentinel-state.json',
+  '.codex/pipeline/session-lock.json',
+]);
+const PROTECTED_PIPELINE_STATE_STEMS = new Set([
+  'workflow-intent',
+  'required-first-actions',
+  'sentinel-state',
+  'session-lock',
+]);
 
 // Bash command patterns that modify files outside allowed paths.
 // Post-review (SEC-007): broadened to cover write primitives the original
@@ -54,6 +67,20 @@ function bashCommandModifiesFiles(command) {
   return BASH_FILE_MODIFYING_PATTERNS.some((re) => re.test(command));
 }
 
+function bashCommandMentionsPipelineStateArea(command) {
+  return typeof command === 'string'
+    && command.replace(/\\/g, '/').toLowerCase().includes('.codex/pipeline');
+}
+
+function protectedPipelineStateMentionsInBash(command) {
+  if (typeof command !== 'string') return [];
+  const normalized = command.replace(/\\/g, '/').toLowerCase();
+  if (!normalized.includes('.codex/pipeline/')) return [];
+  return [...PROTECTED_PIPELINE_STATE_STEMS]
+    .filter((stem) => normalized.includes(stem))
+    .map((stem) => `.codex/pipeline/${stem}`);
+}
+
 // Extract target file paths from a Bash command (e.g., after >, >>, tee, mv, cp)
 function extractBashTargetPaths(command) {
   if (typeof command !== 'string') return [];
@@ -79,6 +106,11 @@ function extractBashTargetPaths(command) {
   // Match touch/mkdir
   const touchRe = /\b(?:touch|mkdir)\s+(?:-[a-zA-Z]+\s+)?['"]?(\S+?)['"]?/g;
   while ((m = touchRe.exec(command)) !== null) {
+    paths.push(m[1]);
+  }
+  // Match destructive unary commands such as rm -f .codex/pipeline/workflow-intent.json.
+  const unaryRe = /\b(?:rm|rmdir|truncate)\s+(?:-[^\s]+\s+)*['"]?([^\s'"]+)['"]?/g;
+  while ((m = unaryRe.exec(command)) !== null) {
     paths.push(m[1]);
   }
   return paths;
@@ -221,7 +253,8 @@ function isAllowedPath(cwd, filePath) {
   const relative = path.relative(workspaceRoot, resolved);
   // Reject paths that escape the workspace (path traversal)
   if (relative.startsWith('..')) return false;
-  // Always allow paths inside .codex/ or pipeline-runs/
+  // Allow paths inside .codex/ or pipeline-runs/ unless protected state checks
+  // have already denied the operation.
   const normalized = relative.replace(/\\/g, '/');
   const firstPart = normalized.split('/')[0];
   return ALLOWED_PATHS.includes(firstPart);
@@ -236,6 +269,27 @@ function normalizeRelativePath(cwd, filePath) {
     // Keep the resolved cwd fallback if the temporary workspace disappeared.
   }
   return path.relative(workspaceRoot, resolved).replace(/\\/g, '/');
+}
+
+function normalizeLexicalRelativePath(cwd, filePath) {
+  return path.relative(path.resolve(cwd), path.resolve(cwd, filePath)).replace(/\\/g, '/');
+}
+
+function relativePathTouchesProtectedPipelineState(relativePath) {
+  const normalized = relativePath.replace(/\\/g, '/').toLowerCase();
+  return normalized.startsWith('.codex/pipeline/')
+    && [...PROTECTED_PIPELINE_STATE_STEMS].some((stem) => normalized.includes(stem));
+}
+
+function isProtectedPipelineStatePath(cwd, filePath) {
+  const lexical = normalizeLexicalRelativePath(cwd, filePath);
+  const resolved = normalizeRelativePath(cwd, filePath);
+  const lexicalLower = lexical.toLowerCase();
+  const resolvedLower = resolved.toLowerCase();
+  return PROTECTED_PIPELINE_STATE_FILES.has(lexicalLower)
+    || PROTECTED_PIPELINE_STATE_FILES.has(resolvedLower)
+    || relativePathTouchesProtectedPipelineState(lexical)
+    || relativePathTouchesProtectedPipelineState(resolved);
 }
 
 function contractPatternMatches(pattern, filePath) {
@@ -345,13 +399,74 @@ function handle(input) {
   if (toolName === 'Bash') {
     const command = toolInput.command || '';
     if (!bashCommandModifiesFiles(command)) {
-      return; // Read-only bash is allowed
+      if (bashCommandMentionsPipelineStateArea(command)) {
+        recordHookEvent({
+          hook: 'edit-guard',
+          event: 'PreToolUse',
+          decision: 'deny',
+          attempted: toolName,
+          reason: 'protected pipeline state area',
+        });
+        emit({
+          hookSpecificOutput: {
+            permissionDecision: 'deny',
+            permissionDecisionReason:
+              `Edit guard blocked ${toolName}: Bash commands mentioning .codex/pipeline during an active session must not bypass protected state parsing.`,
+          },
+        });
+      }
+      return; // Read-only bash is allowed outside the protected pipeline state area.
+    }
+    const protectedStatePaths = protectedPipelineStateMentionsInBash(command);
+    if (protectedStatePaths.length === 0 && bashCommandMentionsPipelineStateArea(command)) {
+      protectedStatePaths.push('.codex/pipeline');
+    }
+    if (protectedStatePaths.length > 0) {
+      recordHookEvent({
+        hook: 'edit-guard',
+        event: 'PreToolUse',
+        decision: 'deny',
+        attempted: toolName,
+        reason: 'protected pipeline state file',
+      });
+      emit({
+        hookSpecificOutput: {
+          permissionDecision: 'deny',
+          permissionDecisionReason:
+            `Edit guard blocked ${toolName}: protected pipeline state files cannot be modified by tools during an active session: ` +
+            protectedStatePaths.join(', '),
+        },
+      });
+      return;
     }
     // Fall through to exec-window check for file-modifying bash
   }
 
   // Collect all paths from tool_input (not just file_path)
   const paths = extractPathsFromInput(toolInput, toolName);
+
+  const protectedStatePaths = paths
+    .filter((p) => isProtectedPipelineStatePath(cwd, p))
+    .map((p) => normalizeLexicalRelativePath(cwd, p));
+  if (protectedStatePaths.length > 0) {
+    recordHookEvent({
+      hook: 'edit-guard',
+      event: 'PreToolUse',
+      decision: 'deny',
+      attempted: toolName,
+      reason: 'protected pipeline state file',
+      paths: protectedStatePaths,
+    });
+    emit({
+      hookSpecificOutput: {
+        permissionDecision: 'deny',
+        permissionDecisionReason:
+          `Edit guard blocked ${toolName}: protected pipeline state files cannot be modified by tools during an active session: ` +
+          protectedStatePaths.join(', '),
+      },
+    });
+    return;
+  }
 
   // If any path is inside allowed directories → allow regardless of window
   if (paths.length > 0 && paths.every((p) => isAllowedPath(cwd, p))) {

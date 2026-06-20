@@ -1,6 +1,6 @@
 import { PIPELINE_MODES, type PipelineMode, type PipelinePhase } from "../domain/pipeline-types.js";
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { buildExecWindow } from "../security/exec-window.js";
@@ -66,6 +66,32 @@ import {
   type PipelineRuntimeMode,
 } from "../governance/pipeline-contract.js";
 import ts from "typescript";
+
+function canonicalize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalize(entry)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function signWorkflowState<T extends Record<string, unknown>>(state: T, scope: string): T {
+  const key = process.env.PIPELINE_SENTINEL_HMAC_KEY || process.env.PIPELINE_INTEGRITY_HMAC_KEY;
+  if (!key) return state;
+  return {
+    ...state,
+    _integrity: {
+      algorithm: "hmac-sha256",
+      scope,
+      signature: createHmac("sha256", key).update(canonicalize(state)).digest("hex"),
+    },
+  } as T;
+}
 
 type SessionStore = {
   root?: string;
@@ -703,6 +729,8 @@ async function bootstrapExplicitPipelineState(input: {
   }
 
   const now = Math.floor(Date.now() / 1000);
+  const nowIso = new Date(now * 1000).toISOString();
+  const expiresAt = now + 60 * 60;
   writeSessionLockAtomic(
     sessionLockPath(input.stateRoot),
     buildSessionLock({
@@ -712,41 +740,34 @@ async function bootstrapExplicitPipelineState(input: {
   );
 
   const controllerActionId = input.runtimeMode === "real-agent"
-    ? "controller_dispatch"
+    ? "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller"
     : "blocked_runtime_artifact";
+  const requiredActions = [
+    "update_plan",
+    "WORKFLOW_METHOD_GATE",
+    "CAPABILITY_GATE",
+    controllerActionId,
+    ...(input.runtimeMode === "real-agent" ? ["wait_agent"] : []),
+  ];
   writeFileSync(
     join(input.stateRoot, "required-first-actions.json"),
-    JSON.stringify({
+    JSON.stringify(signWorkflowState({
+      schema_version: 1,
+      status: "active",
+      plugin: "pipeline-orchestrator-for-codex",
+      workflow: input.mode,
       pipeline_requested: true,
       session_id: input.sessionId,
       run_id: input.runId,
       request: input.request,
       runtime_mode: input.runtimeMode,
-      required_actions: [
-        {
-          id: "visible_plan",
-          status: "required",
-          evidence_ref: "codex.plan",
-        },
-        {
-          id: "workflow_method_gate",
-          status: "required",
-          evidence_ref: "WORKFLOW_METHOD_GATE",
-        },
-        {
-          id: "capability_gate",
-          status: "required",
-          evidence_ref: "runtime.capabilities",
-        },
-        {
-          id: controllerActionId,
-          status: "required",
-          evidence_ref: controllerActionId === "controller_dispatch"
-            ? "spawn_agent:pipeline-controller"
-            : "PipelineGovernanceArtifact:BLOCKED",
-        },
-      ],
-    }),
+      required_actions: requiredActions,
+      completed_actions: input.runtimeMode === "real-agent"
+        ? ["update_plan", "WORKFLOW_METHOD_GATE", "CAPABILITY_GATE"]
+        : ["update_plan", "WORKFLOW_METHOD_GATE", "CAPABILITY_GATE", "blocked_runtime_artifact"],
+      created_at: nowIso,
+      expires_at: expiresAt,
+    }, "pipeline-required-first-actions")),
     "utf8",
   );
 
@@ -1281,10 +1302,11 @@ function toGateLogEntry(input: {
     phase: input.phase,
     decision: input.decision,
     decided_by: inferDecidedBy({ source: "controller" }),
+    provenance: { source: "controller" },
     timestamp: new Date().toISOString(),
     detail: input.detail,
     confidence_impact: input.confidence_impact ?? (input.decision === "skip" ? definition.confidenceImpactOnSkip : 0),
-  } satisfies PersistedGateLogEntry;
+  };
 }
 
 function pipelineGateToLogEntry(input: PipelineGateArtifact) {

@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { delimiter, join, resolve, sep } from "node:path";
 import type {
   AgentDispatchRequest,
   AgentRuntimeAdapter,
@@ -15,6 +16,8 @@ export interface CodexCliProcessRuntimeOptions {
   model?: string;
   timeoutMs?: number;
   extraArgs?: string[];
+  sandbox?: "read-only" | "workspace-write" | "danger-full-access";
+  allowDangerousBypass?: boolean;
 }
 
 function buildPrompt(request: AgentDispatchRequest): string {
@@ -105,25 +108,14 @@ function tryParseJson(value: string): Record<string, unknown> | null {
 async function runCodexExec(
   prompt: string,
   options: Required<Pick<CodexCliProcessRuntimeOptions, "codexBin" | "cwd" | "timeoutMs">>
-    & Pick<CodexCliProcessRuntimeOptions, "model" | "extraArgs">,
+    & Pick<CodexCliProcessRuntimeOptions, "model" | "extraArgs" | "sandbox" | "allowDangerousBypass">,
 ): Promise<Record<string, unknown>> {
   const tempRoot = await mkdtemp(join(tmpdir(), "pipeline-codex-agent-"));
   const promptPath = join(tempRoot, "prompt.md");
   const outputPath = join(tempRoot, "output.md");
   await writeFile(promptPath, prompt, "utf8");
 
-  const args = [
-    "exec",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "--dangerously-bypass-hook-trust",
-    "-C",
-    options.cwd,
-    "-o",
-    outputPath,
-    ...(options.model ? ["-m", options.model] : []),
-    ...(options.extraArgs ?? []),
-    "-",
-  ];
+  const args = buildCodexExecArgs(options, outputPath);
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -162,17 +154,105 @@ async function runCodexExec(
   }
 }
 
+export function buildCodexExecBaseArgs(
+  options: Required<Pick<CodexCliProcessRuntimeOptions, "cwd">>
+    & Pick<CodexCliProcessRuntimeOptions, "model" | "extraArgs" | "sandbox" | "allowDangerousBypass">,
+) {
+  const sandbox = options.sandbox ?? "workspace-write";
+  const extraArgs = options.extraArgs ?? [];
+  if (!options.allowDangerousBypass && extraArgs.some((arg) => arg.startsWith("--dangerously-bypass-"))) {
+    throw new Error("codex-cli-process runtime refuses dangerous bypass flags unless allowDangerousBypass=true.");
+  }
+
+  return [
+    "exec",
+    ...(options.allowDangerousBypass ? [
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--dangerously-bypass-hook-trust",
+    ] : ["--sandbox", sandbox]),
+    "-C",
+    options.cwd,
+    ...(options.model ? ["-m", options.model] : []),
+    ...extraArgs,
+  ];
+}
+
+function buildCodexExecArgs(
+  options: Required<Pick<CodexCliProcessRuntimeOptions, "cwd">>
+    & Pick<CodexCliProcessRuntimeOptions, "model" | "extraArgs" | "sandbox" | "allowDangerousBypass">,
+  outputPath: string,
+) {
+  return [
+    ...buildCodexExecBaseArgs(options),
+    "-o",
+    outputPath,
+    "-",
+  ];
+}
+
+function hasPathSeparator(value: string) {
+  return value.includes("/") || value.includes("\\") || value.includes(sep);
+}
+
+function existingFile(path: string) {
+  try {
+    return existsSync(path);
+  } catch {
+    return false;
+  }
+}
+
+function vscodeCodexCandidates() {
+  const extensionsRoot = join(homedir(), ".vscode", "extensions");
+  try {
+    return readdirSync(extensionsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^openai\.chatgpt-.*-win32-x64$/iu.test(entry.name))
+      .map((entry) => join(extensionsRoot, entry.name, "bin", "windows-x86_64", "codex.exe"))
+      .filter(existingFile)
+      .sort()
+      .reverse();
+  } catch {
+    return [];
+  }
+}
+
+function pathCodexCandidates() {
+  return (process.env.PATH ?? "")
+    .split(delimiter)
+    .filter(Boolean)
+    .flatMap((entry) => [join(entry, "codex.exe"), join(entry, "codex.cmd")])
+    .filter(existingFile);
+}
+
+export function resolveCodexCliBinary(candidate?: string) {
+  const requested = candidate ?? process.env.CODEX_CLI_PATH ?? "codex";
+  if (process.platform !== "win32") {
+    return requested;
+  }
+
+  if (hasPathSeparator(requested)) {
+    return resolve(requested);
+  }
+
+  const candidates = [
+    ...vscodeCodexCandidates(),
+    ...pathCodexCandidates().filter((entry) => entry.toLowerCase().endsWith("codex.exe")),
+    ...pathCodexCandidates().filter((entry) => !entry.toLowerCase().includes("windowsapps")),
+  ];
+  return candidates[0] ?? requested;
+}
+
 export function createCodexCliProcessRuntime(
   options: CodexCliProcessRuntimeOptions = {},
 ): AgentRuntimeAdapter {
-  const codexBin = options.codexBin ?? process.env.CODEX_CLI_PATH ?? "codex";
+  const codexBin = resolveCodexCliBinary(options.codexBin);
   const cwd = options.cwd ?? process.cwd();
   const configuredTimeout = Number(process.env.CODEX_CLI_PROCESS_TIMEOUT_MS);
   const timeoutMs = options.timeoutMs
     ?? (Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 120_000);
 
   return {
-    runtimeMode: "dev-bypass",
+    runtimeMode: options.allowDangerousBypass ? "dev-bypass" : "real-agent",
     capabilities: {
       spawnAgent: true,
       waitAgent: true,
@@ -189,6 +269,8 @@ export function createCodexCliProcessRuntime(
           timeoutMs,
           model: options.model,
           extraArgs: options.extraArgs,
+          sandbox: options.sandbox,
+          allowDangerousBypass: options.allowDangerousBypass,
         });
         return {
           mode: "single-agent",

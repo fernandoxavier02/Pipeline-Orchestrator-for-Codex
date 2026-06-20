@@ -619,10 +619,81 @@ export interface ExecuteApprovedWorkInput {
     session?: {
       save?: (session: unknown) => Promise<void>;
     };
+    gateLog?: {
+      append?: (entry: unknown) => Promise<void>;
+    };
   };
   /** Passed from pipeline-controller to activate the edit-guard for write-capable roles. */
   sessionRoot?: string;
   sessionId?: string;
+}
+
+function reviewPassed(review: unknown) {
+  if (!review || typeof review !== "object" || !("status" in review)) return false;
+  const status = (review as { status?: unknown }).status;
+  return typeof status === "string"
+    && ["approved", "pass", "passed", "clean"].includes(status.toLowerCase());
+}
+
+function reviewOpenFindings(review: unknown) {
+  if (review && typeof review === "object" && "findings" in review && Array.isArray((review as { findings?: unknown }).findings)) {
+    return ((review as { findings: unknown[] }).findings).length;
+  }
+  if (reviewPassed(review)) return 0;
+  return 1;
+}
+
+async function recordBatchLoopEvidence(input: {
+  gateLog?: { append?: (entry: unknown) => Promise<void> };
+  phase?: string;
+  batchName: string;
+  checkpoint: CheckpointValidationResult;
+  batchReview: unknown;
+  openFindings: number;
+  attempts: number;
+}) {
+  if (!input.gateLog?.append) return;
+  const phase = input.phase ?? "phase-2";
+  const timestamp = new Date().toISOString();
+  const steps = [
+    {
+      step: "checkpoint",
+      pass: input.checkpoint.status === "passed",
+      detail: input.checkpoint.status === "passed"
+        ? "Batch checkpoint passed."
+        : "Batch checkpoint did not pass.",
+    },
+    {
+      step: "adversarial_review",
+      pass: reviewPassed(input.batchReview),
+      detail: reviewPassed(input.batchReview)
+        ? "Batch adversarial review passed."
+        : "Batch adversarial review blocked.",
+    },
+    {
+      step: "fix_loop",
+      pass: input.openFindings === 0 && input.attempts <= DEFAULT_FIX_LOOP_MAX_ATTEMPTS,
+      detail: "Batch fix loop closed with no open findings.",
+      open_findings: input.openFindings,
+      attempts: input.attempts,
+    },
+  ] as const;
+
+  for (const step of steps) {
+    await input.gateLog.append({
+      gate: `BATCH_LOOP:${input.batchName}:${step.step}`,
+      hardness: "MANDATORY",
+      phase,
+      decision: step.pass ? "pass" : "block",
+      provenance: { source: "controller" },
+      timestamp,
+      detail: step.detail,
+      confidence_impact: step.pass ? 0 : -0.2,
+      evidence_ref: `batch:${input.batchName}:${step.step}`,
+      ...("open_findings" in step ? { open_findings: step.open_findings } : {}),
+      ...("attempts" in step ? { attempts: step.attempts } : {}),
+    });
+  }
 }
 
 export interface ExecutorControllerDependencies {
@@ -1179,6 +1250,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           changeContract,
           reviewLoop: createBatchReviewLoopContext(0),
         });
+        const batchFixAttemptStart = appliedFixAttempts.length;
         checkpointEvidence.push({
           batchName: batch.name,
           requiredCheckpoints: checkpoint.requiredCheckpoints,
@@ -1271,12 +1343,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
           }),
         });
 
-        if (
-          activeBatchReview
-          && typeof activeBatchReview === "object"
-          && "status" in activeBatchReview
-          && activeBatchReview.status === "blocked"
-        ) {
+        if (!reviewPassed(activeBatchReview)) {
           if (dependencies.runRole || batchFixAttempts.length > 0) {
             const isDiffDisciplineRework = isDiffDisciplineReviewBlocked(activeBatchReview);
             const reviewLoopMaxAttempts = isDiffDisciplineRework
@@ -1361,12 +1428,7 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
                 });
                 currentBatchResult.batchReview = activeBatchReview;
 
-                return !(
-                  activeBatchReview
-                  && typeof activeBatchReview === "object"
-                  && "status" in activeBatchReview
-                  && activeBatchReview.status === "blocked"
-                );
+                return reviewPassed(activeBatchReview);
               },
             });
 
@@ -1478,6 +1540,16 @@ export function createExecutorController(dependencies: ExecutorControllerDepende
             };
           }
         }
+
+        await recordBatchLoopEvidence({
+          gateLog: input.stores?.gateLog,
+          phase: input.phase,
+          batchName: batch.name,
+          checkpoint: activeCheckpoint,
+          batchReview: activeBatchReview,
+          openFindings: reviewOpenFindings(activeBatchReview),
+          attempts: appliedFixAttempts.length - batchFixAttemptStart,
+        });
 
         if (activeCheckpoint.status === "STOP_RULE") {
           return {

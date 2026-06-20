@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { REQUIRED_PIPELINE_GATES } from "../../../src/governance/pipeline-contract.js";
-import { recordPostFinalValidatorCheckpoint } from "../../../src/validation/final-validator.js";
-import { runFinalValidator } from "../../../src/validation/final-validator.js";
+import {
+  recordPostFinalValidatorCheckpoint,
+  resolveEffectiveGateLog,
+  runFinalValidator,
+} from "../../../src/validation/final-validator.js";
 
 type SavedState = {
   session_id?: string;
@@ -164,6 +167,36 @@ describe("operational final validation", () => {
     { kind: "gate-decisions", passed: true, label: "target gate-decisions.jsonl" },
     { kind: "target-latest-trace", passed: true, label: "target latest_trace.json" },
   ];
+
+  it("TDD: resolves dynamic BATCH_LOOP gates without requiring static registry entries", () => {
+    const effective = resolveEffectiveGateLog([
+      {
+        gate: "BATCH_LOOP:batch-1:checkpoint",
+        hardness: "MANDATORY",
+        phase: "phase-2",
+        decision: "pass",
+      },
+      {
+        gate: "BATCH_LOOP:batch-1:checkpoint",
+        hardness: "MANDATORY",
+        phase: "phase-2",
+        decision: "block",
+      },
+      {
+        gate: "BATCH_LOOP:batch-1:checkpoint",
+        hardness: "MANDATORY",
+        phase: "phase-2",
+        decision: "pass",
+      },
+    ]);
+
+    expect(effective).toEqual([
+      expect.objectContaining({
+        gate: "BATCH_LOOP:batch-1:checkpoint",
+        decision: "pass",
+      }),
+    ]);
+  });
 
   it("rejects harness/emulation evidence for operational runs", () => {
     const result = runFinalValidator({

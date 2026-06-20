@@ -2,480 +2,66 @@
 
 ## What was inspected
 
-- Target repository: `D:\Pipeline Orchestrator for Codex`.
-- Batch: `bugfix-governance-hooks-001`.
-- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, the pipeline invocation enforcement spec, the governance pipeline contract, and `evals/README.md`.
-- Runtime surfaces: `hooks/completion-checklist.cjs` and `hooks/force-pipeline-agents.cjs`.
-- Focused tests: `tests/unit/hooks/completion-checklist.test.ts` and `tests/unit/hooks/force-pipeline-agents.test.ts`.
-- Existing dirty worktree files outside this batch were observed and not reverted.
+- Repository: `D:\Pipeline Orchestrator for Codex`.
+- Active request: publish and synchronize the runtime-subagent fix across the canonical repo, GitHub, Codex marketplace-backed plugin directory, and installed Codex plugin cache.
+- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `.agents/skills/workflow-eval-gate/SKILL.md`, `.agents/skills/bugfix-heavy/SKILL.md`, and `evals/README.md`.
+- Runtime/code surfaces: `src/adapters/codex-cli-process-runtime.ts`, `src/cli/agent-runtime-loader.ts`, `hooks/**`, `commands/**`, `skills/**`, `.agents/skills/**`, `dist/**`, and runtime/gate tests.
+- Publication surfaces: `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`, `C:\Users\win\.agents\plugins\marketplace.json`, `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`, and `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
 - behavior_cases: 5.
-- additional_regression_cases: 47.
 
 ## What was changed
 
-- Hardened `hooks/completion-checklist.cjs` so active sentinel state plus `blocked-no-agent-runtime` terminal output without a governance artifact is blocked instead of returning `continue:true`.
-- Updated `hooks/completion-checklist.cjs` so structured `BLOCKED` artifacts may list the canonical missing capabilities from the governance pipeline contract: `spawn_agent`, `wait_agent`, `subagent_artifact_collection`, `gate_recording`, `hook_checkpoint_recording`, and `structured_final_state`.
-- Kept forged `BLOCKED` artifacts blocked when `missing_capabilities` contains unknown capability names.
-- Hardened `hooks/force-pipeline-agents.cjs` so informational prompts such as "Explique o que e pipeline em CI/CD" are allowed, while operational CI/CD pipeline work remains blocked through `pipeline-required`.
-- Added RED/GREEN coverage in `tests/unit/hooks/completion-checklist.test.ts` and `tests/unit/hooks/force-pipeline-agents.test.ts` for the three required escape paths.
-- Resolved the adversarial fix-loop finding where a partial real-agent capability failure (`runtime_mode=real-agent`, `missing_capabilities=["subagent_artifact_collection"]`) produced an honest `BLOCKED` artifact that the Stop hook previously rejected.
-- Added focused RED/GREEN coverage for that partial-capability `BLOCKED` artifact while keeping bogus and contaminated capability artifacts blocked.
-- Resolved the final adversarial P2 finding where mixed informational-plus-operational prompts such as "Explique o que e pipeline em CI/CD e audite meu workflow atual" bypassed `pipeline-required`.
-- Updated prompt field extraction so an empty `prompt` field no longer masks an operational `arguments` field.
-- Resolved the subsequent adversarial P2 finding where common Portuguese operational audit imperatives (`Verifique`, `Investigue`, `Revise`) bypassed `pipeline-required`.
-- Resolved the final adversarial P2 finding where an informational `prompt` could mask operational audit text in a secondary payload field such as `arguments`.
-- Added accent-insensitive PT-BR operational matching for audit, investigation, validation, checking, and failure phrases such as `análise`, `Investigação`, `Avalie`, `Valide`, `Cheque`, and `não está funcionando`.
-- Tightened `hooks/completion-checklist.cjs` so `runtime_mode="real-agent"` cannot honestly claim foundational runtime capabilities such as `spawn_agent` or `wait_agent` are missing.
-- Resolved the follow-up adversarial P2 finding where nominal PT-BR operational forms such as `Validação do workflow atual`, `Revisão do workflow atual`, `Checagem do workflow atual`, `Diagnóstico do workflow atual`, and `Avaliacao do workflow atual` bypassed the pipeline front door.
-- Resolved the final adversarial P1 finding where English operational workflow requests such as `Review`, `Validate`, `Check`, `Diagnose`, `Analyze`, `Assess`, `Evaluate`, `Audit`, and `Investigate the current workflow` bypassed the pipeline front door.
-- Resolved the final adversarial P1 finding where active pipeline Stop payloads such as `FINAL_REVIEW: GO`, `Final verdict: GO`, `FINAL DECISION: GO`, and `FINAL_ADVERSARIAL_REPORT: CLEAN` were not treated as terminal completion attempts without a governance artifact.
-- Resolved the final adversarial P2 finding where PT-BR `Diagnostique o workflow atual` and `Diagnosticar o workflow atual` bypassed the pipeline front door.
-- Resolved the follow-up adversarial P2 finding where common PT-BR `-a` operational forms such as `Analisa`, `Audita`, `Investiga`, `Avalia`, `Valida`, `Checa`, `Revisa`, `Verifica`, and `Diagnostica o workflow atual` bypassed the pipeline front door.
-- Resolved the follow-up adversarial P2 finding where active pipeline Stop payloads with `=`, hyphen, `GO/NO-GO`, or plain `Verdict` terminal variants were not treated as completion attempts without a governance artifact.
-- Added coverage for residual English operational synonyms `Inspect`, `Look into`, and `Triage the current workflow`.
-- Resolved the follow-up adversarial P2 finding where natural terminal language such as `Final verdict is GO`, `Final decision is CONDITIONAL`, and `Final adversarial report is CLEAN` was not treated as a completion attempt without a governance artifact.
-- Resolved the follow-up adversarial P2 finding where operational prompts such as `Debug the current workflow`, `Examine the current workflow`, `Confira o workflow atual`, and `Dê uma olhada no workflow atual` bypassed the pipeline front door.
-- Resolved the final adversarial P1 finding where an active pipeline could emit natural closeout language such as `Done. No blocking issues remain.` or `Resumo final: sem P0/P1/P2.` without a governance artifact and avoid Stop enforcement.
-- Resolved the final adversarial P2 finding where operational workflow prompts such as `Olhe o workflow atual`, `Veja o workflow atual`, `Confere o workflow atual`, `Take a look at the current workflow`, and `Troubleshoot the current workflow` bypassed the pipeline front door.
-- Resolved the follow-up adversarial P2 finding where common English "look" variants such as `Please look at the current workflow`, `Have a look at the current workflow`, `Take a quick look at the current workflow`, and `Give the current workflow a look` bypassed the pipeline front door.
-- Resolved the follow-up adversarial P2 finding where a `blocked-no-agent-runtime` artifact could be accepted without declaring `spawn_agent` or `wait_agent` as missing.
-- Resolved the follow-up adversarial P2 finding where valid JSON scalar or array payloads could parse successfully, produce an empty prompt, and bypass prompt enforcement.
-- Resolved the follow-up adversarial P2 finding where `runtime_mode="real-agent"` could still accept a `blocked-no-agent-runtime` artifact that claimed only `structured_final_state` was missing.
-- Resolved the follow-up adversarial P2 finding where `Look over the current workflow`, `Please look over the current workflow`, and `Give the current workflow another look` bypassed the pipeline front door.
-- Resolved the follow-up adversarial P1 finding where a stale file-sourced `BLOCKED` artifact could validate success-looking terminal output such as `FINAL_REVIEW: GO`.
-- Resolved the follow-up adversarial P2 finding where object-before-particle and through variants such as `Look the current workflow over` and `Look through the current workflow` bypassed the pipeline front door.
-- Resolved the follow-up adversarial P1 finding where a stale file-sourced `BLOCKED` artifact could still validate terminal approval vocabulary such as `VERDICT: APPROVED`.
-- Resolved the follow-up adversarial P1 finding where a stale file-sourced `BLOCKED` artifact could still validate terminal conditional vocabulary such as `Final decision: CONDITIONAL`.
-- Resolved the follow-up adversarial P1 finding where a stale file-sourced `PASS` artifact and old ledgers could validate a new active run with a different sentinel identity.
-- Resolved the self-review follow-up where a stale `session.json` identity could otherwise mask a newer sentinel identity during file-sourced artifact validation.
-- Resolved the follow-up adversarial P1 finding where old and new runs sharing generic `workflow_id=full` could still validate stale file-sourced `PASS` evidence despite different `run_id` / `session_id`.
-- Resolved the follow-up adversarial P2 finding where nested JSON envelopes such as `payload.prompt`, `data.prompt`, `message.content`, and `messages[].content` could hide operational review/audit/debug text from `force-pipeline-agents`.
-- Resolved the follow-up adversarial P2 finding where separatorless final closeout language such as `Final review GO`, `Final verdict GO`, and `Final decision GO` bypassed artifact enforcement after the sentinel was inactive but session state still proved phase-3 pipeline context.
-- Resolved the follow-up adversarial P2 finding where prefixed operational review/probe prompts such as `Reevaluate the current workflow`, `Reavalie o workflow atual`, `Reaudit the current workflow`, and `Probe the current workflow` bypassed `pipeline-required`.
-- Resolved the follow-up adversarial P2 finding where adjective-bearing look/review prompts such as `Give the current workflow a quick look`, `Go over the current workflow for issues`, `Walk through the current workflow for issues`, and `Faça uma varredura no workflow atual` bypassed `pipeline-required`.
-- Resolved the follow-up adversarial P1 finding where a stale payload-sourced `PASS` artifact could bypass current-run identity validation.
-- Resolved the follow-up adversarial P1 finding where a weak sentinel `workflow_id=full` could beat stronger current session `run_id` / `session_id` evidence.
-- Resolved the follow-up adversarial P2 finding where inactive phase-3 closeouts such as `FINAL_ADVERSARIAL_REVIEW: CLEAN`, `Final report: CLEAN`, `FINAL REPORT: PASS`, and `No P0/P1/P2 remain` bypassed artifact enforcement.
-- Resolved the follow-up adversarial P2 finding where natural review idioms such as `Give the current workflow a once-over`, `Give the current workflow one more look`, `Please do a walkthrough of the current workflow`, `Walk me through the current workflow for issues`, and `pente-fino` bypassed `pipeline-required`.
-- Resolved the final adversarial P2 finding where stale `BLOCKED` artifacts from file, payload, or session could close a newer active run without proving current `run_id` / `session_id` identity.
-- Resolved the final adversarial P1/P2 findings where partial strong identity collisions could let stale artifacts validate through a shared `session_id`, and inactive phase-3 JSON text with `"pipeline_valid": true` could bypass artifact enforcement.
-- Resolved the final adversarial P1 findings where plugin mention / legacy alias front doors were not recognized by the Stop hook, and locally fabricated PASS ledgers could validate without sentinel HMAC integrity.
-- Updated the runtime sentinel state store so controller-written sentinel files include HMAC integrity metadata whenever `PIPELINE_SENTINEL_HMAC_KEY` is configured.
-- Updated the local Eval Gate HMAC evidence rule so HMAC claims are accepted for the actual sentinel/Stop-hook surfaces, not only CLI files.
-- Resolved the final adversarial P1 finding where stale old-run ledgers could validate a current PASS artifact if an unrelated ledger entry mentioned the current run id.
-- Tightened ledger validation so each matched gate, checkpoint, hook-event, dispatch, and wait-agent evidence entry must carry the active run identity and must not conflict with the active identity key.
-- Resolved the follow-up adversarial P1 finding where the controller-produced `blocked-no-agent-runtime` artifact could be rejected after bootstrap because the blocked artifact did not carry the active `run_id` / `session_id`.
-- Resolved the follow-up adversarial P1 finding where stale ledgers could validate through mixed identity aliases such as active `run_id` plus stale ledger `runId` / `sessionId`.
-- Canonicalized Stop-hook identity aliases (`run_id`/`runId`, `session_id`/`sessionId`, `trace_id`/`traceId`, `workflow_id`/`workflowId`) and made matched PASS ledger evidence require all active identity dimensions for the current run.
-- Resolved the final adversarial P1 finding where a PASS artifact could carry stale `run_id` / `session_id` and current `runId` / `sessionId` in the same canonical identity dimensions and still validate.
-- Resolved the final adversarial P1 finding where matched ledger proof entries could carry stale and current identity aliases in the same object and avoid a precise `current_run_identity` block.
-- Tightened Stop-hook identity comparison so every collected value in an active canonical identity dimension must match the active run, not merely one value in the set.
-- Added precise identity-conflict reporting for matched gate, checkpoint, hook-event, dispatch, and wait-agent ledger proof entries.
-- Resolved the final adversarial P1 finding where a post-final signed sentinel without `run_id` / `session_id` / `workflow_id` could leave PASS artifact validation in fail-open mode when `session.json` was absent.
-- Updated the post-final validator checkpoint so it preserves prior execution identity fields (`session_id`, `run_id`, `workflow_id`, `created_by_runtime`, and `runtime_mode`) when writing `post_final_validator`.
-- Hardened the Stop hook so PASS artifacts fail with `current_run_identity` when the active sentinel/session state has no identity, while structured BLOCKED artifacts without identity remain valid for honest `blocked-no-agent-runtime` closeout.
-- Resolved the follow-up adversarial P1 finding where a stale signed sentinel with old strong identity could override a newer `session.json` strong identity and validate old PASS evidence.
-- Hardened active-run identity resolution so conflicting strong sentinel/session identities fail closed with `current_run_identity`, while agreeing identities are merged and honored.
-- Resolved the follow-up adversarial P2 finding where Eval Gate HMAC behavior claims could pass with test-only telemetry evidence; HMAC claims now require runtime or hook implementation evidence.
-- Resolved the follow-up adversarial P1 finding where no-overlap strong sentinel/session identities could be spliced into a composite PASS run by combining a current signed `run_id` with a stale `session_id`.
-- Hardened active-run identity resolution so sentinel and session strong identities must share at least one canonical strong key before they can be merged; otherwise the Stop hook fails closed with `current_run_identity`.
-- Resolved the follow-up adversarial P1 finding where a nested `session.json` identity such as `governanceArtifact.run_id` could make a stale top-level `session_id` look current and validate a composite PASS run.
-- Split active-run identity derivation from artifact/ledger identity scanning: active sentinel/session identity now comes only from trusted direct fields, while artifacts and ledgers remain recursively inspected for conflicts.
-- Hardened sentinel/session strong identity merging so both sources must expose the same canonical strong identity dimensions with matching values before the Stop hook can merge them.
-- Resolved the follow-up adversarial P1 finding where later controller phase saves could drop `run_id`, leaving active state with only `sessionId` and allowing stale PASS evidence to validate by session alone.
-- Hardened artifact and ledger identity comparison so PASS evidence carrying unproven primary strong identity dimensions (`run` or `session`) fails closed with `current_run_identity`.
-- Updated `src/state/session-store.ts` to preserve `run_id` and `runtime_mode` across later phase saves that omit those fields.
-- Updated controller sentinel checkpoint saves to preserve direct `session_id`, `run_id`, `workflow_id`, `created_by_runtime`, and `runtime_mode` from prior sentinel state when later checkpoints omit them.
-- Resolved the final adversarial P2 finding where active state and stale PASS evidence could validate through only a generic weak `workflow_id` such as `full`.
-- Hardened the Stop hook so PASS artifacts require a primary strong active identity (`run_id`/`runId` or `session_id`/`sessionId`); `workflow_id` remains auxiliary and is not sufficient for PASS.
-- Resolved the follow-up adversarial P2 finding where structured `BLOCKED` artifacts from file, payload, or `session.json` could validate a weak active run through only a generic `workflow_id` such as `full`.
-- Hardened terminal artifact identity matching so any active weak-only context fails closed for governed terminal artifacts; `BLOCKED` artifacts without active identity remain valid for honest `blocked-no-agent-runtime` closeout.
-- Resolved the follow-up adversarial P2 finding where stale file- or session-sourced `BLOCKED` artifacts with matching old strong identity could be replayed as a new terminal closeout.
-- Hardened the structured `BLOCKED` shortcut so only payload-sourced artifacts from the current Stop payload can close without PASS validation; file/session artifacts now require fresher proof and fail closed with `current_run_identity`.
-- Resolved the follow-up adversarial P2 finding where an honest payload-sourced `blocked-no-agent-runtime` artifact could be rejected because historical transcript text contained an older success verdict such as `FINAL_REVIEW: GO`.
-- Split current Stop payload text from transcript-wide text for the structured `BLOCKED` shortcut: transcript history still detects unstructured completion attempts, but it no longer overrides a current payload-sourced `BLOCKED` artifact.
-- Resolved the final adversarial P1 finding where signed sentinel state plus unsigned local gate/protocol/hook/checkpoint ledgers could fabricate PASS evidence for the current run.
-- Added per-entry HMAC signing for runtime ledger evidence and hardened the Stop hook so matched PASS ledger proof must carry valid `pipeline-ledger-entry` integrity.
-- Resolved the final adversarial P2 finding where explicit front-door closeout text such as `ADVERSARIAL_REVIEW: CLEAN` was not recognized as a terminal completion attempt without a governance artifact.
-- Resolved the follow-up adversarial P1 finding where signed dispatch/wait ledgers could target ordinary workers while satisfying `primary_reviewer` / `adversarial_reviewer` through incidental string matches.
-- Hardened Stop-hook and TypeScript runtime ledger validation so dispatch/wait evidence must match typed `payload.dispatchId`, `payload.targetName`, and `payload.targetKind="agent"` for the artifact role.
-- Resolved the follow-up adversarial P1 finding where the TypeScript runtime `validatePipelineCompletionEvidence` path still accepted unsigned runtime ledgers even after the Stop hook required HMAC integrity.
-- Shared ledger integrity verification with `src/governance/ledger-evidence.ts`, so gate, checkpoint, hook-event, dispatch, and wait-agent evidence must carry valid `pipeline-ledger-entry` HMAC before counting toward runtime PASS.
-- Resolved the follow-up adversarial P1 finding where the TypeScript runtime could accept HMAC-valid ledgers from an older `run_id` / `session_id` to validate a newer PASS artifact.
-- Hardened `src/governance/ledger-evidence.ts` so matched signed ledger evidence must carry identity compatible with the final artifact's direct strong identity (`run`, `session`, or `trace`), with `workflow` treated as weak/auxiliary.
-- Resolved the follow-up adversarial P1 finding where a stale signed PASS artifact plus stale signed ledgers could still validate against newer active sentinel/session state in the TypeScript runtime path.
-- Hardened `src/index.ts` so `validatePipelineCompletionEvidence` derives active identity from direct sentinel/session fields and reports `current_run_identity` when a PASS artifact does not match the active strong identity.
-- Resolved the independent worker finding where malformed HMAC signatures with a valid hex prefix and invalid suffix could be accepted after `Buffer.from(..., "hex")` truncation.
-- Hardened TypeScript and CJS ledger/sentinel HMAC verification so signatures must match the exact SHA-256 hex format before timing-safe comparison.
-- Resolved the independent worker finding where explicit `PIPELINE_STATUS: PASS` closeout text through the pipeline front door was treated as advisory instead of requiring a `PipelineGovernanceArtifact`.
-- Resolved the final adversarial P1 finding where the TypeScript runtime accepted `PIPELINE_STATUS: PASS` text without a governance artifact even though the Stop hook blocked it.
-- Resolved the final adversarial P1 finding where the TypeScript runtime accepted stale signed PASS evidence when active runtime state proved only `sessionId`.
-- Resolved the follow-up adversarial P1 finding where the TypeScript runtime trusted sentinel identity even when `PIPELINE_SENTINEL_HMAC_KEY` required signed sentinel integrity.
-- Resolved the follow-up adversarial P2 finding where `closeout.finalize` emitted terminal `Final decision: GO` text without returning or validating a `PipelineGovernanceArtifact`.
+- Fixed the Codex CLI process runtime so `codex-cli` / `codex-cli-process` use a safe real-agent runtime by default instead of dangerous bypass flags.
+- Kept dangerous bypass behavior behind explicit `codex-cli-dev-bypass` / `codex-cli-process-dev-bypass` aliases, which remain blocked by `CAPABILITY_GATE`.
+- Added deterministic tests proving the safe runtime passes the capability gate and the explicit dev-bypass path remains blocked.
+- Preserved the prior deterministic workflow hardening changes in hooks, controller, gate log, ledger evidence, final validation, batch-loop evidence, and completion enforcement.
+- Rebuilt `dist/**` from source.
+- Refreshed the installed Codex cache at `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
+- Refreshed the marketplace-backed global plugin at `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`.
+- Verified the global marketplace entry still points to `./plugins/pipeline-orchestrator-for-codex` with `INSTALLED_BY_DEFAULT`.
+- Created filesystem backups before replacement:
+  - `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1-backup-sync-*`
+  - `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex-backup-sync-*`
+
+## Batch review and fix loop
+
+- Batch 1, source/runtime: adversarial review found the default process adapter was self-identifying as `dev-bypass`; fix applied and focused runtime/gate tests passed.
+- Batch 2, host config and executable resolution: adversarial review found broken Codex TOML and Windows wrapper risk; TOML was repaired and the adapter now resolves the real `codex.exe`.
+- Batch 3, cache/global adoption: adversarial review found stale global plugin content and missing runtime dependencies in one installed copy; both install targets were rebuilt from the same package and dependencies were restored.
+- Batch 4, publication parity: package-file parity was checked across canonical repo, Codex cache, and marketplace-backed global plugin before moving to commit/push.
 
 ## What was not changed
 
-- I did not edit `dist/**` manually.
-- I did not modify existing dirty worktree changes outside the allowed write-scope.
-- I did not sync to VPS.
-- Hook trust in the live Codex host was not proven through `/hooks`; Eval Gate telemetry is manual evidence for this run.
-
-## Validation evidence collected
-
-- RED focused run before implementation:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts`
-  - Expected result observed: 3 failing tests for active sentinel blocked output without artifact, canonical six-capability BLOCKED artifact acceptance, and informational CI/CD pipeline explanation.
-- GREEN focused run after implementation:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts`
-  - PASS: 2 files, 30 tests.
-- Adversarial fix-loop focused run:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000`
-  - RED: one new partial-capability `BLOCKED` test failed before the fix.
-  - GREEN: PASS, 14 tests.
-- Post-fix focused regression:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - PASS: 2 files, 31 tests.
-- Final adversarial P2 fix-loop focused run:
-  - `npx vitest run tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - RED: mixed informational-plus-audit prompt and empty-prompt/operational-arguments payload failed before the fix.
-  - GREEN: PASS, 19 tests.
-- Final focused regression after P2 fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - PASS: 2 files, 33 tests.
-- Portuguese audit imperative fix-loop:
-  - `npx vitest run tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - RED: `Verifique meu workflow atual`, `Investigue meu workflow atual`, and `Revise meu workflow atual` failed before the matcher fix.
-  - GREEN: PASS, 22 tests.
-- Final focused regression after Portuguese imperative fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - PASS: 2 files, 36 tests.
-- Final adversarial secondary-field/accent/P3 fix-loop:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - PASS: 2 files, 44 tests.
-- Nominal PT-BR operational form fix-loop:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - PASS: 2 files, 49 tests.
-- English operational and terminal Stop-language fix-loop:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - PASS: 2 files, 66 tests.
-- PT-BR `-a` and terminal separator fix-loop:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - RED: two existing PT-BR imperative regressions (`Verifique`, `Cheque`) exposed by the stem rewrite, then fixed.
-  - GREEN: PASS: 2 files, 86 tests.
-- Natural terminal language and debug/examine fix-loop:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - PASS: 2 files, 93 tests.
-- Active-pipeline closeout and residual operational synonym fix-loop:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - PASS: 2 files, 100 tests.
-- English "look" variants and blocked runtime consistency fix-loop:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - RED: 5 failing tests reproduced the adversarial findings before the runtime fix.
-  - GREEN: PASS: 2 files, 105 tests.
-- JSON non-object payload shape fix-loop:
-  - Adversarial reproduction showed valid JSON array/scalar payloads bypassing as empty trivial prompts.
-  - `npx vitest run tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 1 file, 72 tests.
-- Real-agent structured-final-state and `look over` fix-loop:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - RED: 4 failing tests reproduced the adversarial findings before the runtime fix.
-  - GREEN: PASS: 2 files, 111 tests.
-- Stale blocked artifact and residual look variant fix-loop:
-  - Adversarial reproduction showed `FINAL_REVIEW: GO` could be accepted with only a stale `BLOCKED` artifact file, and `Look the current workflow over` / `Look through the current workflow` bypassed.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 2 files, 114 tests.
-- Terminal `APPROVED` stale blocked artifact fix-loop:
-  - Adversarial reproduction showed `VERDICT: APPROVED` could still be accepted with only a stale `BLOCKED` artifact file.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 2 files, 117 tests.
-- Terminal `CONDITIONAL` stale blocked artifact fix-loop:
-  - Adversarial reproduction showed `Final decision: CONDITIONAL` could still be accepted with only a stale `BLOCKED` artifact file.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 2 files, 120 tests.
-- Stale file-sourced `PASS` artifact fix-loop:
-  - Adversarial reproduction showed `FINAL_REVIEW: GO` could be accepted in a new active run using an old `pipeline-governance-artifact.json` plus old ledgers.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 2 files, 122 tests.
-- Sentinel-over-session identity fix-loop:
-  - Self-review found that `sentinel-state.json` with `workflow_id=new-run` plus stale `session.json` with `workflow_id=old-run` could still match old file-sourced evidence if both identities were treated equally.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 2 files, 123 tests.
-- Shared workflow-mode stale `PASS`, nested prompt envelope, and separatorless terminal closeout fix-loop:
-  - Adversarial reproduction showed stale old-run evidence could validate a new run when both used `workflow_id=full`, nested JSON prompt envelopes could bypass `pipeline-required`, and inactive phase-3 sessions could emit `Final review GO` without artifact enforcement.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 2 files, 132 tests.
-- Re-review/probe operational prompt fix-loop:
-  - Adversarial reproduction showed `Reavalie o workflow atual`, `Reanalise o workflow atual`, `Reaudit the current workflow`, `Reevaluate the current workflow`, `Probe the current workflow`, and `Faça uma probe do workflow atual` bypassed `pipeline-required`.
-  - `npx vitest run tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 1 file, 90 tests.
-- Adjective-bearing look/review prompt fix-loop:
-  - Adversarial reproduction showed `Give the current workflow a quick look` bypassed `pipeline-required`, and related review idioms were added as regression cases.
-  - `npx vitest run tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 1 file, 94 tests.
-- Payload PASS identity, weak sentinel identity, expanded inactive closeout, and natural review idiom fix-loop:
-  - Adversarial reproduction showed stale `PASS` artifacts in Stop payloads, weak sentinel `workflow_id=full`, final adversarial/report closeout text, and once-over/walkthrough/pente-fino prompt idioms could bypass enforcement.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts --testTimeout 30000`
-  - GREEN: PASS: 2 files, 157 tests.
-- Type check:
-  - `npm run lint:types`
-  - PASS.
-- Build:
-  - `npm run build`
-  - PASS.
-- Full Vitest suite:
-  - `npm test -- --testTimeout 30000`
-  - PASS after the original batch, after the partial-capability fix loop, after the mixed-prompt P2 fix loop, after the Portuguese imperative P2 fix loop, and after the secondary-field/accent/P3 fix loop.
-  - A parallel full-suite rerun after the nominal PT-BR fix hit two integration-test-local 10s timeouts; both tests passed isolated, and the complete suite passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the English operational and terminal Stop-language fix also passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the PT-BR `-a` and terminal separator fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the natural terminal language and debug/examine fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the active-pipeline closeout and residual operational synonym fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the English "look" variants and blocked runtime consistency fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the JSON non-object payload shape fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the real-agent structured-final-state and `look over` fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the stale blocked artifact and residual look variant fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the terminal `APPROVED` stale blocked artifact fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the terminal `CONDITIONAL` stale blocked artifact fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the stale file-sourced `PASS` artifact fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the sentinel-over-session identity fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the shared workflow-mode stale `PASS`, nested prompt envelope, and separatorless terminal closeout fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the re-review/probe operational prompt fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the adjective-bearing look/review prompt fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Final rerun after the payload PASS identity, weak sentinel identity, expanded inactive closeout, and natural review idiom fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Focused RED/GREEN after the stale `BLOCKED` artifact identity fix reproduced 3 failures, then passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` (61 tests).
-  - Final rerun after the stale `BLOCKED` artifact identity fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Focused RED/GREEN after the partial identity and JSON closeout fix reproduced 3 failures, then passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` (64 tests).
-  - Final rerun after the partial identity and JSON closeout fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Focused regression after the front-door and fabricated-ledger fix passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 30000` (69 tests).
-  - Final rerun after the front-door, sentinel HMAC, and fabricated-ledger fix passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the stale-ledger identity fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000`
-  - RED: the new stale old-run ledger plus unrelated current-run noise case returned `continue:true` before the fix.
-  - GREEN: PASS, 69 tests.
-  - Focused regression passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 30000` (171 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Eval Gate Python rerun passed with `python -m unittest evals.tests.test_eval_gate evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_hook_trust_docs` (62 tests).
-  - Eval runner rerun passed with `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
-- Focused RED/GREEN after the blocked-artifact identity and alias-normalization fixes:
-  - `npx vitest run tests/unit/governance/pipeline-contract.test.ts --testTimeout 30000`
-  - RED: the blocked artifact helper dropped provided `run_id`, `session_id`, and `workflow_id`.
-  - GREEN: PASS, 13 tests.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000`
-  - RED: stale ledgers annotated with `runId=current-run` and `sessionId=old-session` were accepted before alias canonicalization.
-  - GREEN: PASS, 70 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts --testTimeout 30000` (204 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Eval Gate Python rerun passed with `python -m unittest evals.tests.test_eval_gate evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_hook_trust_docs` (62 tests).
-  - Eval runner rerun passed with `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
-- Focused RED/GREEN after the alias-contaminated artifact and matched-ledger fixes:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000`
-  - RED: the new PASS-artifact and matched-ledger alias-contamination cases returned `continue:true` before the fix.
-  - GREEN: PASS, 72 tests after requiring every canonical identity value to match the active run and reporting matched-ledger identity conflicts as `current_run_identity`.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts --testTimeout 30000` (206 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Eval Gate Python rerun passed with `python -m unittest evals.tests.test_eval_gate evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_hook_trust_docs` (62 tests).
-- Focused RED/GREEN after the post-final sentinel identity fail-open fix:
-  - `npx vitest run tests/unit/validation/post-final-validator-checkpoint.test.ts tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000`
-  - RED: the post-final validator dropped prior execution identity, and a signed sentinel without active identity allowed a PASS artifact plus ledgers to return `continue:true`.
-  - GREEN: PASS, 97 tests after preserving identity in `recordPostFinalValidatorCheckpoint` and making PASS artifacts fail closed when no active identity exists.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (231 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Eval Gate Python rerun passed with `python -m unittest evals.tests.test_eval_gate evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_hook_trust_docs` (62 tests).
-- Focused RED/GREEN after the sentinel/session conflict and HMAC test-only evidence fixes:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000`
-  - RED: the stale signed sentinel versus newer strong session identity case returned `continue:true` before the fix.
-  - GREEN: PASS, 74 tests after conflicting strong active-run identities began failing closed with `current_run_identity`.
-  - `python -m unittest evals.tests.test_eval_gate.EvalGateRunnerTests.test_report_hmac_claim_rejects_test_only_evidence evals.tests.test_eval_gate.EvalGateRunnerTests.test_report_hmac_claim_accepts_sentinel_and_stop_hook_evidence`
-  - RED: the test-only HMAC telemetry case passed before the Eval Gate evidence rule was tightened.
-  - GREEN: PASS, 2 tests after HMAC claims required runtime or hook implementation surfaces.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (232 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Eval Gate Python rerun passed with `python -m unittest evals.tests.test_eval_gate evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_hook_trust_docs` (63 tests).
-- Focused RED/GREEN after the no-overlap sentinel/session composite identity fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "no-overlap strong sentinel/session" --testTimeout 30000`
-  - RED: the new no-overlap strong identity case returned `continue:true` before the fix.
-  - GREEN: PASS, 1 targeted test after no-overlap strong sentinel/session identities began failing closed with `current_run_identity`.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` PASS, 75 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (233 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the nested session identity splice fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "nested session identity" --testTimeout 30000`
-  - RED: the nested `session.json` identity case returned `continue:true` before the fix.
-  - GREEN: PASS, 1 targeted test after active-run identity derivation stopped recursively scanning nested session objects.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` PASS, 76 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (234 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the partial active session-only identity fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "active state only retained sessionId" --testTimeout 30000`
-  - RED: the partial active identity case returned `continue:true` before the fix.
-  - GREEN: PASS, 1 targeted test after PASS evidence with unproven `run`/`session` dimensions began failing closed with `current_run_identity`.
-  - `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` PASS, 80 tests.
-  - `npm run lint:types` initially caught one local type annotation issue in `src/state/session-store.ts`; after the type fix it passed.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (238 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the weak workflow-only PASS identity fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "generic workflow_id" --testTimeout 30000`
-  - RED: the new weak `workflow_id=full` PASS case returned `continue:true` before the fix.
-  - GREEN: PASS, 1 targeted test after PASS artifacts began requiring a primary strong active identity.
-  - `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` PASS, 81 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (239 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the weak workflow-only `BLOCKED` identity fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "generic workflow_id links it" --testTimeout 30000`
-  - RED: three new file-, payload-, and session-sourced `BLOCKED` cases returned `continue:true` before the fix.
-  - GREEN: PASS, 3 targeted tests after weak-only active contexts began failing closed for terminal governance artifacts.
-  - `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` PASS, 84 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (242 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the file/session `BLOCKED` replay fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "replayed .*BLOCKED" --testTimeout 30000`
-  - RED: the new file- and session-sourced replay cases returned `continue:true` before the fix.
-  - GREEN: PASS, 2 targeted tests after non-payload structured `BLOCKED` artifacts began failing closed with `current_run_identity`.
-  - `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` PASS, 86 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (244 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the transcript-history `BLOCKED` false-block fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "older success verdict" --testTimeout 30000`
-  - RED: the current payload-sourced `BLOCKED` artifact was rejected when `transcript_path` contained historical `FINAL_REVIEW: GO`.
-  - GREEN: PASS, 1 targeted test after the `BLOCKED` shortcut began checking only current Stop payload text for success claims.
-  - `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` PASS, 87 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (245 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the signed-ledger and adversarial-review alias fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "unsigned local ledgers" --testTimeout 30000`
-  - RED: the unsigned-ledger case returned `continue:true` before ledger HMAC verification.
-  - GREEN: PASS, 1 targeted test after matched ledger proof began requiring valid per-entry HMAC integrity.
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "adversarial review clean" --testTimeout 30000`
-  - RED: `ADVERSARIAL_REVIEW: CLEAN` returned `continue:true` before the closeout detector recognized the alias.
-  - GREEN: PASS, 1 targeted test after the alias was added.
-  - `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` PASS, 89 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (247 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the typed dispatch/wait and runtime unsigned-ledger fix:
-  - `npx vitest run tests/unit/hooks/completion-checklist.test.ts --testNamePattern "required reviewer role" --testTimeout 30000`
-  - RED: signed protocol events targeting ordinary workers returned `continue:true` before typed role matching.
-  - GREEN: PASS, 1 targeted test after dispatch/wait proof began requiring matching `payload.dispatchId`, `payload.targetName`, and `payload.targetKind`.
-  - `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts --testNamePattern "runtime ledgers are unsigned|different agent role" --testTimeout 30000`
-  - RED: signed wrong-role runtime ledgers returned approved before typed role matching.
-  - GREEN: PASS, 2 targeted tests after runtime ledger validation required HMAC and typed agent proof.
-  - `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts tests/unit/hooks/completion-checklist.test.ts --testTimeout 30000` PASS, 99 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (260 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the stale signed runtime-ledger identity fix:
-  - `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts --testNamePattern "older run identity" --testTimeout 30000`
-  - RED: HMAC-valid ledgers with `run_id=old-run` / `session_id=old-session` approved a PASS artifact declaring `current-run/current-session`.
-  - GREEN: PASS, 1 targeted test after runtime ledger validation began requiring identity compatible with the final artifact.
-  - `npm run lint:types` PASS.
-  - `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts --testTimeout 30000` PASS, 13 tests.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (261 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused RED/GREEN after the stale signed artifact versus active runtime-state fix:
-  - `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts --testNamePattern "stale signed artifact" --testTimeout 30000`
-  - RED: a stale signed PASS artifact plus stale signed ledgers approved even though active sentinel/session state carried a newer run identity.
-  - GREEN: PASS, 1 targeted test after the TypeScript runtime began checking PASS artifact identity against current active sentinel/session state.
-  - `npm run lint:types` PASS.
-  - `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts --testTimeout 30000` PASS, 14 tests.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000` (262 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Focused GREEN after independent worker fixes for malformed HMAC and `PIPELINE_STATUS: PASS`:
-  - Independent worker RED evidence: `PIPELINE_STATUS: PASS` returned `continue:true` before the Stop-hook closeout detector was widened.
-  - Independent worker RED evidence: Node hex decoding accepted a valid HMAC prefix with invalid suffix before exact hex-format checks were added.
-  - `npx vitest run tests/unit/security/ledger-integrity.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/sentinel-hook.test.ts tests/unit/cli/pipeline-cli.test.ts --testTimeout 30000 --fileParallelism=false` PASS, 150 tests.
-  - `node -e "... require('./hooks/ledger-integrity.cjs') ..."` PASS: malformed CJS ledger HMAC rejected.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/security/ledger-integrity.test.ts tests/unit/runtime/pipeline-completion-enforcement.test.ts tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/hooks/sentinel-hook.test.ts tests/unit/cli/pipeline-cli.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000 --fileParallelism=false` (325 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - Eval Gate Python rerun passed with `python -m unittest evals.tests.test_eval_gate evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_hook_trust_docs` (63 tests).
-  - Manual telemetry was refreshed with `python .codex/hooks/post_tool_use_telemetry.py`.
-  - Eval runner rerun passed with `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
-- Focused RED/GREEN after the TypeScript runtime closeout and partial-identity fixes:
-  - `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts --testNamePattern "PIPELINE_STATUS PASS|session identity" --testTimeout 30000 --fileParallelism=false`
-  - RED: both new runtime cases returned `status: "approved"` before the fix.
-  - GREEN: PASS, 2 targeted tests after `src/index.ts` recognized terminal closeout text and rejected unproven primary identity dimensions.
-  - `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts --testTimeout 30000 --fileParallelism=false` PASS, 16 tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/security/ledger-integrity.test.ts tests/unit/runtime/pipeline-completion-enforcement.test.ts tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/hooks/sentinel-hook.test.ts tests/unit/cli/pipeline-cli.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000 --fileParallelism=false` (327 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-  - `git diff --check` PASS, with Windows LF/CRLF warnings only.
-  - Eval Gate Python rerun passed with `python -m unittest evals.tests.test_eval_gate evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_hook_trust_docs` (63 tests).
-  - Manual telemetry was refreshed with `python .codex/hooks/post_tool_use_telemetry.py`.
-  - Eval runner rerun passed with `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
-- Focused GREEN after the runtime sentinel-HMAC and closeout text fixes:
-  - `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts --testNamePattern "sentinel HMAC" --testTimeout 30000 --fileParallelism=false` PASS, 1 targeted test.
-  - `npx vitest run tests/unit/closeout/render-closeout.test.ts tests/integration/closeout/closeout-confirm.test.ts --testNamePattern "render|final adversarial review" --testTimeout 30000 --fileParallelism=false` PASS, 2 targeted tests.
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Focused regression passed with `npx vitest run tests/unit/security/ledger-integrity.test.ts tests/unit/runtime/pipeline-completion-enforcement.test.ts tests/unit/closeout/render-closeout.test.ts tests/integration/closeout/closeout-confirm.test.ts tests/unit/state/session-store.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/force-pipeline-agents.test.ts tests/unit/hooks/sentinel-hook.test.ts tests/unit/cli/pipeline-cli.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/governance/pipeline-contract.test.ts tests/unit/controller/pipeline-controller.test.ts tests/unit/validation/post-final-validator-checkpoint.test.ts --testTimeout 30000 --fileParallelism=false` (348 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Release hardening for `0.5.1` after the final adversarial P1:
-  - P1 fixed by sharing sentinel HMAC key resolution across TypeScript runtime, CLI, Stop hook, PreToolUse sentinel hook, sentinel writer, and CJS/TS integrity helpers.
-  - Sentinel-specific `PIPELINE_SENTINEL_HMAC_KEY` still takes precedence; when absent, sentinel integrity falls back to `PIPELINE_INTEGRITY_HMAC_KEY`, matching ledger integrity.
-  - Context files updated: `AGENTS.md`, `CLAUDE.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, README, changelog, manifest, and marketplace metadata.
-  - Git ignore rules were tightened so generated local archives stay ignored while the new required build outputs `dist/src/security/ledger-integrity.js` and `dist/src/sentinel/sentinel-state.js` are committed with their importing runtime files.
-  - Focused regression passed with `npx vitest run tests/unit/runtime/pipeline-completion-enforcement.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/sentinel-hook.test.ts tests/unit/cli/pipeline-cli.test.ts --testNamePattern "shared integrity|shared-key|shared ledger|allows PIPELINE COMPLETE|sentinel HMAC|malformed sentinel|unsigned sentinel|state is signed" --testTimeout 30000 --fileParallelism=false` (13 targeted tests).
-  - Broader focused regression passed with `npx vitest run tests/unit/version-consistency.test.ts tests/unit/runtime/pipeline-completion-enforcement.test.ts tests/unit/sentinel/sentinel-state.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/hooks/sentinel-hook.test.ts tests/unit/cli/pipeline-cli.test.ts --testTimeout 30000 --fileParallelism=false` (183 tests).
-  - `npm run lint:types` PASS.
-  - `npm run build` PASS.
-  - Initial full-suite rerun found one stale version assertion in `tests/unit/observability/execution-identity.test.ts`; it was updated from `0.5.0` to `0.5.1`.
-  - Focused version regression passed with `npx vitest run tests/unit/observability/execution-identity.test.ts tests/unit/version-consistency.test.ts --testTimeout 30000 --fileParallelism=false` (13 tests).
-  - Final full-suite rerun passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Eval Gate Python tests after the HMAC evidence-rule update:
-  - `python -m unittest evals.tests.test_eval_gate evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_hook_trust_docs`
-  - PASS: 62 tests.
-  - Final full-suite rerun after the Eval Gate HMAC evidence-rule update passed with `npm test -- --testTimeout 30000 --fileParallelism=false`.
-- Eval Gate Python tests:
-  - `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`
-  - PASS: 63 tests.
-- Global marketplace/cache publication smoke:
-  - `npm pack --pack-destination <temp>` produced `pipeline-orchestrator-for-codex-0.5.1.tgz`.
-  - The versioned Codex cache was refreshed at `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
-  - The personal marketplace source path now resolves to `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex` with `INSTALLED_BY_DEFAULT`.
-  - A clean temp-directory smoke imported `dist/src/cli/pipeline-cli.js` from the cache, loaded `dist/src/security/ledger-integrity.js`, resolved the shared HMAC key, and verified the cached `skills/pipeline/SKILL.md` and `hooks/completion-checklist.cjs` exist.
-- Eval runner:
-  - `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`
-- Initial final run failed while this report still said the Eval result was pending.
-- Manual telemetry was refreshed with `python .codex/hooks/post_tool_use_telemetry.py`.
-- Scope review justifications were added for release/publication files outside the default eval prefixes: `.agents/plugins/marketplace.json`, `CHANGELOG.md`, `CLAUDE.md`, `package.json`, and `package-lock.json`.
-- Final rerun after this report update and adversarial fix loop: PASS.
+- No new dependency was added.
+- No prompt-only recommendation was used as an enforcement mechanism.
+- No remote/VPS installation was altered.
+- The global marketplace registry schema was not rewritten because its existing entry was already correct and installed by default.
+- Hook trust in the active Codex UI was not asserted; telemetry is treated as manual/local unless `/hooks` proves trust.
 
 ## Eval result
 
-EVAL RESULT: PASS from `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` after manual telemetry refresh.
+EVAL RESULT: PASS from `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
+
+Direct publication evidence:
+
+- `npm pack --dry-run --json` identified 1111 package files.
+- Package parity passed for all 1111 files across:
+  - `D:\Pipeline Orchestrator for Codex`
+  - `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`
+  - `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`
+- External-cwd smoke passed for the Codex cache CLI: `CAPABILITY_GATE: PASS`.
+- External-cwd smoke passed for the marketplace-backed global plugin CLI: `CAPABILITY_GATE: PASS`.
+- Global marketplace entry passed: `pipeline-orchestrator-for-codex`, path `./plugins/pipeline-orchestrator-for-codex`, policy `INSTALLED_BY_DEFAULT`.
+
+The local Codex installation now has the same packaged plugin files in the canonical repo, the installed Codex cache, and the marketplace-backed global plugin directory.
 
 ## Remaining risks
 
-- Local repo tests passed, but installed cache, global Codex availability, hook trust in the host, and VPS/runtime adoption were not verified.
-- The worktree had pre-existing changes outside this batch; they were preserved.
+- Files excluded by `.npmignore`, such as `evals/telemetry/**`, are intentionally not part of package parity.
+- `node_modules/**` is operational dependency state, not package source; it was restored/copied for local runtime smoke but is not counted as canonical package source.
+- The active Codex app may require a restart or plugin reload before UI-discovered skills reflect the refreshed global plugin files.
+- Hook activation still depends on `/hooks` trust in the Codex UI.
 
 ## Next safest step
 
-Verify cache/global/VPS adoption separately if publication is desired.
+Commit and push the validated source changes, then rerun the public slash command from a different project to confirm the Codex UI has reloaded the updated global plugin surface.

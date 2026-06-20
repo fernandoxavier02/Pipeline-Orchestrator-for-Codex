@@ -22,6 +22,9 @@ const { recordHookEvent } = require('./hook-events.cjs');
 
 const PIPELINE_DIR = path.join(process.cwd(), '.codex', 'pipeline');
 const SESSION_LOCK_PATH = path.join(PIPELINE_DIR, 'session-lock.json');
+const WORKFLOW_INTENT_PATH = path.join(PIPELINE_DIR, 'workflow-intent.json');
+const REQUIRED_FIRST_ACTIONS_PATH = path.join(PIPELINE_DIR, 'required-first-actions.json');
+const SENTINEL_PATH = path.join(PIPELINE_DIR, 'sentinel-state.json');
 const SESSIONS_DIR = path.join(PIPELINE_DIR, 'sessions');
 const EXEC_WINDOW_SUFFIX = '.exec-window';
 const FIDELITY_REPORTS_DIR = path.join(PIPELINE_DIR, 'fidelity-reports');
@@ -50,6 +53,38 @@ function sweepSessionLock(now) {
   if (isLockExpired(lock, now)) {
     try {
       fs.unlinkSync(SESSION_LOCK_PATH);
+      return { removed: 1, skipped: 0 };
+    } catch {
+      return { removed: 0, skipped: 1 };
+    }
+  }
+  return { removed: 0, skipped: 1 };
+}
+
+function sweepExpiringStateFile(filePath, now) {
+  if (!fs.existsSync(filePath)) {
+    return { removed: 0, skipped: 0 };
+  }
+  const state = readJsonSafe(filePath);
+  if (state && typeof state.expires_at === 'number' && state.expires_at <= now) {
+    try {
+      fs.unlinkSync(filePath);
+      return { removed: 1, skipped: 0 };
+    } catch {
+      return { removed: 0, skipped: 1 };
+    }
+  }
+  return { removed: 0, skipped: 1 };
+}
+
+function sweepExpiredSentinel(now) {
+  if (!fs.existsSync(SENTINEL_PATH)) {
+    return { removed: 0, skipped: 0 };
+  }
+  const sentinel = readJsonSafe(SENTINEL_PATH);
+  if (sentinel && typeof sentinel.expires_at === 'number' && sentinel.expires_at <= now) {
+    try {
+      fs.unlinkSync(SENTINEL_PATH);
       return { removed: 1, skipped: 0 };
     } catch {
       return { removed: 0, skipped: 1 };
@@ -132,7 +167,15 @@ function ensureSafeReportDir() {
   fs.mkdirSync(FIDELITY_REPORTS_DIR, { recursive: false });
 }
 
-function writeStopFidelityReport(now, lockResult, windowResult, payload = {}) {
+function writeStopFidelityReport(
+  now,
+  lockResult,
+  workflowIntentResult,
+  requiredFirstActionsResult,
+  sentinelResult,
+  windowResult,
+  payload = {},
+) {
   const runId = resolveRunId(payload);
   ensureSafeReportDir();
   const report = {
@@ -144,6 +187,12 @@ function writeStopFidelityReport(now, lockResult, windowResult, payload = {}) {
     cleanup: {
       session_lock_removed: lockResult.removed,
       session_lock_skipped: lockResult.skipped,
+      workflow_intent_removed: workflowIntentResult.removed,
+      workflow_intent_skipped: workflowIntentResult.skipped,
+      required_first_actions_removed: requiredFirstActionsResult.removed,
+      required_first_actions_skipped: requiredFirstActionsResult.skipped,
+      sentinel_removed: sentinelResult.removed,
+      sentinel_skipped: sentinelResult.skipped,
       exec_windows_removed: windowResult.removed,
       exec_windows_skipped: windowResult.skipped,
       exec_windows_total: windowResult.total,
@@ -169,14 +218,25 @@ function handle(rawPayload = '') {
   const now = nowEpochSeconds();
   const payload = parseHookPayload(rawPayload);
   const lockResult = sweepSessionLock(now);
+  const workflowIntentResult = sweepExpiringStateFile(WORKFLOW_INTENT_PATH, now);
+  const requiredFirstActionsResult = sweepExpiringStateFile(REQUIRED_FIRST_ACTIONS_PATH, now);
+  const sentinelResult = sweepExpiredSentinel(now);
   const windowResult = sweepExecWindows(now);
-  const fidelityResult = writeStopFidelityReport(now, lockResult, windowResult, payload);
+  const fidelityResult = writeStopFidelityReport(
+    now,
+    lockResult,
+    workflowIntentResult,
+    requiredFirstActionsResult,
+    sentinelResult,
+    windowResult,
+    payload,
+  );
 
   recordHookEvent({
     hook: 'session-cleanup',
     event: 'Stop',
     decision: 'cleanup',
-    reason: `lock removed=${lockResult.removed}, exec-windows removed=${windowResult.removed}/${windowResult.total}, fidelity-report created=${fidelityResult.created}`,
+    reason: `lock removed=${lockResult.removed}, workflow-intent removed=${workflowIntentResult.removed}, required-first-actions removed=${requiredFirstActionsResult.removed}, sentinel removed=${sentinelResult.removed}, exec-windows removed=${windowResult.removed}/${windowResult.total}, fidelity-report created=${fidelityResult.created}`,
   });
 
   emit({ continue: true });

@@ -60,6 +60,7 @@ describe("session store", () => {
       phase: "phase-0",
       decision: "block",
       decided_by: "controller",
+      provenance: { source: "controller" },
       timestamp: "2026-04-01T12:00:00.000Z",
       detail: "Missing reproduction steps",
       confidence_impact: 0,

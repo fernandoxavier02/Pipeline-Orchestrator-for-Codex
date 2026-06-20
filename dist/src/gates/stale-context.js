@@ -29,6 +29,7 @@ export function assessStaleContext(input) {
         phase: gate.phase,
         decision: sensitiveComplexDomain ? "block" : "skip",
         decided_by: inferDecidedBy({ source: "controller" }),
+        provenance: { source: "controller" },
         timestamp: now.toISOString(),
         detail: sensitiveComplexDomain
             ? "Stale context touches a sensitive complex domain and requires revalidation before resume"

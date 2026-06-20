@@ -66,6 +66,7 @@ describe("gate-log.list — crash-safe JSONL parsing (B10)", () => {
       phase: "phase-1",
       decision: "pass",
       decided_by: "controller",
+      provenance: { source: "controller" },
       timestamp: "2026-04-25T00:00:00.000Z",
       detail: "audit trail",
       confidence_impact: 0,

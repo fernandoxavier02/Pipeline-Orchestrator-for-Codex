@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -35,6 +35,14 @@ type TestAgentArtifact = {
   independent: boolean;
 };
 
+type TestBatchArtifact = {
+  name: string;
+  status: string;
+  checkpoint: { status: string; evidence_ref: string };
+  adversarial_review: { status: string; evidence_ref: string };
+  fix_loop: { status: string; evidence_ref: string; open_findings: number; attempts: number };
+};
+
 type TestGovernanceArtifact = Record<string, unknown> & {
   pipeline_requested: boolean;
   pipeline_valid: boolean;
@@ -46,6 +54,7 @@ type TestGovernanceArtifact = Record<string, unknown> & {
   gates: TestGateArtifact[];
   hooks: TestHookArtifact[];
   agents: TestAgentArtifact[];
+  batches: TestBatchArtifact[];
   manual_fallback_counts_as_pipeline: false;
   final_verdict: {
     status: string;
@@ -113,6 +122,20 @@ function signLedgerEntry(entry: Record<string, unknown>) {
   };
 }
 
+function signStateObject(state: Record<string, unknown>, scope: string) {
+  const unsignedState = { ...state };
+  delete unsignedState._integrity;
+  const signature = createHmac("sha256", TEST_HMAC_KEY).update(canonicalize(unsignedState)).digest("hex");
+  return {
+    ...unsignedState,
+    _integrity: {
+      algorithm: "hmac-sha256",
+      scope,
+      signature,
+    },
+  };
+}
+
 function corruptLedgerSignature(entry: Record<string, unknown>) {
   const integrity = entry._integrity && typeof entry._integrity === "object" && !Array.isArray(entry._integrity)
     ? entry._integrity as Record<string, unknown>
@@ -138,6 +161,59 @@ function writeActiveSentinel(cwd: string, overrides: Record<string, unknown> = {
   writeFileSync(
     join(stateDir, "sentinel-state.json"),
     JSON.stringify(signSentinel(state)),
+    "utf8",
+  );
+  return stateDir;
+}
+
+function writeActiveSessionLock(cwd: string, overrides: Record<string, unknown> = {}) {
+  const stateDir = join(cwd, ".codex", "pipeline");
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(
+    join(stateDir, "session-lock.json"),
+    JSON.stringify({
+      session_id: "active-session",
+      created_at: Math.floor(Date.now() / 1000) - 60,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      status: "active",
+      ...overrides,
+    }),
+    "utf8",
+  );
+  return stateDir;
+}
+
+function writeActiveWorkflowObligations(
+  cwd: string,
+  options: {
+    workflowId?: string;
+    requiredActions?: string[];
+    completedActions?: string[];
+  } = {},
+) {
+  const stateDir = join(cwd, ".codex", "pipeline");
+  mkdirSync(stateDir, { recursive: true });
+  const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+  writeFileSync(
+    join(stateDir, "workflow-intent.json"),
+    JSON.stringify(signStateObject({
+      status: "active",
+      plugin: "pipeline-orchestrator-for-codex",
+      workflow_id: options.workflowId ?? "test-workflow",
+      expires_at: expiresAt,
+    }, "pipeline-workflow-intent")),
+    "utf8",
+  );
+  writeFileSync(
+    join(stateDir, "required-first-actions.json"),
+    JSON.stringify(signStateObject({
+      status: "active",
+      plugin: "pipeline-orchestrator-for-codex",
+      workflow_id: options.workflowId ?? "test-workflow",
+      required_actions: options.requiredActions ?? [],
+      completed_actions: options.completedActions ?? [],
+      expires_at: expiresAt,
+    }, "pipeline-required-first-actions")),
     "utf8",
   );
   return stateDir;
@@ -176,6 +252,26 @@ function validArtifact(): TestGovernanceArtifact {
         status: "PASS",
         dispatch_ref: "dispatch:adversarial",
         independent: true,
+      },
+    ],
+    batches: [
+      {
+        name: "batch-1",
+        status: "PASS",
+        checkpoint: {
+          status: "PASS",
+          evidence_ref: "batch:batch-1:checkpoint",
+        },
+        adversarial_review: {
+          status: "PASS",
+          evidence_ref: "batch:batch-1:adversarial_review",
+        },
+        fix_loop: {
+          status: "PASS",
+          evidence_ref: "batch:batch-1:fix_loop",
+          open_findings: 0,
+          attempts: 1,
+        },
       },
     ],
     manual_fallback_counts_as_pipeline: false,
@@ -240,6 +336,7 @@ function writeLedgerProof(
   options: {
     hookEvents?: boolean;
     waitEvents?: boolean;
+    batchEvents?: boolean;
     dispatchMode?: "real" | "emulated";
     activeRun?: string;
     signedLedgerEntries?: boolean;
@@ -252,6 +349,7 @@ function writeLedgerProof(
     cwd,
     options.activeRun ? { workflow_id: options.activeRun } : {},
   );
+  writeActiveWorkflowObligations(cwd, { workflowId: options.activeRun });
   const dispatchMode = options.dispatchMode ?? "real";
   const maybeSignLedger = (entry: Record<string, unknown>) => {
     const signed = options.signedLedgerEntries === false ? entry : signLedgerEntry(entry);
@@ -259,12 +357,39 @@ function writeLedgerProof(
   };
   writeFileSync(
     join(stateDir, "gate-decisions.jsonl"),
-    artifact.gates.map((gate) => JSON.stringify(maybeSignLedger({
-      gate: gate.gate,
-      decision: "pass",
-      status: "PASS",
-      ...identityFields,
-    }))).join("\n") + "\n",
+    [
+      ...artifact.gates.map((gate) => maybeSignLedger({
+        gate: gate.gate,
+        decision: "pass",
+        status: "PASS",
+        ...identityFields,
+      })),
+      ...(options.batchEvents === false ? [] : artifact.batches.flatMap((batch) => [
+        maybeSignLedger({
+          gate: `BATCH_LOOP:${batch.name}:checkpoint`,
+          decision: "pass",
+          status: "PASS",
+          evidence_ref: batch.checkpoint.evidence_ref,
+          ...identityFields,
+        }),
+        maybeSignLedger({
+          gate: `BATCH_LOOP:${batch.name}:adversarial_review`,
+          decision: "pass",
+          status: "PASS",
+          evidence_ref: batch.adversarial_review.evidence_ref,
+          ...identityFields,
+        }),
+        maybeSignLedger({
+          gate: `BATCH_LOOP:${batch.name}:fix_loop`,
+          decision: "pass",
+          status: "PASS",
+          evidence_ref: batch.fix_loop.evidence_ref,
+          open_findings: batch.fix_loop.open_findings,
+          attempts: batch.fix_loop.attempts,
+          ...identityFields,
+        }),
+      ])),
+    ].map((entry) => JSON.stringify(entry)).join("\n") + "\n",
     "utf8",
   );
   writeFileSync(
@@ -364,6 +489,140 @@ describe("completion-checklist Stop enforcement", () => {
     expect(output.stopReason).toContain("PipelineGovernanceArtifact");
     expect(output.stopReason).toContain("gate:CAPABILITY_GATE");
     expect(output.stopReason).toContain("agent:primary_reviewer");
+  });
+
+  it("TDD: blocks quiet stop after explicit pipeline front door even when state files were erased", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-frontdoor-state-erased-"));
+
+    const output = runHook(cwd, {
+      cwd,
+      input: "/pipeline-orchestrator-for-codex:pipeline faca o bugfix heavy",
+      output: {
+        text: "Resumo parcial sem artefato final.",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("PipelineGovernanceArtifact");
+  });
+
+  it("TDD: blocks quiet stop after explicit workflow intent without a governance artifact", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-workflow-intent-no-artifact-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, "workflow-intent.json"),
+      JSON.stringify(signStateObject({
+        schema_version: 1,
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        deterministic_enforcement: {
+          stop_requires_governance_artifact: true,
+        },
+      }, "pipeline-workflow-intent")),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "Summary: done.",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("PipelineGovernanceArtifact");
+  });
+
+  it("TDD: blocks quiet stop after required-first-actions without a governance artifact", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-required-first-no-artifact-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, "required-first-actions.json"),
+      JSON.stringify(signStateObject({
+        schema_version: 1,
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        required_actions: ["update_plan", "WORKFLOW_METHOD_GATE"],
+        completed_actions: [],
+      }, "pipeline-required-first-actions")),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "Summary: done.",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("PipelineGovernanceArtifact");
+  });
+
+  it("TDD: blocks quiet stop when malformed workflow intent is the only pipeline signal", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-malformed-intent-only-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, "workflow-intent.json"), "{", "utf8");
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "Summary: done.",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent_integrity:hmac-sha256");
+  });
+
+  it("TDD: blocks quiet stop when invalid required-first-actions is the only pipeline signal", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-invalid-required-only-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    mkdirSync(join(stateDir, "required-first-actions.json"));
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "Summary: done.",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("required_first_actions_integrity:hmac-sha256");
+  });
+
+  it("TDD: blocks PASS artifacts without per-batch checkpoint adversarial review and closed fix loop", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-missing-batch-loop-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "current-run",
+      session_id: "current-session",
+      batches: [],
+    };
+    writeLedgerProof(cwd, artifact, { batchEvents: false });
+    writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE",
+        pipelineGovernanceArtifact: artifact,
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("batch_loop:batches");
   });
 
   it.each([
@@ -1163,6 +1422,7 @@ describe("completion-checklist Stop enforcement", () => {
   it("ATDD: allows explicit pipeline stop with a structured blocked-no-agent-runtime artifact", () => {
     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-artifact-"));
     writeActiveSentinel(cwd);
+    writeActiveWorkflowObligations(cwd);
 
     const output = runHook(cwd, {
       cwd,
@@ -1179,6 +1439,7 @@ describe("completion-checklist Stop enforcement", () => {
   it("TDD: allows current payload BLOCKED when transcript has an older success verdict", () => {
     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-dirty-transcript-"));
     writeActiveSentinel(cwd);
+    writeActiveWorkflowObligations(cwd);
     const transcriptPath = join(cwd, "transcript.txt");
     writeFileSync(transcriptPath, "Earlier assistant text: FINAL_REVIEW: GO", "utf8");
 
@@ -1201,6 +1462,7 @@ describe("completion-checklist Stop enforcement", () => {
       run_id: "current-run",
       session_id: "current-session",
     });
+    writeActiveWorkflowObligations(cwd);
 
     const output = runHook(cwd, {
       cwd,
@@ -1218,9 +1480,64 @@ describe("completion-checklist Stop enforcement", () => {
     expect(output.additionalContext).toContain("Artefato final estruturado");
   });
 
+  it("TDD: blocks structured BLOCKED artifacts when active obligation files are missing", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-missing-obligations-"));
+    writeActiveSentinel(cwd);
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE blocked-no-agent-runtime",
+        pipelineGovernanceArtifact: blockedNoAgentRuntimeArtifact(),
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent:present");
+    expect(output.stopReason).toContain("required_first_actions:present");
+  });
+
+  it("TDD: blocks structured BLOCKED artifacts when only session-lock survived", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-session-lock-only-"));
+    writeActiveSessionLock(cwd);
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE blocked-no-agent-runtime",
+        pipelineGovernanceArtifact: blockedNoAgentRuntimeArtifact(["spawn_agent"]),
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent:present");
+    expect(output.stopReason).toContain("required_first_actions:present");
+  });
+
+  it("TDD: blocks structured BLOCKED artifacts when required-first-actions remain incomplete", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-required-actions-"));
+    writeActiveSentinel(cwd);
+    writeActiveWorkflowObligations(cwd, {
+      requiredActions: ["update_plan", "WORKFLOW_METHOD_GATE"],
+      completedActions: ["update_plan"],
+    });
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE blocked-no-agent-runtime",
+        pipelineGovernanceArtifact: blockedNoAgentRuntimeArtifact(),
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("required_action:WORKFLOW_METHOD_GATE");
+  });
+
   it("RED: accepts structured BLOCKED artifact with every required pipeline capability missing", () => {
     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-all-capabilities-"));
     writeActiveSentinel(cwd);
+    writeActiveWorkflowObligations(cwd);
 
     const output = runHook(cwd, {
       cwd,
@@ -1237,6 +1554,7 @@ describe("completion-checklist Stop enforcement", () => {
   it("RED: accepts structured BLOCKED artifact when real-agent runtime lacks artifact collection", () => {
     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-artifact-collection-"));
     writeActiveSentinel(cwd);
+    writeActiveWorkflowObligations(cwd);
 
     const output = runHook(cwd, {
       cwd,
@@ -1481,6 +1799,128 @@ describe("completion-checklist Stop enforcement", () => {
     expect(output.stopReason).toContain("ledger:wait_agent:primary_reviewer");
   });
 
+  it("TDD: blocks a complete-looking artifact when batch-loop ledgers are missing", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-missing-batch-ledgers-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "current-run",
+      session_id: "current-session",
+    };
+    writeLedgerProof(cwd, artifact, { batchEvents: false });
+    writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE",
+        pipelineGovernanceArtifact: artifact,
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("ledger:batch:batch-1:checkpoint");
+    expect(output.stopReason).toContain("ledger:batch:batch-1:adversarial_review");
+    expect(output.stopReason).toContain("ledger:batch:batch-1:fix_loop");
+  });
+
+  it("TDD: rejects generic signed ledger strings as batch-loop evidence", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-generic-batch-evidence-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "current-run",
+      session_id: "current-session",
+      batches: [
+        {
+          name: "batch-1",
+          status: "PASS",
+          checkpoint: { status: "PASS", evidence_ref: "PASS" },
+          adversarial_review: { status: "PASS", evidence_ref: "PASS" },
+          fix_loop: { status: "PASS", evidence_ref: "PASS", open_findings: 0, attempts: 1 },
+        },
+      ],
+    };
+    writeLedgerProof(cwd, artifact);
+    writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE",
+        pipelineGovernanceArtifact: artifact,
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("batch:batch-1:checkpoint:evidence_ref");
+    expect(output.stopReason).toContain("batch:batch-1:adversarial_review:evidence_ref");
+    expect(output.stopReason).toContain("batch:batch-1:fix_loop:evidence_ref");
+  });
+
+  it("TDD: rejects signed failing batch-loop ledgers", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-failing-batch-ledgers-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "current-run",
+      session_id: "current-session",
+    };
+    const stateDir = writeLedgerProof(cwd, artifact, { batchEvents: false });
+    writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    const identityFields = artifactIdentityFields(artifact as Record<string, unknown>);
+    for (const batch of artifact.batches) {
+      appendFileSync(
+        join(stateDir, "gate-decisions.jsonl"),
+        [
+          signLedgerEntry({
+            gate: `BATCH_LOOP:${batch.name}:checkpoint`,
+            decision: "fail",
+            status: "FAIL",
+            evidence_ref: batch.checkpoint.evidence_ref,
+            ...identityFields,
+          }),
+          signLedgerEntry({
+            gate: `BATCH_LOOP:${batch.name}:adversarial_review`,
+            decision: "fail",
+            status: "FAIL",
+            evidence_ref: batch.adversarial_review.evidence_ref,
+            ...identityFields,
+          }),
+          signLedgerEntry({
+            gate: `BATCH_LOOP:${batch.name}:fix_loop`,
+            decision: "fail",
+            status: "FAIL",
+            evidence_ref: batch.fix_loop.evidence_ref,
+            open_findings: 2,
+            attempts: 9,
+            ...identityFields,
+          }),
+        ].map((entry) => JSON.stringify(entry)).join("\n") + "\n",
+        "utf8",
+      );
+    }
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE",
+        pipelineGovernanceArtifact: artifact,
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("ledger:batch:batch-1:checkpoint");
+    expect(output.stopReason).toContain("ledger:batch:batch-1:adversarial_review");
+    expect(output.stopReason).toContain("ledger:batch:batch-1:fix_loop");
+  });
+
   it("allows explicit pipeline completion with a complete governance artifact and matching ledgers", () => {
     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-valid-ledger-"));
     const artifact = {
@@ -1504,6 +1944,343 @@ describe("completion-checklist Stop enforcement", () => {
 
     expect(output.continue).toBe(true);
     expect(output.additionalContext).toContain("Artefato final estruturado");
+  });
+
+  it("TDD: blocks PASS artifacts without cooperative exec window enforcement", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-exec-window-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "current-run",
+      session_id: "current-session",
+      exec_window_enforcement: "advisory",
+    };
+    writeLedgerProof(cwd, artifact);
+    writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE",
+        pipelineGovernanceArtifact: artifact,
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("exec_window_enforcement:cooperative");
+  });
+
+  it("TDD: blocks final PASS when required-first-actions remain incomplete", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-required-actions-incomplete-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "current-run",
+      session_id: "current-session",
+    };
+    const stateDir = writeLedgerProof(cwd, artifact);
+    writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    writeFileSync(
+      join(stateDir, "required-first-actions.json"),
+      JSON.stringify(signStateObject({
+        schema_version: 1,
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        run_id: "current-run",
+        session_id: "current-session",
+        required_actions: ["update_plan", "WORKFLOW_METHOD_GATE"],
+        completed_actions: ["update_plan"],
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      }, "pipeline-required-first-actions")),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE",
+        pipelineGovernanceArtifact: artifact,
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("required_action:WORKFLOW_METHOD_GATE");
+  });
+
+  it("TDD: blocks final PASS when active pipeline obligation files are deleted", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-obligation-files-missing-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "active-run",
+      session_id: "active-session",
+    };
+    const stateDir = writeLedgerProof(cwd, artifact);
+    writeActiveSentinel(cwd, {
+      run_id: "active-run",
+      session_id: "active-session",
+    });
+    writeFileSync(
+      join(stateDir, "pipeline-governance-artifact.json"),
+      JSON.stringify(artifact),
+      "utf8",
+    );
+    unlinkSync(join(stateDir, "workflow-intent.json"));
+    unlinkSync(join(stateDir, "required-first-actions.json"));
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "FINAL_REVIEW: GO",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent:present");
+    expect(output.stopReason).toContain("required_first_actions:present");
+  });
+
+  it("TDD: blocks final PASS when active pipeline obligation files are malformed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-obligation-files-malformed-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "active-run",
+      session_id: "active-session",
+    };
+    const stateDir = writeLedgerProof(cwd, artifact);
+    writeActiveSentinel(cwd, {
+      run_id: "active-run",
+      session_id: "active-session",
+    });
+    writeFileSync(
+      join(stateDir, "pipeline-governance-artifact.json"),
+      JSON.stringify(artifact),
+      "utf8",
+    );
+    writeFileSync(join(stateDir, "workflow-intent.json"), "{", "utf8");
+    writeFileSync(join(stateDir, "required-first-actions.json"), "", "utf8");
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "FINAL_REVIEW: GO",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent_integrity:hmac-sha256");
+    expect(output.stopReason).toContain("required_first_actions_integrity:hmac-sha256");
+  });
+
+  it("TDD: blocks final PASS when active pipeline obligation files are symlinks", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-obligation-files-symlink-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "active-run",
+      session_id: "active-session",
+    };
+    const stateDir = writeLedgerProof(cwd, artifact);
+    writeActiveSentinel(cwd, {
+      run_id: "active-run",
+      session_id: "active-session",
+    });
+    writeFileSync(
+      join(stateDir, "pipeline-governance-artifact.json"),
+      JSON.stringify(artifact),
+      "utf8",
+    );
+    unlinkSync(join(stateDir, "workflow-intent.json"));
+    unlinkSync(join(stateDir, "required-first-actions.json"));
+    const target = join(stateDir, "obligation-target.json");
+    writeFileSync(target, JSON.stringify({}), "utf8");
+    symlinkSync(target, join(stateDir, "workflow-intent.json"));
+    symlinkSync(target, join(stateDir, "required-first-actions.json"));
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "FINAL_REVIEW: GO",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent_integrity:hmac-sha256");
+    expect(output.stopReason).toContain("required_first_actions_integrity:hmac-sha256");
+  });
+
+  it("TDD: blocks final PASS when active workflow obligation integrity is missing", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-obligation-integrity-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "current-run",
+      session_id: "current-session",
+    };
+    const stateDir = writeLedgerProof(cwd, artifact);
+    writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    writeFileSync(
+      join(stateDir, "workflow-intent.json"),
+      JSON.stringify({
+        schema_version: 1,
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        run_id: "current-run",
+        session_id: "current-session",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      }),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE",
+        pipelineGovernanceArtifact: artifact,
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent_integrity:hmac-sha256");
+  });
+
+  it("TDD: blocks structured BLOCKED artifacts when active workflow obligation integrity is missing", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-obligation-integrity-"));
+    const stateDir = writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    writeFileSync(
+      join(stateDir, "workflow-intent.json"),
+      JSON.stringify({
+        schema_version: 1,
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        run_id: "current-run",
+        session_id: "current-session",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      }),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "blocked-no-agent-runtime",
+        pipelineGovernanceArtifact: blockedNoAgentRuntimeArtifact(),
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent_integrity:hmac-sha256");
+  });
+
+  it("TDD: blocks structured BLOCKED artifacts when obligation status is tampered before integrity check", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-tampered-obligation-status-"));
+    const stateDir = writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    writeFileSync(
+      join(stateDir, "workflow-intent.json"),
+      JSON.stringify({
+        schema_version: 1,
+        status: "inactive",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        run_id: "current-run",
+        session_id: "current-session",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        _integrity: {
+          algorithm: "hmac-sha256",
+          scope: "pipeline-workflow-intent",
+          signature: "0".repeat(64),
+        },
+      }),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      input: "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo",
+      output: {
+        text: "blocked-no-agent-runtime",
+        pipelineGovernanceArtifact: blockedNoAgentRuntimeArtifact(),
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent_integrity:hmac-sha256");
+  });
+
+  it("TDD: blocks structured BLOCKED artifacts when required-first-actions integrity is tampered", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-tampered-required-actions-"));
+    const stateDir = writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    writeFileSync(
+      join(stateDir, "required-first-actions.json"),
+      JSON.stringify({
+        schema_version: 1,
+        status: "inactive",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        run_id: "current-run",
+        session_id: "current-session",
+        required_actions: ["update_plan", "WORKFLOW_METHOD_GATE", "CAPABILITY_GATE"],
+        completed_actions: [],
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        _integrity: {
+          algorithm: "hmac-sha256",
+          scope: "pipeline-required-first-actions",
+          signature: "0".repeat(64),
+        },
+      }),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      input: "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo",
+      output: {
+        text: "blocked-no-agent-runtime",
+        pipelineGovernanceArtifact: blockedNoAgentRuntimeArtifact(),
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("required_first_actions_integrity:hmac-sha256");
+  });
+
+  it("TDD: blocks structured BLOCKED artifacts when canonical obligation files are destroyed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-destroyed-obligation-files-"));
+    const stateDir = writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    writeFileSync(join(stateDir, "workflow-intent.json"), "{}", "utf8");
+    writeFileSync(join(stateDir, "required-first-actions.json"), "{}", "utf8");
+
+    const output = runHook(cwd, {
+      cwd,
+      input: "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo",
+      output: {
+        text: "blocked-no-agent-runtime",
+        pipelineGovernanceArtifact: blockedNoAgentRuntimeArtifact(),
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("workflow_intent_integrity:hmac-sha256");
+    expect(output.stopReason).toContain("required_first_actions_integrity:hmac-sha256");
   });
 
   it("TDD: blocks unsigned local ledgers even when they match the signed sentinel identity", () => {

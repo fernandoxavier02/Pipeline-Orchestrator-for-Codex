@@ -34,6 +34,14 @@ function lockPath(root: string) {
   return join(root, ".codex", "pipeline", "session-lock.json");
 }
 
+function workflowIntentPath(root: string) {
+  return join(root, ".codex", "pipeline", "workflow-intent.json");
+}
+
+function requiredFirstActionsPath(root: string) {
+  return join(root, ".codex", "pipeline", "required-first-actions.json");
+}
+
 function execWindowPath(root: string, sessionId: string) {
   return join(root, ".codex", "pipeline", "sessions", `${sessionId}.exec-window`);
 }
@@ -138,6 +146,79 @@ describe("session-cleanup-hook (B10)", () => {
     expect(existsSync(execWindowPath(workspace, "EXPIRED"))).toBe(false);
   });
 
+  it("removes expired workflow obligation files", () => {
+    mkdirSync(join(workspace, ".codex", "pipeline"), { recursive: true });
+    writeFileSync(
+      workflowIntentPath(workspace),
+      JSON.stringify({
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        expires_at: 1,
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      requiredFirstActionsPath(workspace),
+      JSON.stringify({
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        expires_at: 1,
+      }),
+      "utf8",
+    );
+
+    runHook(workspace);
+
+    expect(existsSync(workflowIntentPath(workspace))).toBe(false);
+    expect(existsSync(requiredFirstActionsPath(workspace))).toBe(false);
+  });
+
+  it("preserves active workflow obligation files", () => {
+    mkdirSync(join(workspace, ".codex", "pipeline"), { recursive: true });
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    writeFileSync(
+      workflowIntentPath(workspace),
+      JSON.stringify({
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        expires_at: future,
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      requiredFirstActionsPath(workspace),
+      JSON.stringify({
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        expires_at: future,
+      }),
+      "utf8",
+    );
+
+    runHook(workspace);
+
+    expect(existsSync(workflowIntentPath(workspace))).toBe(true);
+    expect(existsSync(requiredFirstActionsPath(workspace))).toBe(true);
+  });
+
+  it("preserves malformed workflow obligation files for Stop hook enforcement", () => {
+    mkdirSync(join(workspace, ".codex", "pipeline"), { recursive: true });
+    writeFileSync(workflowIntentPath(workspace), "{", "utf8");
+    writeFileSync(
+      requiredFirstActionsPath(workspace),
+      JSON.stringify({
+        status: "expired",
+        plugin: "pipeline-orchestrator-for-codex",
+      }),
+      "utf8",
+    );
+
+    runHook(workspace);
+
+    expect(existsSync(workflowIntentPath(workspace))).toBe(true);
+    expect(existsSync(requiredFirstActionsPath(workspace))).toBe(true);
+  });
+
   it("preserves active sentinel state because final-validator owns sentinel finalization", () => {
     mkdirSync(join(workspace, ".codex", "pipeline"), { recursive: true });
     const sentinelState = {
@@ -160,6 +241,24 @@ describe("session-cleanup-hook (B10)", () => {
     runHook(workspace);
 
     expect(readFileSync(sentinelPath(workspace), "utf8")).toBe(JSON.stringify(sentinelState));
+  });
+
+  it("removes sentinel state with explicit expired TTL", () => {
+    mkdirSync(join(workspace, ".codex", "pipeline"), { recursive: true });
+    writeFileSync(
+      sentinelPath(workspace),
+      JSON.stringify({
+        pipelineActive: true,
+        run_id: "expired-run",
+        session_id: "expired-session",
+        expires_at: 1,
+      }),
+      "utf8",
+    );
+
+    runHook(workspace);
+
+    expect(existsSync(sentinelPath(workspace))).toBe(false);
   });
 
   it("is a no-op when no .codex/pipeline directory exists", () => {

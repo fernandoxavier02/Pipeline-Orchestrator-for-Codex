@@ -164,6 +164,7 @@ test_command: "pnpm test:ci"
         phase: "phase-3",
         decision: "pass",
         decided_by: "controller",
+        provenance: { source: "controller" },
         timestamp: "2026-04-02T12:30:00.000Z",
         detail: "Controller recorded final adversarial approval.",
         confidence_impact: 0,

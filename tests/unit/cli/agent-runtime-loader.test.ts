@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildCodexExecBaseArgs, createCodexCliProcessRuntime } from "../../../src/adapters/codex-cli-process-runtime.js";
 import { loadAgentRuntimeAdapter } from "../../../src/cli/agent-runtime-loader.js";
 import { createExecutionIdentity } from "../../../src/observability/execution-identity.js";
 
@@ -30,6 +31,49 @@ describe("agent runtime adapter loader", () => {
     });
     expect(typeof adapter?.spawnAgent).toBe("function");
     expect(typeof adapter?.waitAgent).toBe("function");
+    expect(adapter?.runtimeMode).toBe("real-agent");
+  });
+
+  it("keeps the dangerous Codex CLI process adapter behind an explicit dev-bypass alias", async () => {
+    const adapter = await loadAgentRuntimeAdapter("codex-cli-dev-bypass");
+
+    expect(adapter?.runtimeMode).toBe("dev-bypass");
+  });
+
+  it("builds Codex exec args without dangerous bypass flags by default", () => {
+    const args = buildCodexExecBaseArgs({
+      cwd: process.cwd(),
+      sandbox: "workspace-write",
+    });
+
+    expect(args).toContain("--sandbox");
+    expect(args).toContain("workspace-write");
+    expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    expect(args).not.toContain("--dangerously-bypass-hook-trust");
+  });
+
+  it("rejects hidden dangerous bypass flags unless the adapter is explicitly dev-bypass", async () => {
+    await expect(
+      createCodexCliProcessRuntime({
+        extraArgs: ["--dangerously-bypass-hook-trust"],
+      }).spawnAgent({
+        role: "pipeline-controller",
+        phase: "phase-0",
+        prompt: "classify and orchestrate",
+        input: { request: "/pipeline-orchestrator-for-codex:pipeline audit" },
+        expectedOutput: ["PIPELINE_PROPOSAL"],
+        freshContext: true,
+        ownership: [],
+        reviewOnly: false,
+        filesInScope: [],
+        authorityLevel: "controller",
+        executionIdentity: createExecutionIdentity({
+          surface: "dispatch:pipeline-controller",
+          source: "real-agent-dispatch",
+          timestamp: "2026-05-14T00:00:00.000Z",
+        }),
+      }),
+    ).rejects.toThrow(/dangerous bypass flags/u);
   });
 
   it("loads a Codex spawn_agent adapter for operational CLI execution", async () => {

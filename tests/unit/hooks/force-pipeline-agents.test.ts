@@ -1,17 +1,19 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 const HOOK = join(ROOT, "hooks", "force-pipeline-agents.cjs");
 
-function runHook(cwd: string, prompt: string) {
+function runHook(cwd: string, prompt: string, env: Record<string, string | undefined> = {}) {
   return spawnSync(process.execPath, [HOOK], {
     cwd,
     input: JSON.stringify({ prompt }),
     encoding: "utf8",
+    env: { ...process.env, ...env },
   });
 }
 
@@ -26,6 +28,32 @@ function runHookPayload(cwd: string, payload: unknown) {
 function parseOutput(result: ReturnType<typeof spawnSync>) {
   expect(result.status).toBe(0);
   return JSON.parse(String(result.stdout).trim());
+}
+
+function canonicalize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalize(entry)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function expectValidHmacSigned(value: Record<string, unknown>, key: string, scope?: string) {
+  const integrity = value._integrity as Record<string, unknown> | undefined;
+  expect(integrity).toMatchObject({
+    algorithm: "hmac-sha256",
+    ...(scope ? { scope } : {}),
+  });
+  expect(typeof integrity?.signature).toBe("string");
+  const unsigned = { ...value };
+  delete unsigned._integrity;
+  const expected = createHmac("sha256", key).update(canonicalize(unsigned)).digest("hex");
+  expect(integrity?.signature).toBe(expected);
 }
 
 describe("force pipeline agents hook", () => {
@@ -312,7 +340,7 @@ describe("force pipeline agents hook", () => {
     expect(output.systemMessage).not.toContain("MANDATORY SUBAGENT EXECUTION — /pipeline WAS INVOKED");
     const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
     expect(event).toMatchObject({
-      decision: "inject_workflow_skill_message",
+      decision: "enforce_workflow_skill_message",
       attempted: "brainstorm",
     });
   });
@@ -343,15 +371,74 @@ describe("force pipeline agents hook", () => {
     expect(output.systemMessage).not.toContain("agents/core/task-orchestrator.md");
   });
 
-  it("RED: explicit pipeline hook reports advisory mode instead of pretending enforcement is proven", () => {
+  it("TDD: explicit pipeline hook persists deterministic intent and reports blocking enforcement", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-"));
 
     const result = runHook(cwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo sem runtime real");
     const output = parseOutput(result);
 
-    expect(output.hook_enforcement_mode).toBe("advisory");
+    expect(output.hook_enforcement_mode).toBe("blocking");
+    expect(output.enforcement_stage).toBe("stop-and-pretool");
     expect(output.pipeline_valid).toBe(false);
-    expect(output.systemMessage).toContain("advisory");
+    expect(output.systemMessage).toContain("blocking-at-stop-and-pretool");
+
+    const intent = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "workflow-intent.json"), "utf8"));
+    expect(intent).toMatchObject({
+      status: "active",
+      plugin: "pipeline-orchestrator-for-codex",
+      workflow: "pipeline",
+      source: "slash-command",
+      deterministic_enforcement: {
+        stop_requires_governance_artifact: true,
+        pretool_requires_canonical_dispatch: true,
+        required_batch_loop: {
+          checkpoint: true,
+          adversarial_review: true,
+          fix_loop_closed: true,
+          max_fix_attempts: 3,
+        },
+      },
+    });
+    expect(intent.run_id).toEqual(expect.any(String));
+    expect(intent.session_id).toEqual(expect.any(String));
+
+    const lock = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "session-lock.json"), "utf8"));
+    expect(lock).toMatchObject({
+      session_id: intent.session_id,
+      run_id: intent.run_id,
+      workflow: "pipeline",
+      status: "active",
+    });
+
+    const requiredFirstActions = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
+    expect(requiredFirstActions).toMatchObject({
+      status: "active",
+      plugin: "pipeline-orchestrator-for-codex",
+      workflow: "pipeline",
+      run_id: intent.run_id,
+      session_id: intent.session_id,
+      required_actions: [
+        "update_plan",
+        "WORKFLOW_METHOD_GATE",
+        "CAPABILITY_GATE",
+        "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+        "wait_agent",
+      ],
+      completed_actions: [],
+    });
+
+    const sentinel = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "sentinel-state.json"), "utf8"));
+    expect(sentinel).toMatchObject({
+      session_id: intent.session_id,
+      run_id: intent.run_id,
+      workflow_id: "pipeline",
+      created_by_hook: "force-pipeline-agents",
+      pipelineActive: true,
+      currentPhase: "phase-0",
+      currentAgent: "force-pipeline-agents",
+      expectedNext: ["pipeline-controller"],
+      lastCheckpoint: "workflow_intent_persisted",
+    });
   });
 
   it("ATDD: plugin mention without explicit workflow enters the canonical pipeline front door", () => {
@@ -373,9 +460,9 @@ describe("force pipeline agents hook", () => {
 
     const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
     expect(event).toMatchObject({
-      decision: "inject_pipeline_skill_message",
+      decision: "enforce_pipeline_skill_message",
       attempted: "pipeline",
-      reason: "explicit plugin-mention-default workflow",
+      reason: "explicit plugin-mention-default workflow intent persisted",
     });
   });
 
@@ -395,9 +482,9 @@ describe("force pipeline agents hook", () => {
 
     const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
     expect(event).toMatchObject({
-      decision: "inject_pipeline_skill_message",
+      decision: "enforce_pipeline_skill_message",
       attempted: "pipeline",
-      reason: "explicit plugin-mention-default workflow",
+      reason: "explicit plugin-mention-default workflow intent persisted",
     });
   });
 
@@ -413,9 +500,9 @@ describe("force pipeline agents hook", () => {
 
     const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
     expect(event).toMatchObject({
-      decision: "inject_pipeline_skill_message",
+      decision: "enforce_pipeline_skill_message",
       attempted: "pipeline",
-      reason: "explicit plugin-mention-default workflow",
+      reason: "explicit plugin-mention-default workflow intent persisted",
     });
   });
 
@@ -435,9 +522,9 @@ describe("force pipeline agents hook", () => {
 
       const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
       expect(event, prompt).toMatchObject({
-        decision: "inject_pipeline_skill_message",
+        decision: "enforce_pipeline_skill_message",
         attempted: "pipeline",
-        reason: "explicit plugin-mention-default workflow",
+        reason: "explicit plugin-mention-default workflow intent persisted",
       });
     }
   });
@@ -457,7 +544,7 @@ describe("force pipeline agents hook", () => {
 
       const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
       expect(event, prompt).not.toMatchObject({
-        decision: "inject_pipeline_skill_message",
+        decision: "enforce_pipeline_skill_message",
       });
     }
   });
@@ -492,10 +579,70 @@ describe("force pipeline agents hook", () => {
       expect(output.systemMessage, workflow).not.toContain("MANDATORY SUBAGENT EXECUTION — /pipeline WAS INVOKED");
       const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
       expect(event, workflow).toMatchObject({
-        decision: "inject_workflow_skill_message",
+        decision: "enforce_workflow_skill_message",
         attempted: workflow,
       });
     }
+  });
+
+  it("TDD: direct bugfix-heavy front door still bootstraps controller-first", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-bugfix-heavy-"));
+    const result = runHook(cwd, "/pipeline-orchestrator-for-codex:bugfix-heavy corrigir enforcement deterministico");
+    const output = parseOutput(result);
+
+    expect(output.hook_enforcement_mode).toBe("blocking");
+
+    const sentinel = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "sentinel-state.json"), "utf8"));
+    expect(sentinel.expectedNext).toEqual(["pipeline-controller"]);
+    expect(sentinel.expires_at).toEqual(expect.any(Number));
+
+    const requiredFirstActions = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
+    expect(requiredFirstActions.required_actions).toContain("spawn:pipeline-orchestrator-for-codex:core:pipeline-controller");
+    expect(requiredFirstActions.required_actions).not.toContain(
+      "spawn:pipeline-orchestrator-for-codex:executor:type-specific:bugfix-diagnostic-agent",
+    );
+  });
+
+  it("TDD: explicit workflow front door signs state and hook event when HMAC is configured", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-hmac-"));
+    const key = "force-hook-hmac-key";
+
+    const result = runHook(cwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo", {
+      PIPELINE_SENTINEL_HMAC_KEY: key,
+    });
+    parseOutput(result);
+
+    const stateDir = join(cwd, ".codex", "pipeline");
+    const intent = JSON.parse(readFileSync(join(stateDir, "workflow-intent.json"), "utf8"));
+    const requiredFirstActions = JSON.parse(readFileSync(join(stateDir, "required-first-actions.json"), "utf8"));
+    const sentinel = JSON.parse(readFileSync(join(stateDir, "sentinel-state.json"), "utf8"));
+    const hookEvent = JSON.parse(readFileSync(join(stateDir, "hook-events.jsonl"), "utf8").trim());
+
+    expectValidHmacSigned(intent, key, "pipeline-workflow-intent");
+    expectValidHmacSigned(requiredFirstActions, key, "pipeline-required-first-actions");
+    expectValidHmacSigned(sentinel, key);
+    expectValidHmacSigned(hookEvent, key, "pipeline-ledger-entry");
+    expect(hookEvent).toMatchObject({
+      hook: "force-pipeline-agents",
+      event: "UserPromptSubmit",
+      decision: "enforce_pipeline_skill_message",
+    });
+  });
+
+  it("TDD: explicit workflow front door refuses symlinked state files", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-symlink-state-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    const targetDir = mkdtempSync(join(tmpdir(), "pipeline-force-hook-state-target-"));
+    mkdirSync(stateDir, { recursive: true });
+    symlinkSync(join(targetDir, "workflow-intent.json"), join(stateDir, "workflow-intent.json"), "file");
+
+    const result = runHook(cwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo");
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-hook-error");
+    expect(existsSync(join(targetDir, "workflow-intent.json"))).toBe(false);
+    rmSync(targetDir, { recursive: true, force: true });
   });
 
   it("ATDD: preserves explicit governed plugin mention variants exactly", () => {
@@ -512,7 +659,7 @@ describe("force pipeline agents hook", () => {
       expect(output.systemMessage, workflow).toContain(`/pipeline-orchestrator-for-codex:${workflow}`);
       const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
       expect(event, workflow).toMatchObject({
-        decision: "inject_workflow_skill_message",
+        decision: "enforce_workflow_skill_message",
         attempted: workflow,
       });
     }

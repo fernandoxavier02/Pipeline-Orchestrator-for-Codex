@@ -136,6 +136,7 @@ describe("hotfix mode", () => {
                 phase: "phase-3",
                 decision: "pass",
                 decided_by: "controller",
+                provenance: { source: "controller" },
                 timestamp: "2026-04-02T12:00:00.000Z",
                 detail: `${gate} passed`,
                 confidence_impact: 0,

@@ -195,6 +195,9 @@ export const gateDecisionSchema = z.object({
   timestamp: z.string(),
   detail: z.string(),
   confidence_impact: z.number(),
+  evidence_ref: z.string().optional(),
+  open_findings: z.number().int().nonnegative().optional(),
+  attempts: z.number().int().nonnegative().optional(),
   execution_identity: executionIdentitySchema.optional(),
 });
 

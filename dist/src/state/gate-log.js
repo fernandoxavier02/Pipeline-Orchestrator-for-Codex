@@ -75,8 +75,8 @@ async function withAppendLock(fn) {
 export function createGateLog(root) {
     const validatedRoot = resolveValidatedRoot(root);
     const file = join(validatedRoot, "gate-decisions.jsonl");
-    async function appendImpl(decision) {
-        const parsed = gateDecisionSchema.parse(decision);
+    async function persistCandidate(candidate) {
+        const parsed = gateDecisionSchema.parse(candidate);
         const enriched = {
             ...parsed,
             execution_identity: parsed.execution_identity ?? createExecutionIdentity({
@@ -100,6 +100,23 @@ export function createGateLog(root) {
             await appendFile(file, `${JSON.stringify(signLedgerEntry(enriched))}\n`, "utf8");
         });
     }
+    async function appendImpl(decision) {
+        let candidate = decision;
+        if (decision && typeof decision === "object") {
+            const appendCandidate = { ...decision };
+            if (!("provenance" in appendCandidate)) {
+                throw new Error("gate-log: provenance is required for append");
+            }
+            const inferredDecidedBy = inferDecidedBy(appendCandidate.provenance);
+            if ("decided_by" in appendCandidate && appendCandidate.decided_by !== inferredDecidedBy) {
+                throw new Error("gate-log: decided_by conflicts with provenance");
+            }
+            appendCandidate.decided_by = inferredDecidedBy;
+            delete appendCandidate.provenance;
+            candidate = appendCandidate;
+        }
+        await persistCandidate(candidate);
+    }
     return {
         root: validatedRoot,
         append: appendImpl,
@@ -115,7 +132,7 @@ export function createGateLog(root) {
                 detail: sanitizeDetail(input.detail),
                 confidence_impact: input.confidence_impact ?? 0,
             };
-            await appendImpl(entry);
+            await persistCandidate(entry);
         },
         async list() {
             try {

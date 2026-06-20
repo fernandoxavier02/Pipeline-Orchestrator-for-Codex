@@ -14,6 +14,13 @@ export function isNonExemptMode(mode) {
 }
 const LATEST_ONLY_GATES = new Set(["CLOSEOUT_CONFIRM"]);
 const STICKY_ROLLBACKS = new Set(["manual", "stop"]);
+const DYNAMIC_BATCH_LOOP_GATE = /^BATCH_LOOP:[^:]+:(?:checkpoint|adversarial_review|fix_loop)$/u;
+function gateRollbackFor(gate) {
+    if (DYNAMIC_BATCH_LOOP_GATE.test(gate)) {
+        return "revalidate";
+    }
+    return createGateRegistry().get(gate).rollback;
+}
 function getConfidenceBand(score) {
     if (score >= 0.8) {
         return "high";
@@ -24,7 +31,6 @@ function getConfidenceBand(score) {
     return "low";
 }
 export function resolveEffectiveGateLog(entries) {
-    const gateRegistry = createGateRegistry();
     const entriesByGate = new Map();
     for (const entry of entries) {
         const history = entriesByGate.get(entry.gate) ?? [];
@@ -36,7 +42,7 @@ export function resolveEffectiveGateLog(entries) {
         if (LATEST_ONLY_GATES.has(gate)) {
             return history.at(-1);
         }
-        const rollback = gateRegistry.get(gate).rollback;
+        const rollback = gateRollbackFor(gate);
         if (STICKY_ROLLBACKS.has(rollback)) {
             const blockingEntry = history.find((entry) => entry.decision === "block");
             if (blockingEntry) {
@@ -106,7 +112,7 @@ export function runFinalValidator(input) {
         decision = "GO";
     }
     const rollbackHint = blockingGates
-        .map((gate) => gateRegistry.get(gate).rollback)
+        .map((gate) => gateRollbackFor(gate))
         .find((rollback) => rollback !== "none");
     return {
         decision,

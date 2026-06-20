@@ -49,6 +49,22 @@ export interface PipelineAgentArtifact {
   independent: boolean;
 }
 
+export interface PipelineBatchStepArtifact {
+  status: PipelineContractStatus;
+  evidence_ref: string;
+}
+
+export interface PipelineBatchArtifact {
+  name: string;
+  status: PipelineContractStatus;
+  checkpoint: PipelineBatchStepArtifact;
+  adversarial_review: PipelineBatchStepArtifact;
+  fix_loop: PipelineBatchStepArtifact & {
+    open_findings: number;
+    attempts: number;
+  };
+}
+
 export interface ManualFallbackArtifact {
   kind: "manual_fallback_not_pipeline";
   notice: typeof MANUAL_FALLBACK_NOTICE;
@@ -83,6 +99,7 @@ export interface PipelineGovernanceArtifact {
   gates: PipelineGateArtifact[];
   hooks: PipelineHookArtifact[];
   agents: PipelineAgentArtifact[];
+  batches: PipelineBatchArtifact[];
   manual_fallback: ManualFallbackArtifact;
   manual_fallback_allowed: true;
   manual_fallback_counts_as_pipeline: false;
@@ -211,6 +228,7 @@ export function createBlockedPipelineArtifact(input: {
     gates: [gate],
     hooks: [],
     agents: [],
+    batches: [],
     manual_fallback: createManualFallbackArtifact(),
     manual_fallback_allowed: true,
     manual_fallback_counts_as_pipeline: false,
@@ -225,6 +243,46 @@ export function createBlockedPipelineArtifact(input: {
 
 function presentStatuses<T extends { status: PipelineContractStatus }>(items: T[]) {
   return items.length > 0 && items.every((item) => item.status === "PASS");
+}
+
+function expectedBatchEvidenceRef(batchName: string, step: "checkpoint" | "adversarial_review" | "fix_loop") {
+  return `batch:${batchName}:${step}`;
+}
+
+function validateBatchLoopEvidence(batches: PipelineBatchArtifact[] | undefined) {
+  const missing_batches: string[] = [];
+  const batchArtifacts = Array.isArray(batches) ? batches : [];
+  if (batchArtifacts.length === 0) {
+    missing_batches.push("batch_loop:batches");
+    return missing_batches;
+  }
+
+  for (const batch of batchArtifacts) {
+    const name = batch.name || "unnamed";
+    if (batch.status !== "PASS") missing_batches.push(`batch:${name}:status:PASS`);
+    if (batch.checkpoint?.status !== "PASS") missing_batches.push(`batch:${name}:checkpoint:PASS`);
+    if (batch.checkpoint?.evidence_ref !== expectedBatchEvidenceRef(name, "checkpoint")) {
+      missing_batches.push(`batch:${name}:checkpoint:evidence_ref`);
+    }
+    if (batch.adversarial_review?.status !== "PASS") {
+      missing_batches.push(`batch:${name}:adversarial_review:PASS`);
+    }
+    if (batch.adversarial_review?.evidence_ref !== expectedBatchEvidenceRef(name, "adversarial_review")) {
+      missing_batches.push(`batch:${name}:adversarial_review:evidence_ref`);
+    }
+    if (batch.fix_loop?.status !== "PASS") missing_batches.push(`batch:${name}:fix_loop:PASS`);
+    if (batch.fix_loop?.evidence_ref !== expectedBatchEvidenceRef(name, "fix_loop")) {
+      missing_batches.push(`batch:${name}:fix_loop:evidence_ref`);
+    }
+    if (!Number.isInteger(batch.fix_loop?.open_findings) || batch.fix_loop.open_findings !== 0) {
+      missing_batches.push(`batch:${name}:fix_loop:open_findings:0`);
+    }
+    if (!Number.isInteger(batch.fix_loop?.attempts) || batch.fix_loop.attempts < 0 || batch.fix_loop.attempts > 3) {
+      missing_batches.push(`batch:${name}:fix_loop:attempts<=3`);
+    }
+  }
+
+  return missing_batches;
 }
 
 export function requiredAgentRoles(input: { adversarial?: boolean; security?: boolean } = {}) {
@@ -256,6 +314,7 @@ export function validatePipelineArtifact(
     .map((event) => event.slice("agent:".length));
   const gateFailures = artifact.gates.filter((gate) => gate.status !== "PASS");
   const hookFailures = artifact.hooks.filter((hook) => hook.status !== "PASS");
+  const missing_batches = validateBatchLoopEvidence(artifact.batches);
   const verdictBlocked = artifact.final_verdict.status !== "PASS";
   const pipeline_valid =
     artifact.pipeline_requested === true
@@ -267,8 +326,10 @@ export function validatePipelineArtifact(
     && missing_gates.length === 0
     && missing_hooks.length === 0
     && missing_agents.length === 0
+    && missing_batches.length === 0
     && presentStatuses(artifact.gates)
     && presentStatuses(artifact.hooks)
+    && presentStatuses(artifact.batches)
     && workflowEvidence.status === "PASS"
     && !verdictBlocked
     && artifact.manual_fallback_counts_as_pipeline === false;
@@ -279,6 +340,7 @@ export function validatePipelineArtifact(
     missing_gates,
     missing_hooks,
     missing_agents,
+    missing_batches,
     gate_failures: gateFailures.map((gate) => gate.gate),
     hook_failures: hookFailures.map((hook) => hook.checkpoint),
     final_verdict_status: artifact.final_verdict.status,
@@ -290,6 +352,7 @@ export function createPassingPipelineArtifact(input: {
   gates?: PipelineGateArtifact[];
   hooks?: PipelineHookArtifact[];
   agents?: PipelineAgentArtifact[];
+  batches?: PipelineBatchArtifact[];
   dispatches?: DispatchResult[];
 } = {}): PipelineGovernanceArtifact {
   if (input.testOnly !== true) {
@@ -305,6 +368,7 @@ export function createPassingPipelineArtifact(input: {
       gates: [],
       hooks: [],
       agents: [],
+      batches: [],
       manual_fallback: createManualFallbackArtifact(),
       manual_fallback_allowed: true,
       manual_fallback_counts_as_pipeline: false,
@@ -350,6 +414,26 @@ export function createPassingPipelineArtifact(input: {
         independent: true,
       },
     ],
+    batches: input.batches ?? [
+      {
+        name: "batch-1",
+        status: "PASS",
+        checkpoint: {
+          status: "PASS",
+          evidence_ref: "batch:batch-1:checkpoint",
+        },
+        adversarial_review: {
+          status: "PASS",
+          evidence_ref: "batch:batch-1:adversarial_review",
+        },
+        fix_loop: {
+          status: "PASS",
+          open_findings: 0,
+          attempts: 1,
+          evidence_ref: "batch:batch-1:fix_loop",
+        },
+      },
+    ],
     manual_fallback: createManualFallbackArtifact(),
     manual_fallback_allowed: true,
     manual_fallback_counts_as_pipeline: false,
@@ -378,6 +462,7 @@ export function createPassingPipelineArtifact(input: {
           validation.missing_gates.length > 0 ? `Missing gates: ${validation.missing_gates.join(", ")}` : "",
           validation.missing_hooks.length > 0 ? `Missing hooks: ${validation.missing_hooks.join(", ")}` : "",
           validation.missing_agents.length > 0 ? `Missing agents: ${validation.missing_agents.join(", ")}` : "",
+          validation.missing_batches.length > 0 ? `Missing batches: ${validation.missing_batches.join(", ")}` : "",
         ].filter(Boolean).join(" "),
         evidence_ref: "validatePipelineArtifact",
       },

@@ -21,6 +21,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { recordHookEvent } = require('./hook-events.cjs');
 const {
+  canonicalize,
   ledgerEntryIntegrityVerified,
   resolveSentinelIntegrityHmacKey,
 } = require('./ledger-integrity.cjs');
@@ -68,6 +69,13 @@ const GOVERNANCE_ARTIFACT_FILES = [
   'governance-artifact.json',
   'final-governance-artifact.json',
 ];
+const WORKFLOW_INTENT_FILE = 'workflow-intent.json';
+const REQUIRED_FIRST_ACTIONS_FILE = 'required-first-actions.json';
+const REQUIRED_BATCH_LOOP_STEPS = [
+  'checkpoint',
+  'adversarial_review',
+  'fix_loop',
+];
 
 const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
 
@@ -89,6 +97,24 @@ function readJsonIfExists(file) {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
     return undefined;
+  }
+}
+
+function readRequiredStateFile(file) {
+  if (!fs.existsSync(file)) {
+    return { status: 'missing' };
+  }
+  try {
+    const stats = fs.lstatSync(file);
+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size === 0) {
+      return { status: 'invalid' };
+    }
+    const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return state && typeof state === 'object' && !Array.isArray(state)
+      ? { status: 'ok', state }
+      : { status: 'invalid' };
+  } catch {
+    return { status: 'invalid' };
   }
 }
 
@@ -128,21 +154,6 @@ function readCheckpointLedger(stateDir) {
   } catch {
     return [];
   }
-}
-
-function canonicalize(value) {
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => canonicalize(entry)).join(',')}]`;
-  }
-
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right));
-    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`).join(',')}}`;
-  }
-
-  return JSON.stringify(value);
 }
 
 function sentinelIntegrityVerified(stateDir) {
@@ -197,10 +208,19 @@ function readTranscriptText(payload) {
   }
 }
 
-function pipelineWasExplicitlyRequested(payload, rawText, stateDir) {
+function explicitPipelineFrontDoorRequested(rawText) {
   if (/\/pipeline-orchestrator(?:-for-codex)?:pipeline\b/iu.test(rawText)) return true;
   if (/\[(?:[@$])?pipeline(?:\s|-)?orchestrator(?:\s|-)?for(?:\s|-)?codex\]\((?:plugin|app):\/\/pipeline-orchestrator-for-codex(?=[)@/?#])[^)]*\)/iu.test(rawText)) return true;
   if (/[@$]pipeline(?:\s|-)?orchestrator(?:\s|-)?for(?:\s|-)?codex\b/iu.test(rawText)) return true;
+  return false;
+}
+
+function pipelineWasExplicitlyRequested(payload, rawText, stateDir) {
+  if (explicitPipelineFrontDoorRequested(rawText)) return true;
+  if (workflowObligationFileRequiresEnforcement(stateDir)) return true;
+  if (activeWorkflowObligation(stateDir)) return true;
+  if (activeSessionLock(stateDir)) return true;
+  if (payloadContainsGovernanceArtifact(payload, stateDir)) return true;
   const sentinel = readJsonIfExists(path.join(stateDir, 'sentinel-state.json'));
   if (sentinel && sentinel.pipelineActive === true) return true;
   const session = readJsonIfExists(path.join(stateDir, 'session.json'));
@@ -219,7 +239,149 @@ function pipelineStateIsActive(stateDir) {
   const sentinel = readJsonIfExists(path.join(stateDir, 'sentinel-state.json'));
   if (sentinel && sentinel.pipelineActive === true) return true;
   const session = readJsonIfExists(path.join(stateDir, 'session.json'));
-  return !!(session && session.pipelineActive === true);
+  return !!(session && session.pipelineActive === true) || activeSessionLock(stateDir);
+}
+
+function activeSessionLock(stateDir) {
+  const lock = readJsonIfExists(path.join(stateDir, 'session-lock.json'));
+  return !!(
+    lock
+    && typeof lock === 'object'
+    && lock.status === 'active'
+    && typeof lock.expires_at === 'number'
+    && lock.expires_at > Math.floor(Date.now() / 1000)
+  );
+}
+
+function activeWorkflowIntent(stateDir) {
+  const intent = readJsonIfExists(path.join(stateDir, WORKFLOW_INTENT_FILE));
+  return !!(
+    intent
+    && typeof intent === 'object'
+    && intent.status === 'active'
+    && intent.plugin === 'pipeline-orchestrator-for-codex'
+    && !stateObjectExpired(intent)
+  );
+}
+
+function activeRequiredFirstActions(stateDir) {
+  const required = readJsonIfExists(path.join(stateDir, REQUIRED_FIRST_ACTIONS_FILE));
+  return !!(
+    required
+    && typeof required === 'object'
+    && required.status === 'active'
+    && required.plugin === 'pipeline-orchestrator-for-codex'
+    && !stateObjectExpired(required)
+  );
+}
+
+function activeWorkflowObligation(stateDir) {
+  return activeWorkflowIntent(stateDir) || activeRequiredFirstActions(stateDir);
+}
+
+function workflowObligationFileRequiresEnforcement(stateDir) {
+  return [WORKFLOW_INTENT_FILE, REQUIRED_FIRST_ACTIONS_FILE].some((file) => {
+    const stateFile = readRequiredStateFile(path.join(stateDir, file));
+    return stateFile.status === 'invalid'
+      || (stateFile.status === 'ok' && stateLooksLikePipelineObligation(stateFile.state));
+  });
+}
+
+function readActiveRequiredFirstActions(stateDir) {
+  const required = readJsonIfExists(path.join(stateDir, REQUIRED_FIRST_ACTIONS_FILE));
+  if (
+    required
+    && typeof required === 'object'
+    && required.status === 'active'
+    && required.plugin === 'pipeline-orchestrator-for-codex'
+    && !stateObjectExpired(required)
+  ) {
+    return required;
+  }
+  return undefined;
+}
+
+function workflowObligationIntegrityIssues(stateDir) {
+  const issues = [];
+  const obligations = [
+    {
+      name: 'workflow_intent_integrity:hmac-sha256',
+      stateFile: readRequiredStateFile(path.join(stateDir, WORKFLOW_INTENT_FILE)),
+      scope: 'pipeline-workflow-intent',
+    },
+    {
+      name: 'required_first_actions_integrity:hmac-sha256',
+      stateFile: readRequiredStateFile(path.join(stateDir, REQUIRED_FIRST_ACTIONS_FILE)),
+      scope: 'pipeline-required-first-actions',
+    },
+  ];
+
+  for (const obligation of obligations) {
+    if (obligation.stateFile.status === 'invalid') {
+      issues.push(obligation.name);
+      continue;
+    }
+    const state = obligation.stateFile.status === 'ok' ? obligation.stateFile.state : undefined;
+    if (
+      state
+      && typeof state === 'object'
+      && stateLooksLikePipelineObligation(state)
+      && !stateObjectIntegrityVerified(state, obligation.scope)
+    ) {
+      issues.push(obligation.name);
+    }
+  }
+
+  return issues;
+}
+
+function missingWorkflowObligationIssues(stateDir) {
+  if (!pipelineStateIsActive(stateDir)) return [];
+  const issues = [];
+  if (readRequiredStateFile(path.join(stateDir, WORKFLOW_INTENT_FILE)).status === 'missing') {
+    issues.push('workflow_intent:present');
+  }
+  if (readRequiredStateFile(path.join(stateDir, REQUIRED_FIRST_ACTIONS_FILE)).status === 'missing') {
+    issues.push('required_first_actions:present');
+  }
+  return issues;
+}
+
+function stateLooksLikePipelineObligation(state) {
+  return !!(
+    state
+    && typeof state === 'object'
+  );
+}
+
+function stateObjectExpired(state) {
+  if (typeof state.expires_at !== 'number') return true;
+  return state.expires_at <= Math.floor(Date.now() / 1000);
+}
+
+function stateObjectIntegrityVerified(state, scope) {
+  const key = resolveSentinelIntegrityHmacKey();
+  if (!key) return true;
+
+  const integrity = state && typeof state === 'object' ? state._integrity : undefined;
+  if (
+    !integrity
+    || integrity.algorithm !== 'hmac-sha256'
+    || integrity.scope !== scope
+    || typeof integrity.signature !== 'string'
+    || !HMAC_SHA256_HEX_SIGNATURE.test(integrity.signature)
+  ) {
+    return false;
+  }
+
+  const unsignedState = { ...state };
+  delete unsignedState._integrity;
+  const expected = crypto.createHmac('sha256', key).update(canonicalize(unsignedState)).digest('hex');
+  const expectedBytes = Buffer.from(expected, 'hex');
+  const actualBytes = Buffer.from(integrity.signature, 'hex');
+  return actualBytes.length > 0
+    && expectedBytes.length === actualBytes.length
+    && crypto.timingSafeEqual(expectedBytes, actualBytes);
 }
 
 function outputAttemptsPipelineCompletion(rawText) {
@@ -736,6 +898,158 @@ function validateLedgerEvidence(artifact, ledgers, identityContext) {
   return missing;
 }
 
+function stepStatus(step) {
+  if (!step || typeof step !== 'object') return undefined;
+  return step.status;
+}
+
+function expectedBatchEvidenceRef(batchName, step) {
+  return `batch:${batchName}:${step}`;
+}
+
+function ledgerBatchStepPassed(batchName, step, stepArtifact, ledgers, identityContext) {
+  const evidenceRef = stepArtifact && typeof stepArtifact === 'object'
+    ? stepArtifact.evidence_ref
+    : undefined;
+  if (evidenceRef !== expectedBatchEvidenceRef(batchName, step) || !ledgers) {
+    return false;
+  }
+  const expectedGate = `BATCH_LOOP:${batchName}:${step}`;
+  return (ledgers.gateDecisions ?? []).some((entry) => {
+    if (
+      !entry
+      || !ledgerEntryIntegrityVerified(entry)
+      || !entryMatchesActiveRunIdentity(entry, identityContext)
+      || entry.gate !== expectedGate
+      || entry.evidence_ref !== evidenceRef
+      || !['pass', 'PASS', 'approved', 'APPROVED', 'confirmed', 'CONFIRMED'].includes(entry.decision || entry.status)
+    ) {
+      return false;
+    }
+    if (step !== 'fix_loop') return true;
+    return Number.isInteger(entry.open_findings)
+      && entry.open_findings === 0
+      && Number.isInteger(entry.attempts)
+      && entry.attempts >= 0
+      && entry.attempts <= 3;
+  });
+}
+
+function validateBatchLoopEvidence(artifact, ledgers = undefined, identityContext = undefined) {
+  const missing = [];
+  const batches = Array.isArray(artifact?.batches) ? artifact.batches : [];
+  if (batches.length === 0) {
+    return ['batch_loop:batches'];
+  }
+
+  for (const [index, batch] of batches.entries()) {
+    const name = typeof batch?.name === 'string' && batch.name.trim()
+      ? batch.name.trim()
+      : `batch-${index + 1}`;
+    if (!batch || typeof batch !== 'object') {
+      missing.push(`batch:${name}:object`);
+      continue;
+    }
+    if (batch.status !== 'PASS') {
+      missing.push(`batch:${name}:status:PASS`);
+    }
+    for (const step of REQUIRED_BATCH_LOOP_STEPS) {
+      const stepArtifact = batch[step];
+      if (stepStatus(stepArtifact) !== 'PASS') {
+        missing.push(`batch:${name}:${step}:PASS`);
+      }
+      const evidenceRef = stepArtifact && typeof stepArtifact === 'object'
+        ? stepArtifact.evidence_ref
+        : undefined;
+      if (evidenceRef !== expectedBatchEvidenceRef(name, step)) {
+        missing.push(`batch:${name}:${step}:evidence_ref`);
+      } else if (ledgers && !ledgerBatchStepPassed(name, step, stepArtifact, ledgers, identityContext)) {
+        missing.push(`ledger:batch:${name}:${step}`);
+      }
+    }
+    const fixLoop = batch.fix_loop;
+    if (!fixLoop || typeof fixLoop !== 'object') {
+      continue;
+    }
+    if (!Number.isInteger(fixLoop.open_findings) || fixLoop.open_findings !== 0) {
+      missing.push(`batch:${name}:fix_loop:open_findings:0`);
+    }
+    if (!Number.isInteger(fixLoop.attempts) || fixLoop.attempts < 0 || fixLoop.attempts > 3) {
+      missing.push(`batch:${name}:fix_loop:attempts<=3`);
+    }
+  }
+
+  return missing;
+}
+
+function ledgerRequiredActionCompleted(action, ledgers, identityContext) {
+  const allLedgers = [
+    ...(ledgers.gateDecisions ?? []),
+    ...(ledgers.checkpoints ?? []),
+    ...(ledgers.hookEvents ?? []),
+    ...(ledgers.protocolEvents ?? []),
+  ];
+  const requiredSpawnTarget = typeof action === 'string' && action.startsWith('spawn:')
+    ? action.slice('spawn:'.length)
+    : undefined;
+  const requiredSpawnLeaf = requiredSpawnTarget ? requiredSpawnTarget.split(':').pop() : undefined;
+  return allLedgers.some((entry) => (
+    entry
+    && ledgerEntryIntegrityVerified(entry)
+    && entryMatchesActiveRunIdentity(entry, identityContext)
+    && ['completed', 'PASS', 'pass', 'approved', 'APPROVED', 'confirmed', 'CONFIRMED'].includes(entry.status || entry.decision)
+    && (
+      entry.action === action
+      || entry.required_action === action
+      || entry.completed_action === action
+      || entry.gate === action
+      || entry.kind === action
+      || entry.event === action
+      || (
+        action === 'wait_agent'
+        && entry.payload
+        && typeof entry.payload === 'object'
+        && entry.payload.capability === 'wait_agent'
+        && entry.payload.event === 'WAIT_AGENT_COMPLETED'
+      )
+      || (
+        requiredSpawnTarget
+        && entry.kind === 'DISPATCH_REQUEST'
+        && entry.payload
+        && typeof entry.payload === 'object'
+        && (
+          entry.payload.targetName === requiredSpawnTarget
+          || entry.payload.targetName === requiredSpawnLeaf
+        )
+      )
+    )
+  ));
+}
+
+function validateRequiredFirstActions(stateDir, ledgers, identityContext) {
+  const required = readActiveRequiredFirstActions(stateDir);
+  if (!required) return [];
+  const missing = [];
+  const requiredActions = Array.isArray(required.required_actions) ? required.required_actions : [];
+  const completedActions = new Set(
+    Array.isArray(required.completed_actions)
+      ? required.completed_actions.filter((action) => typeof action === 'string')
+      : [],
+  );
+
+  for (const action of requiredActions) {
+    if (typeof action !== 'string' || action.trim().length === 0) {
+      missing.push('required_action:valid');
+      continue;
+    }
+    if (!completedActions.has(action) && !ledgerRequiredActionCompleted(action, ledgers, identityContext)) {
+      missing.push(`required_action:${action}`);
+    }
+  }
+
+  return missing;
+}
+
 function readLedgers(stateDir) {
   return {
     protocolEvents: readJsonlIfExists(path.join(stateDir, 'protocol-events.jsonl')),
@@ -764,9 +1078,15 @@ function validateGovernanceArtifact(artifact, ledgers = undefined, stateDir = un
   if (artifact.pipeline_valid !== true) missing.push('pipeline_valid');
   if (artifact.runtime_mode !== 'real-agent') missing.push('runtime_mode:real-agent');
   if (artifact.hook_enforcement_mode !== 'blocking') missing.push('hook_enforcement_mode:blocking');
+  if (artifact.exec_window_enforcement !== 'cooperative') missing.push('exec_window_enforcement:cooperative');
   if (artifact.status !== 'PASS') missing.push('status:PASS');
   if (artifact.manual_fallback_counts_as_pipeline !== false) missing.push('manual_fallback_counts_as_pipeline:false');
   if (!artifact.final_verdict || artifact.final_verdict.status !== 'PASS') missing.push('final_verdict:PASS');
+  const identityContext = stateDir ? activeRunIdentityContext(stateDir) : undefined;
+  missing.push(...validateBatchLoopEvidence(artifact, ledgers, identityContext));
+  if (stateDir && ledgers) {
+    missing.push(...validateRequiredFirstActions(stateDir, ledgers, identityContext));
+  }
 
   for (const gate of REQUIRED_PIPELINE_GATES) {
     if (!arrayContainsPass(artifact.gates, 'gate', gate)) missing.push(`gate:${gate}`);
@@ -783,7 +1103,7 @@ function validateGovernanceArtifact(artifact, ledgers = undefined, stateDir = un
     }
   }
 
-  if (missing.length === 0 && ledgers) {
+  if (ledgers) {
     const identityContext = stateDir ? activeRunIdentityContext(stateDir) : undefined;
     missing.push(...validateLedgerEvidence(artifact, ledgers, identityContext));
   }
@@ -872,17 +1192,37 @@ function evaluateStopEnforcement(payload, rawInput) {
   const transcriptText = readTranscriptText(payload);
   const currentText = [rawInput, collectText(payload)].join('\n');
   const rawText = [currentText, transcriptText].join('\n');
+  const workflowObligationFilePresent = workflowObligationFileRequiresEnforcement(stateDir);
+  const explicitFrontDoorRequested = explicitPipelineFrontDoorRequested(rawText);
   if (!pipelineWasExplicitlyRequested(payload, rawText, stateDir)) {
     return { ok: true, missing: [] };
   }
 
-  if (!pipelineStateIsActive(stateDir) && !outputAttemptsPipelineCompletion(rawText) && !payloadContainsGovernanceArtifact(payload, stateDir)) {
+  if (
+    !explicitFrontDoorRequested
+    && !activeWorkflowObligation(stateDir)
+    && !workflowObligationFilePresent
+    && !activeSessionLock(stateDir)
+    && !pipelineStateIsActive(stateDir)
+    && !outputAttemptsPipelineCompletion(rawText)
+    && !payloadContainsGovernanceArtifact(payload, stateDir)
+  ) {
     return { ok: true, missing: [] };
   }
 
   const artifactMatch = findGovernanceArtifactMatch(payload, stateDir);
   const artifact = artifactMatch ? artifactMatch.artifact : undefined;
   const ledgers = readLedgers(stateDir);
+  const missingObligationIssues = missingWorkflowObligationIssues(stateDir);
+  const obligationIntegrityIssues = workflowObligationIntegrityIssues(stateDir);
+  const obligationIssues = [...missingObligationIssues, ...obligationIntegrityIssues];
+  if (obligationIntegrityIssues.length > 0) {
+    return {
+      ok: false,
+      missing: obligationIntegrityIssues,
+    };
+  }
+
   if (
     artifactMatch
     && artifactRequiresCurrentRunIdentity(artifact)
@@ -903,22 +1243,44 @@ function evaluateStopEnforcement(payload, rawInput) {
   }
 
   if (isStructuredBlockedPipelineArtifact(artifact) && !outputClaimsSuccessfulPipelineCompletion(currentText)) {
+    if (obligationIntegrityIssues.length > 0) {
+      return {
+        ok: false,
+        missing: obligationIntegrityIssues,
+      };
+    }
+    const blockedObligationIssues = [
+      ...missingObligationIssues,
+      ...validateRequiredFirstActions(stateDir, ledgers, activeRunIdentityContext(stateDir)),
+    ];
+    if (blockedObligationIssues.length > 0) {
+      return {
+        ok: false,
+        missing: blockedObligationIssues,
+      };
+    }
     return { ok: true, missing: [] };
   }
 
   const validation = validateGovernanceArtifact(artifact, ledgers, stateDir);
+  const validationWithObligations = obligationIssues.length > 0
+    ? {
+        ok: false,
+        missing: [...validation.missing, ...obligationIssues],
+      }
+    : validation;
   if (artifactRequiresCurrentRunIdentity(artifact) && !isStructuredBlockedPipelineArtifact(artifact)) {
     const missingIntegrity = validatePassArtifactIntegrity(stateDir);
     if (missingIntegrity.length > 0) {
       return {
         ok: false,
-        missing: validation.ok
+        missing: validationWithObligations.ok
           ? missingIntegrity
-          : [...validation.missing, ...missingIntegrity],
+          : [...validationWithObligations.missing, ...missingIntegrity],
       };
     }
   }
-  return validation.ok ? { ok: true, missing: [] } : validation;
+  return validationWithObligations.ok ? { ok: true, missing: [] } : validationWithObligations;
 }
 
 /**
@@ -1068,6 +1430,10 @@ process.stdin.on('end', () => {
     }));
 
   } catch (e) {
-    console.log(JSON.stringify({ continue: true }));
+    console.log(JSON.stringify({
+      continue: false,
+      stopReason: 'pipeline-stop-hook-error',
+      systemMessage: 'completion-checklist hook failed internally; inline completion is blocked because pipeline stop enforcement could not be proven.',
+    }));
   }
 });

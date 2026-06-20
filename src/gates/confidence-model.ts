@@ -19,6 +19,7 @@
 
 import type { GateDecision } from "./gate-registry.js";
 import type { GateHardness } from "./gate-types.js";
+import type { Provenance } from "../state/gate-log.js";
 
 // R2 — Confidence_Cap_Threshold (fixed value per Open Question OQ-3 resolution
 // in .kiro/specs/pipeline-trust-restoration/tasks.md). Simplicity over a
@@ -38,6 +39,7 @@ export interface ConfidenceGateEntry {
   phase: string;
   decision: GateDecision;
   decided_by: "controller" | "user" | "system" | "resume-router";
+  provenance?: Provenance;
   timestamp: string;
   detail: string;
   confidence_impact: number;

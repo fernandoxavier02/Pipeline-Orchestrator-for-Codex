@@ -579,7 +579,7 @@ function validatePipelineCompletionEvidence(input) {
     if (artifactValidation?.pipeline_valid !== true) {
         missing.push("PipelineGovernanceArtifact");
         if (artifactValidation) {
-            missing.push(...artifactValidation.missing_gates.map((gate) => `gate:${gate}`), ...artifactValidation.missing_hooks.map((hook) => `hook:${hook}`), ...artifactValidation.missing_agents.map((agent) => `agent:${agent}`));
+            missing.push(...artifactValidation.missing_gates.map((gate) => `gate:${gate}`), ...artifactValidation.missing_hooks.map((hook) => `hook:${hook}`), ...artifactValidation.missing_agents.map((agent) => `agent:${agent}`), ...artifactValidation.missing_batches);
         }
     }
     else {
@@ -1097,6 +1097,7 @@ export function createPipelineRuntime(options) {
                         phase: "phase-3",
                         decision: input.confirmed ? "pass" : "skip",
                         decided_by: inferDecidedBy({ source: "controller" }),
+                        provenance: { source: "controller" },
                         timestamp: new Date().toISOString(),
                         detail: input.confirmed
                             ? "Operator explicitly confirmed closeout."
@@ -1111,6 +1112,7 @@ export function createPipelineRuntime(options) {
                         phase: "phase-3",
                         decision: "pass",
                         decided_by: inferDecidedBy({ source: "controller" }),
+                        provenance: { source: "controller" },
                         timestamp: new Date().toISOString(),
                         detail: "Hotfix closeout used reduced final validation (build plus tests).",
                         confidence_impact: 0,
@@ -1225,6 +1227,7 @@ export function createPipelineRuntime(options) {
                         phase: "phase-3",
                         decision: "block",
                         decided_by: inferDecidedBy({ source: "controller" }),
+                        provenance: { source: "controller" },
                         timestamp: new Date().toISOString(),
                         detail: `Final validator returned NO-GO before PA_DE_CAL. Missing evidence: ${validation.missingEvidence.join(", ") || "none"}.`,
                         confidence_impact: 0,

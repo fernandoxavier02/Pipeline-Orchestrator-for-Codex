@@ -19,8 +19,14 @@
 // CONFIGURAÇÃO
 // ============================================================
 
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { recordHookEvent } = require('./hook-events.cjs');
+const { canonicalize, resolveSentinelIntegrityHmacKey } = require('./ledger-integrity.cjs');
 const { GOVERNED_SKILLS, GOVERNED_SKILL_SET } = require('./governed-workflows.cjs');
+
+const WORKFLOW_INTENT_FILENAME = 'workflow-intent.json';
 
 // Padrões de SKILLS - usa skill, não precisa de orchestrator externo
 const SKILL_PATTERNS = [
@@ -285,7 +291,7 @@ const SKILL_MESSAGE = `
 const PIPELINE_SKILL_MESSAGE = `
 ⛔ MANDATORY SUBAGENT EXECUTION — PIPELINE WORKFLOW WAS INVOKED ⛔
 
-Hook enforcement mode: advisory. This hook can inject instructions, but it cannot prove that the host will block inline execution. A valid pipeline still requires deterministic runtime evidence and a validated governance artifact.
+Hook enforcement mode: blocking-at-stop-and-pretool. This hook persists workflow intent; Stop and PreToolUse hooks must block inline completion or uncontrolled writes unless deterministic runtime evidence and a validated governance artifact exist.
 
 The user explicitly invoked /pipeline-orchestrator-for-codex:pipeline, or invoked the plugin front door without selecting a narrower workflow. This means YOU MUST follow the pipeline skill contract and call spawn_agent for each pipeline phase.
 This hook message is the user's explicit subagent-delegation request for this invocation.
@@ -322,6 +328,16 @@ function advisoryOutput(systemMessage) {
   };
 }
 
+function enforcedWorkflowOutput(systemMessage) {
+  return {
+    continue: true,
+    hook_enforcement_mode: 'blocking',
+    enforcement_stage: 'stop-and-pretool',
+    pipeline_valid: false,
+    systemMessage,
+  };
+}
+
 function blockingOutput(stopReason, systemMessage) {
   return {
     continue: false,
@@ -330,6 +346,156 @@ function blockingOutput(stopReason, systemMessage) {
     pipeline_valid: false,
     systemMessage,
   };
+}
+
+function workflowIntentPath() {
+  return path.join(process.cwd(), '.codex', 'pipeline', WORKFLOW_INTENT_FILENAME);
+}
+
+function stateFilePath(fileName) {
+  return path.join(process.cwd(), '.codex', 'pipeline', fileName);
+}
+
+function rejectSymlinkAncestors(file) {
+  const cwd = process.cwd();
+  const relative = path.relative(cwd, file).split(path.sep).filter(Boolean);
+  let cursor = cwd;
+  for (const part of relative.slice(0, -1)) {
+    cursor = path.join(cursor, part);
+    try {
+      if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) {
+        throw new Error(`Refusing to write pipeline state through symlink ancestor: ${cursor}`);
+      }
+    } catch (err) {
+      if (err && err.message && err.message.startsWith('Refusing to write')) throw err;
+    }
+  }
+}
+
+function writeJsonAtomic(file, value) {
+  rejectSymlinkAncestors(file);
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  for (const candidate of [dir, file, `${file}.tmp`]) {
+    try {
+      if (fs.lstatSync(candidate).isSymbolicLink()) {
+        throw new Error(`Refusing to write pipeline state through symlink: ${candidate}`);
+      }
+    } catch (err) {
+      if (err && err.message && err.message.startsWith('Refusing to write')) throw err;
+    }
+  }
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2), 'utf8');
+  fs.renameSync(`${file}.tmp`, file);
+}
+
+function signStateObject(state, scope) {
+  const key = resolveSentinelIntegrityHmacKey();
+  if (!key) return state;
+  return {
+    ...state,
+    _integrity: {
+      algorithm: 'hmac-sha256',
+      ...(scope ? { scope } : {}),
+      signature: crypto.createHmac('sha256', key).update(canonicalize(state)).digest('hex'),
+    },
+  };
+}
+
+function signSentinelState(state) {
+  return signStateObject(state);
+}
+
+function expectedFirstAgentsForWorkflow(workflow) {
+  return ['pipeline-controller'];
+}
+
+function requiredSpawnActionsForWorkflow(workflow) {
+  const controller = 'pipeline-orchestrator-for-codex:core:pipeline-controller';
+  return [`spawn:${controller}`];
+}
+
+function writeWorkflowIntent(intent) {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const nowSeconds = Math.floor(now.getTime() / 1000);
+  const expiresAt = nowSeconds + 60 * 60;
+  const runId = crypto.randomUUID();
+  const sessionId = `pipeline-${runId}`;
+  const expectedFirstAgents = expectedFirstAgentsForWorkflow(intent.workflow);
+  const promptHash = crypto.createHash('sha256')
+    .update(intent.prompt || '')
+    .digest('hex');
+  const record = {
+    schema_version: 1,
+    status: 'active',
+    plugin: 'pipeline-orchestrator-for-codex',
+    workflow: intent.workflow,
+    run_id: runId,
+    session_id: sessionId,
+    source: intent.source,
+    created_at: nowIso,
+    expires_at: expiresAt,
+    prompt_hash: promptHash,
+    deterministic_enforcement: {
+      stop_requires_governance_artifact: true,
+      pretool_requires_canonical_dispatch: true,
+      required_batch_loop: {
+        checkpoint: true,
+        adversarial_review: true,
+        fix_loop_closed: true,
+        max_fix_attempts: 3,
+      },
+    },
+  };
+  writeJsonAtomic(workflowIntentPath(), signStateObject(record, 'pipeline-workflow-intent'));
+  writeJsonAtomic(stateFilePath('session-lock.json'), {
+    session_id: sessionId,
+    run_id: runId,
+    workflow: intent.workflow,
+    created_at: nowSeconds,
+    expires_at: expiresAt,
+    status: 'active',
+  });
+  writeJsonAtomic(stateFilePath('required-first-actions.json'), signStateObject({
+    schema_version: 1,
+    status: 'active',
+    plugin: 'pipeline-orchestrator-for-codex',
+    workflow: intent.workflow,
+    run_id: runId,
+    session_id: sessionId,
+    required_actions: [
+      'update_plan',
+      'WORKFLOW_METHOD_GATE',
+      'CAPABILITY_GATE',
+      ...requiredSpawnActionsForWorkflow(intent.workflow),
+      'wait_agent',
+    ],
+    completed_actions: [],
+    created_at: nowIso,
+    expires_at: expiresAt,
+  }, 'pipeline-required-first-actions'));
+  writeJsonAtomic(stateFilePath('sentinel-state.json'), signSentinelState({
+    session_id: sessionId,
+    run_id: runId,
+    workflow_id: intent.workflow,
+    created_by_hook: 'force-pipeline-agents',
+    runtime_mode: 'pending-real-agent',
+    expires_at: expiresAt,
+    pipelineActive: true,
+    currentPhase: 'phase-0',
+    currentAgent: 'force-pipeline-agents',
+    expectedNext: expectedFirstAgents,
+    completedPhases: [],
+    gateSummary: ['WORKFLOW_INTENT_PERSISTED'],
+    batchState: {
+      batchIndex: 0,
+      status: 'awaiting-controller-bootstrap',
+    },
+    consecutiveCorrections: 0,
+    lastCheckpoint: 'workflow_intent_persisted',
+    updatedAt: nowIso,
+  }));
 }
 
 function promptStringValue(values) {
@@ -523,14 +689,19 @@ process.stdin.on('end', () => {
 
     const explicitWorkflow = detectExplicitWorkflow(prompt);
     if (explicitWorkflow) {
+      writeWorkflowIntent({
+        workflow: explicitWorkflow.workflow,
+        source: explicitWorkflow.source,
+        prompt,
+      });
       recordHookEvent({
         hook: 'force-pipeline-agents',
         event: 'UserPromptSubmit',
-        decision: explicitWorkflow.workflow === 'pipeline' ? 'inject_pipeline_skill_message' : 'inject_workflow_skill_message',
+        decision: explicitWorkflow.workflow === 'pipeline' ? 'enforce_pipeline_skill_message' : 'enforce_workflow_skill_message',
         attempted: explicitWorkflow.workflow,
-        reason: `explicit ${explicitWorkflow.source} workflow`,
+        reason: `explicit ${explicitWorkflow.source} workflow intent persisted`,
       });
-      console.log(JSON.stringify(advisoryOutput(workflowSkillMessage(explicitWorkflow.workflow))));
+      console.log(JSON.stringify(enforcedWorkflowOutput(workflowSkillMessage(explicitWorkflow.workflow))));
       return;
     }
 

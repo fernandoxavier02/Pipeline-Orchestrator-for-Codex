@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createHmac } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,6 +75,7 @@ function writeLedgerProof(
   options: {
     hookEvents?: boolean;
     waitEvents?: boolean;
+    batchEvents?: boolean;
     dispatchMode?: "real" | "emulated";
     signedLedgerEntries?: boolean;
     protocolTargetName?: (role: string) => string;
@@ -89,12 +90,39 @@ function writeLedgerProof(
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(
     join(stateDir, "gate-decisions.jsonl"),
-    artifact.gates.map((gate) => JSON.stringify(maybeSignLedger({
-      gate: gate.gate,
-      decision: "pass",
-      status: "PASS",
-      ...identityFields,
-    }))).join("\n") + "\n",
+    [
+      ...artifact.gates.map((gate) => maybeSignLedger({
+        gate: gate.gate,
+        decision: "pass",
+        status: "PASS",
+        ...identityFields,
+      })),
+      ...(options.batchEvents === false ? [] : artifact.batches.flatMap((batch) => [
+        maybeSignLedger({
+          gate: `BATCH_LOOP:${batch.name}:checkpoint`,
+          decision: "pass",
+          status: "PASS",
+          evidence_ref: batch.checkpoint.evidence_ref,
+          ...identityFields,
+        }),
+        maybeSignLedger({
+          gate: `BATCH_LOOP:${batch.name}:adversarial_review`,
+          decision: "pass",
+          status: "PASS",
+          evidence_ref: batch.adversarial_review.evidence_ref,
+          ...identityFields,
+        }),
+        maybeSignLedger({
+          gate: `BATCH_LOOP:${batch.name}:fix_loop`,
+          decision: "pass",
+          status: "PASS",
+          evidence_ref: batch.fix_loop.evidence_ref,
+          open_findings: batch.fix_loop.open_findings,
+          attempts: batch.fix_loop.attempts,
+          ...identityFields,
+        }),
+      ])),
+    ].map((gate) => JSON.stringify(gate)).join("\n") + "\n",
     "utf8",
   );
   writeFileSync(
@@ -980,6 +1008,255 @@ describe("runtime pipeline completion enforcement", () => {
         pipeline_valid: true,
       },
     });
+  });
+
+  it("TDD: blocks PIPELINE COMPLETE when batch-loop ledger evidence is missing", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-completion-missing-batch-ledgers-"));
+    const artifact = {
+      ...createPassingPipelineArtifact({ testOnly: true }),
+      run_id: "current-run",
+      session_id: "current-session",
+    };
+    const runtime = createPipelineRuntime({
+      cwd,
+      codexHome: cwd,
+      strictAgents: true,
+      agentRuntime: {
+        runtimeMode: "real-agent",
+        capabilities: {
+          spawnAgent: true,
+          waitAgent: true,
+          collectArtifacts: true,
+          recordGates: true,
+          recordCheckpoints: true,
+          structuredFinalState: true,
+        },
+        async spawnAgent(request) {
+          return {
+            mode: "single-agent",
+            role: request.role,
+            output: {
+              text: "PIPELINE COMPLETE",
+              status: "approved",
+              pipelineGovernanceArtifact: artifact,
+            },
+          };
+        },
+        async waitAgent(dispatch) {
+          return dispatch;
+        },
+        async collectArtifacts(dispatches) {
+          return dispatches.map((dispatch) => dispatch.output);
+        },
+      },
+    });
+    writeActiveRuntimeState(runtime.stateDir, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    writeLedgerProof(runtime.stateDir, artifact, { batchEvents: false });
+
+    const result = await runtime.dispatcher.runRole({
+      mode: "single-agent",
+      role: "pipeline-controller",
+      phase: "phase-3",
+      prompt: "Finish the pipeline.",
+      input: {
+        request: "/pipeline-orchestrator-for-codex:pipeline reject missing batch loop",
+      },
+      filesInScope: [],
+      authorityLevel: "controller",
+      freshContext: true,
+      reviewOnly: false,
+    });
+
+    expect(result.output).toMatchObject({
+      status: "blocked",
+      protocolStatus: "blocked-missing-governance-evidence",
+      pipeline_valid: false,
+    });
+    expect(result.output.blockedReason).toContain("ledger:batch:batch-1:checkpoint");
+    expect(result.output.blockedReason).toContain("ledger:batch:batch-1:adversarial_review");
+    expect(result.output.blockedReason).toContain("ledger:batch:batch-1:fix_loop");
+  });
+
+  it("TDD: blocks PIPELINE COMPLETE with signed generic batch-loop evidence refs", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-completion-generic-batch-ledgers-"));
+    const artifact = {
+      ...createPassingPipelineArtifact({ testOnly: true }),
+      run_id: "current-run",
+      session_id: "current-session",
+      batches: [
+        {
+          name: "batch-1",
+          status: "PASS" as const,
+          checkpoint: { status: "PASS" as const, evidence_ref: "PASS" },
+          adversarial_review: { status: "PASS" as const, evidence_ref: "done" },
+          fix_loop: { status: "PASS" as const, evidence_ref: "closed", open_findings: 0, attempts: 1 },
+        },
+      ],
+    };
+    const runtime = createPipelineRuntime({
+      cwd,
+      codexHome: cwd,
+      strictAgents: true,
+      agentRuntime: {
+        runtimeMode: "real-agent",
+        capabilities: {
+          spawnAgent: true,
+          waitAgent: true,
+          collectArtifacts: true,
+          recordGates: true,
+          recordCheckpoints: true,
+          structuredFinalState: true,
+        },
+        async spawnAgent(request) {
+          return {
+            mode: "single-agent",
+            role: request.role,
+            output: {
+              text: "PIPELINE COMPLETE",
+              status: "approved",
+              pipelineGovernanceArtifact: artifact,
+            },
+          };
+        },
+        async waitAgent(dispatch) {
+          return dispatch;
+        },
+        async collectArtifacts(dispatches) {
+          return dispatches.map((dispatch) => dispatch.output);
+        },
+      },
+    });
+    writeActiveRuntimeState(runtime.stateDir, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    writeLedgerProof(runtime.stateDir, artifact);
+
+    const result = await runtime.dispatcher.runRole({
+      mode: "single-agent",
+      role: "pipeline-controller",
+      phase: "phase-3",
+      prompt: "Finish the pipeline.",
+      input: {
+        request: "/pipeline-orchestrator-for-codex:pipeline reject generic batch loop",
+      },
+      filesInScope: [],
+      authorityLevel: "controller",
+      freshContext: true,
+      reviewOnly: false,
+    });
+
+    expect(result.output).toMatchObject({
+      status: "blocked",
+      protocolStatus: "blocked-missing-governance-evidence",
+      pipeline_valid: false,
+    });
+    expect(result.output.blockedReason).toContain("batch:batch-1:checkpoint:evidence_ref");
+    expect(result.output.blockedReason).toContain("batch:batch-1:adversarial_review:evidence_ref");
+    expect(result.output.blockedReason).toContain("batch:batch-1:fix_loop:evidence_ref");
+  });
+
+  it("TDD: blocks PIPELINE COMPLETE when signed batch-loop ledgers are failing", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-completion-failing-batch-ledgers-"));
+    const artifact = {
+      ...createPassingPipelineArtifact({ testOnly: true }),
+      run_id: "current-run",
+      session_id: "current-session",
+    };
+    const runtime = createPipelineRuntime({
+      cwd,
+      codexHome: cwd,
+      strictAgents: true,
+      agentRuntime: {
+        runtimeMode: "real-agent",
+        capabilities: {
+          spawnAgent: true,
+          waitAgent: true,
+          collectArtifacts: true,
+          recordGates: true,
+          recordCheckpoints: true,
+          structuredFinalState: true,
+        },
+        async spawnAgent(request) {
+          return {
+            mode: "single-agent",
+            role: request.role,
+            output: {
+              text: "PIPELINE COMPLETE",
+              status: "approved",
+              pipelineGovernanceArtifact: artifact,
+            },
+          };
+        },
+        async waitAgent(dispatch) {
+          return dispatch;
+        },
+        async collectArtifacts(dispatches) {
+          return dispatches.map((dispatch) => dispatch.output);
+        },
+      },
+    });
+    writeActiveRuntimeState(runtime.stateDir, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    writeLedgerProof(runtime.stateDir, artifact, { batchEvents: false });
+    const identityFields = artifactIdentityFields(artifact as unknown as Record<string, unknown>);
+    appendFileSync(
+      join(runtime.stateDir, "gate-decisions.jsonl"),
+      artifact.batches.flatMap((batch) => [
+        signLedgerEntry({
+          gate: `BATCH_LOOP:${batch.name}:checkpoint`,
+          decision: "fail",
+          status: "FAIL",
+          evidence_ref: batch.checkpoint.evidence_ref,
+          ...identityFields,
+        }),
+        signLedgerEntry({
+          gate: `BATCH_LOOP:${batch.name}:adversarial_review`,
+          decision: "fail",
+          status: "FAIL",
+          evidence_ref: batch.adversarial_review.evidence_ref,
+          ...identityFields,
+        }),
+        signLedgerEntry({
+          gate: `BATCH_LOOP:${batch.name}:fix_loop`,
+          decision: "fail",
+          status: "FAIL",
+          evidence_ref: batch.fix_loop.evidence_ref,
+          open_findings: 2,
+          attempts: 9,
+          ...identityFields,
+        }),
+      ]).map((entry) => JSON.stringify(entry)).join("\n") + "\n",
+      "utf8",
+    );
+
+    const result = await runtime.dispatcher.runRole({
+      mode: "single-agent",
+      role: "pipeline-controller",
+      phase: "phase-3",
+      prompt: "Finish the pipeline.",
+      input: {
+        request: "/pipeline-orchestrator-for-codex:pipeline reject failing batch loop",
+      },
+      filesInScope: [],
+      authorityLevel: "controller",
+      freshContext: true,
+      reviewOnly: false,
+    });
+
+    expect(result.output).toMatchObject({
+      status: "blocked",
+      protocolStatus: "blocked-missing-governance-evidence",
+      pipeline_valid: false,
+    });
+    expect(result.output.blockedReason).toContain("ledger:batch:batch-1:checkpoint");
+    expect(result.output.blockedReason).toContain("ledger:batch:batch-1:adversarial_review");
+    expect(result.output.blockedReason).toContain("ledger:batch:batch-1:fix_loop");
   });
 
   it("TDD: blocks PIPELINE COMPLETE when only the shared integrity key is configured and sentinel is unsigned", async () => {

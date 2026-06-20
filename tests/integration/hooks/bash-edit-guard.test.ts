@@ -84,7 +84,7 @@ describe("R12 — Bash hook behavior", () => {
     expect(result.stdout.trim()).toBe("");
   });
 
-  it("R12 AC 12.4: allows file-modifying Bash inside the .codex/ allowed scope", () => {
+  it("TDD: denies file-modifying Bash inside the .codex/pipeline state area", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-bash-edit-guard-"));
     withActiveSession(cwd);
     mkdirSync(join(cwd, ".codex", "pipeline"), { recursive: true });
@@ -95,7 +95,9 @@ describe("R12 — Bash hook behavior", () => {
     });
 
     expect(result.status).toBe(0);
-    expect(result.stdout.trim()).toBe("");
+    const output = JSON.parse(result.stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain(".codex/pipeline");
   });
 
   it("R12 AC 12.3: denies `rm path/outside`", () => {

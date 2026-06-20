@@ -184,6 +184,50 @@ function agentHasLedger(role, dispatchRef, ledgers, expectedIdentity) {
     return dispatchHasLedger(role, dispatchRef, ledgers, expectedIdentity)
         && waitAgentHasLedger(role, dispatchRef, ledgers, expectedIdentity);
 }
+function expectedBatchEvidenceRef(batchName, step) {
+    return `batch:${batchName}:${step}`;
+}
+function batchStepHasLedger(batchName, step, stepArtifact, ledgers, expectedIdentity) {
+    const artifact = asRecord(stepArtifact);
+    const evidenceRef = artifact?.evidence_ref;
+    if (evidenceRef !== expectedBatchEvidenceRef(batchName, step))
+        return false;
+    const expectedGate = `BATCH_LOOP:${batchName}:${step}`;
+    return (ledgers.gateDecisions ?? []).some((entry) => {
+        const row = asRecord(entry);
+        if (!ledgerEntryIntegrityVerified(row)
+            || !ledgerMatchesArtifactIdentity(row, expectedIdentity)
+            || row?.gate !== expectedGate
+            || row.evidence_ref !== evidenceRef
+            || !isPassDecision(row.decision ?? row.status)) {
+            return false;
+        }
+        if (step !== "fix_loop")
+            return true;
+        const openFindings = row.open_findings;
+        const attempts = row.attempts;
+        return typeof openFindings === "number"
+            && Number.isInteger(openFindings)
+            && openFindings === 0
+            && typeof attempts === "number"
+            && Number.isInteger(attempts)
+            && attempts >= 0
+            && attempts <= 3;
+    });
+}
+function missingBatchLedger(batch, index, ledgers, expectedIdentity) {
+    const row = asRecord(batch);
+    const batchName = typeof row?.name === "string" && row.name.trim().length > 0
+        ? row.name.trim()
+        : `batch-${index + 1}`;
+    const missing = [];
+    for (const step of ["checkpoint", "adversarial_review", "fix_loop"]) {
+        if (!batchStepHasLedger(batchName, step, row?.[step], ledgers, expectedIdentity)) {
+            missing.push(`ledger:batch:${batchName}:${step}`);
+        }
+    }
+    return missing;
+}
 function missingAgentLedger(role, dispatchRef, ledgers, expectedIdentity) {
     const missing = [];
     if (!dispatchHasLedger(role, dispatchRef, ledgers, expectedIdentity)) {
@@ -210,6 +254,11 @@ export function validatePipelineLedgerEvidence(artifact, ledgers) {
     for (const agent of artifact.agents.filter((entry) => entry.status === "PASS")) {
         if (!agentHasLedger(agent.role, agent.dispatch_ref, ledgers, expectedIdentity)) {
             missing_evidence.push(...missingAgentLedger(agent.role, agent.dispatch_ref, ledgers, expectedIdentity));
+        }
+    }
+    for (const [index, batch] of artifact.batches.entries()) {
+        if (batch.status === "PASS") {
+            missing_evidence.push(...missingBatchLedger(batch, index, ledgers, expectedIdentity));
         }
     }
     return {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createCodexCliProcessRuntime } from "../../../src/adapters/codex-cli-process-runtime.js";
 import { createPipelineController } from "../../../src/controller/pipeline-controller.js";
 
 function stores() {
@@ -155,6 +156,51 @@ describe("pipeline capability gate", () => {
     expect(result.gates[0]).toMatchObject({
       gate: "CAPABILITY_GATE",
       status: "PASS",
+    });
+  });
+
+  it("accepts the safe Codex CLI process runtime as a real-agent adapter", async () => {
+    const controller = createPipelineController({
+      strictAgents: true,
+      stores: stores(),
+      agentRuntime: createCodexCliProcessRuntime({
+        codexBin: process.execPath,
+        timeoutMs: 1000,
+      }),
+      executionController: {
+        executeApprovedWork: async () => ({ status: "completed" }),
+      },
+    });
+
+    const result = await controller.start(
+      "/pipeline-orchestrator-for-codex:pipeline audit workflow gates",
+    );
+
+    expect(result.status).not.toBe("BLOCKED");
+    expect(result.gates[0]).toMatchObject({
+      gate: "CAPABILITY_GATE",
+      status: "PASS",
+    });
+  });
+
+  it("continues to block the explicit Codex CLI dev-bypass adapter", async () => {
+    const controller = createPipelineController({
+      strictAgents: true,
+      stores: stores(),
+      agentRuntime: createCodexCliProcessRuntime({
+        codexBin: process.execPath,
+        allowDangerousBypass: true,
+      }),
+    });
+
+    const result = await controller.start(
+      "/pipeline-orchestrator-for-codex:pipeline audit workflow gates",
+    );
+
+    expect(result).toMatchObject({
+      status: "BLOCKED",
+      blockedBy: "CAPABILITY_GATE",
+      runtime_mode: "dev-bypass",
     });
   });
 });

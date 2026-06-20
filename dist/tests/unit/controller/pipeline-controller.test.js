@@ -87,16 +87,19 @@ describe("pipeline controller", () => {
         expect(sentinel.session_id).toBe(lock.session_id);
         expect(session.runtime_mode).toBe("real-agent");
         expect(firstActions).toMatchObject({
+            status: "active",
+            plugin: "pipeline-orchestrator-for-codex",
             pipeline_requested: true,
             session_id: lock.session_id,
             run_id: session.run_id,
             runtime_mode: "real-agent",
         });
-        expect(firstActions.required_actions.map((action) => action.id)).toEqual([
-            "visible_plan",
-            "workflow_method_gate",
-            "capability_gate",
-            "controller_dispatch",
+        expect(firstActions.required_actions).toEqual([
+            "update_plan",
+            "WORKFLOW_METHOD_GATE",
+            "CAPABILITY_GATE",
+            "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+            "wait_agent",
         ]);
     });
     it("RED: explicit pipeline with strictAgents=false is harness and cannot pass capability gate", async () => {

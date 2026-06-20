@@ -883,13 +883,31 @@ describe("pipeline CLI exit code", () => {
     }
   });
 
-  it("RED: codex-cli-process adapter is dev-bypass and cannot produce a valid pipeline", async () => {
+  it("routes codex-cli-process through the safe real-agent adapter", async () => {
     const result = await runPipelineCli({
       cwd: process.cwd(),
       codexHome: process.cwd(),
       strictAgents: true,
       task: "audit current workflow execution",
       agentRuntimeAdapter: "codex-cli-process",
+    });
+
+    expect(result.status).not.toBe("BLOCKED");
+    expect(result.gates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        gate: "CAPABILITY_GATE",
+        status: "PASS",
+      }),
+    ]));
+  });
+
+  it("keeps the explicit codex-cli-process dev-bypass adapter blocked", async () => {
+    const result = await runPipelineCli({
+      cwd: process.cwd(),
+      codexHome: process.cwd(),
+      strictAgents: true,
+      task: "audit current workflow execution",
+      agentRuntimeAdapter: "codex-cli-process-dev-bypass",
     });
 
     expect(result).toMatchObject({

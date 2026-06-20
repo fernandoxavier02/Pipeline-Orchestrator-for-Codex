@@ -31,6 +31,9 @@ export async function loadAgentRuntimeAdapter(adapterPath?: string): Promise<Age
   if (adapterPath === "codex-cli" || adapterPath === "codex-cli-process") {
     return createCodexCliProcessRuntime();
   }
+  if (adapterPath === "codex-cli-dev-bypass" || adapterPath === "codex-cli-process-dev-bypass") {
+    return createCodexCliProcessRuntime({ allowDangerousBypass: true });
+  }
 
   const resolvedPath = isAbsolute(adapterPath) ? adapterPath : resolve(process.cwd(), adapterPath);
   const loaded = await import(pathToFileURL(resolvedPath).href) as RuntimeAdapterModule;

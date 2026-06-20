@@ -21,6 +21,7 @@ type CloseoutGateLogEntry = {
   phase: string;
   decision: "pass" | "block" | "skip" | "partial";
   decided_by: "controller";
+  provenance?: { source: "controller" };
   timestamp: string;
   detail: string;
   confidence_impact: number;
@@ -80,7 +81,10 @@ async function seedExecutionProof(input: {
   });
 
   for (const entry of input.gateLogEntries ?? []) {
-    await createGateLog(input.stateDir).append(entry);
+    await createGateLog(input.stateDir).append({
+      ...entry,
+      provenance: entry.provenance ?? { source: "controller" },
+    });
   }
 
   if (input.includeFinalReview) {
@@ -90,6 +94,7 @@ async function seedExecutionProof(input: {
       phase: "phase-3",
       decision: "pass",
       decided_by: "controller",
+      provenance: { source: "controller" },
       timestamp: input.finalReviewTimestamp ?? "2026-04-02T12:30:00.000Z",
       detail: "Controller recorded final adversarial approval.",
       confidence_impact: 0,
@@ -358,6 +363,7 @@ describe("closeout confirmation", () => {
       phase: "phase-2",
       decision: "block",
       decided_by: "controller",
+      provenance: { source: "controller" },
       timestamp: "2026-04-02T15:00:00.000Z",
       detail: "Checkpoint validation failed before closeout",
       confidence_impact: 0,
@@ -532,6 +538,7 @@ describe("closeout confirmation", () => {
       phase: "phase-3",
       decision: "pass",
       decided_by: "controller",
+      provenance: { source: "controller" },
       timestamp: "2026-04-02T12:30:00.000Z",
       detail: "Final adversarial review was recorded separately.",
       confidence_impact: 0,
@@ -640,6 +647,7 @@ describe("closeout confirmation", () => {
       phase: "phase-3",
       decision: "pass",
       decided_by: "controller",
+      provenance: { source: "controller" },
       timestamp: "2026-04-02T12:30:00.000Z",
       detail: "Forged final review outside the public runtime surface",
       confidence_impact: 0,
@@ -757,6 +765,7 @@ describe("closeout confirmation", () => {
       phase: "phase-3",
       decision: "pass",
       decided_by: "user",
+      provenance: { source: "user" },
       timestamp: "2026-04-02T12:30:00.000Z",
       detail: "User-supplied final review cannot authorize closeout",
       confidence_impact: 0,
@@ -951,6 +960,7 @@ describe("closeout confirmation", () => {
       phase: "phase-2",
       decision: "block",
       decided_by: "controller",
+      provenance: { source: "controller" },
       timestamp: "2026-04-02T12:00:00.000Z",
       detail: "Checkpoint failed",
       confidence_impact: 0,
@@ -961,6 +971,7 @@ describe("closeout confirmation", () => {
       phase: "phase-2",
       decision: "pass",
       decided_by: "controller",
+      provenance: { source: "controller" },
       timestamp: "2026-04-02T12:05:00.000Z",
       detail: "Controller revalidated the checkpoint successfully",
       confidence_impact: 0,
@@ -1040,6 +1051,12 @@ describe("closeout confirmation", () => {
           verifiedCheckpoints: 1,
           coverage: 1,
           checkpointName,
+        }),
+      },
+      reviewOrchestrator: {
+        reviewBatch: async () => ({
+          status: "approved",
+          findings: [],
         }),
       },
       finalAdversarialOrchestrator: async () => ({
