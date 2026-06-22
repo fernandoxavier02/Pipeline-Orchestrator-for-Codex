@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHmac } from "node:crypto";
 import { join } from "node:path";
-import { sentinelStateSchema } from "../domain/pipeline-schemas.js";
+import { sentinelStateReadSchema, sentinelStateSchema } from "../domain/pipeline-schemas.js";
 import { resolveSentinelIntegrityHmacKey } from "../security/ledger-integrity.js";
 function canonicalize(value) {
     if (Array.isArray(value)) {
@@ -38,7 +38,12 @@ export function createSentinelStateStore(root) {
         },
         async load() {
             const raw = await readFile(file, "utf8");
-            return sentinelStateSchema.parse(JSON.parse(raw));
+            const parsed = sentinelStateReadSchema.parse(JSON.parse(raw));
+            if (parsed.runtime_mode === "pending-real-agent") {
+                const { runtime_mode: _legacyRuntimeMode, ...strictState } = parsed;
+                return sentinelStateSchema.parse(strictState);
+            }
+            return sentinelStateSchema.parse(parsed);
         },
     };
 }

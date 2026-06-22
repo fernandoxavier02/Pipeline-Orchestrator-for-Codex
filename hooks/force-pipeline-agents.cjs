@@ -480,7 +480,6 @@ function writeWorkflowIntent(intent) {
     run_id: runId,
     workflow_id: intent.workflow,
     created_by_hook: 'force-pipeline-agents',
-    runtime_mode: 'pending-real-agent',
     expires_at: expiresAt,
     pipelineActive: true,
     currentPhase: 'phase-0',

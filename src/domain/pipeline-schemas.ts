@@ -13,6 +13,15 @@ const confidenceBandSchema = z.enum(["low", "medium", "high"]);
 const classificationTypeSchema = z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation", "Spec"]);
 const pipelineComplexitySchema = z.enum(["SIMPLES", "MEDIA", "COMPLEXA"]);
 const runtimeModeSchema = z.enum(["real-agent", "harness", "blocked-no-agent-runtime", "dev-bypass"]);
+const sentinelRuntimeModeSchema = z.union([runtimeModeSchema, z.literal("pending-real-agent")]);
+const sentinelLastCheckpointSchema = z.enum([
+  "workflow_intent_persisted",
+  "post_orchestrator",
+  "phase_0_to_1",
+  "phase_1_to_2",
+  "phase_2_to_3",
+  "post_final_validator",
+]);
 
 const executionIdentitySchema = z.object({
   trace_id: z.string(),
@@ -227,14 +236,12 @@ export const sentinelStateSchema = z.object({
     status: z.string(),
   }),
   consecutiveCorrections: z.number().int().nonnegative(),
-  lastCheckpoint: z.enum([
-    "post_orchestrator",
-    "phase_0_to_1",
-    "phase_1_to_2",
-    "phase_2_to_3",
-    "post_final_validator",
-  ]),
+  lastCheckpoint: sentinelLastCheckpointSchema,
   updatedAt: z.string(),
+});
+
+export const sentinelStateReadSchema = sentinelStateSchema.extend({
+  runtime_mode: sentinelRuntimeModeSchema.optional(),
 });
 
 export const checkpointSchema = z.object({

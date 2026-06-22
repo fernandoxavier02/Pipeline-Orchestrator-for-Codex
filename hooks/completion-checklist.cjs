@@ -295,6 +295,7 @@ function readActiveRequiredFirstActions(stateDir) {
     && required.status === 'active'
     && required.plugin === 'pipeline-orchestrator-for-codex'
     && !stateObjectExpired(required)
+    && stateObjectIntegrityVerified(required, 'pipeline-required-first-actions')
   ) {
     return required;
   }
@@ -982,7 +983,15 @@ function validateBatchLoopEvidence(artifact, ledgers = undefined, identityContex
   return missing;
 }
 
-function ledgerRequiredActionCompleted(action, ledgers, identityContext) {
+function ledgerEntryNotBeforeState(entry, state) {
+  if (!state || typeof state !== 'object' || typeof state.created_at !== 'string') return true;
+  if (typeof entry?.timestamp !== 'string') return false;
+  const createdAt = Date.parse(state.created_at);
+  const entryAt = Date.parse(entry.timestamp);
+  return Number.isFinite(createdAt) && Number.isFinite(entryAt) && entryAt >= createdAt;
+}
+
+function ledgerRequiredActionCompleted(action, ledgers, identityContext, requiredState = undefined) {
   const allLedgers = [
     ...(ledgers.gateDecisions ?? []),
     ...(ledgers.checkpoints ?? []),
@@ -997,6 +1006,7 @@ function ledgerRequiredActionCompleted(action, ledgers, identityContext) {
     entry
     && ledgerEntryIntegrityVerified(entry)
     && entryMatchesActiveRunIdentity(entry, identityContext)
+    && ledgerEntryNotBeforeState(entry, requiredState)
     && ['completed', 'PASS', 'pass', 'approved', 'APPROVED', 'confirmed', 'CONFIRMED'].includes(entry.status || entry.decision)
     && (
       entry.action === action
@@ -1042,12 +1052,36 @@ function validateRequiredFirstActions(stateDir, ledgers, identityContext) {
       missing.push('required_action:valid');
       continue;
     }
-    if (!completedActions.has(action) && !ledgerRequiredActionCompleted(action, ledgers, identityContext)) {
+    if (!completedActions.has(action) && !ledgerRequiredActionCompleted(action, ledgers, identityContext, required)) {
       missing.push(`required_action:${action}`);
     }
   }
 
   return missing;
+}
+
+function requiredFirstActionsIncomplete(stateDir) {
+  const raw = readJsonIfExists(path.join(stateDir, REQUIRED_FIRST_ACTIONS_FILE));
+  if (raw?.corrupted) return true;
+  if (
+    raw
+    && typeof raw === 'object'
+    && raw.status === 'active'
+    && raw.plugin === 'pipeline-orchestrator-for-codex'
+    && !stateObjectExpired(raw)
+    && !stateObjectIntegrityVerified(raw, 'pipeline-required-first-actions')
+  ) {
+    return true;
+  }
+  const required = readActiveRequiredFirstActions(stateDir);
+  if (!required) return false;
+  const requiredActions = Array.isArray(required.required_actions) ? required.required_actions : [];
+  const completedActions = new Set(
+    Array.isArray(required.completed_actions)
+      ? required.completed_actions.filter((action) => typeof action === 'string')
+      : [],
+  );
+  return requiredActions.some((action) => typeof action === 'string' && !completedActions.has(action));
 }
 
 function readLedgers(stateDir) {
@@ -1321,6 +1355,11 @@ process.stdin.on('end', () => {
     const payload = parsePayload(input);
     const stopEnforcement = evaluateStopEnforcement(payload, input);
     if (!stopEnforcement.ok) {
+      const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
+      const stateDir = path.join(cwd, '.codex', 'pipeline');
+      const hasRequiredFirstActionGap = stopEnforcement.missing.some((entry) => (
+        typeof entry === 'string' && entry.startsWith('required_action:')
+      )) || requiredFirstActionsIncomplete(stateDir);
       recordHookEvent({
         hook: 'completion-checklist',
         event: 'Stop',
@@ -1331,10 +1370,16 @@ process.stdin.on('end', () => {
       console.log(JSON.stringify({
         continue: false,
         stopReason: `Pipeline completion blocked: missing governance evidence: ${stopEnforcement.missing.join(', ')}`,
-        systemMessage: [
-          'PIPELINE STOP ENFORCEMENT: explicit pipeline completion requires a validated PipelineGovernanceArtifact.',
-          'Emit BLOCKED with pipeline_valid=false, or complete the missing gates/hooks/agent artifacts before finalizing.',
-        ].join('\n'),
+        systemMessage: hasRequiredFirstActionGap
+          ? [
+              'PIPELINE STOP ENFORCEMENT: required first actions are incomplete.',
+              'Do not stop or switch to manual fallback. Redirect immediately to the canonical sequence: update_plan, WORKFLOW_METHOD_GATE, CAPABILITY_GATE, spawn_agent with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller, then wait_agent.',
+              'Emit BLOCKED only if the real runtime capability is unavailable after attempting the canonical recovery path.',
+            ].join('\n')
+          : [
+              'PIPELINE STOP ENFORCEMENT: explicit pipeline completion requires a validated PipelineGovernanceArtifact.',
+              'Emit BLOCKED with pipeline_valid=false, or complete the missing gates/hooks/agent artifacts before finalizing.',
+            ].join('\n'),
       }));
       return;
     }

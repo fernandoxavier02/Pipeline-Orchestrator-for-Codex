@@ -21,8 +21,10 @@
 const fs = require('fs');
 const path = require('path');
 const { recordHookEvent } = require('./hook-events.cjs');
+const { stateObjectIntegrityVerified } = require('./ledger-integrity.cjs');
 
 const PROTECTED_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash']);
+const PIPELINE_NAMESPACE = 'pipeline-orchestrator-for-codex';
 const ALLOWED_PATHS = ['.codex', 'pipeline-runs'];
 const PROTECTED_PIPELINE_STATE_FILES = new Set([
   '.codex/pipeline/workflow-intent.json',
@@ -271,6 +273,46 @@ function normalizeRelativePath(cwd, filePath) {
   return path.relative(workspaceRoot, resolved).replace(/\\/g, '/');
 }
 
+function readJsonIfExists(file) {
+  try {
+    if (!fs.existsSync(file)) return undefined;
+    const stats = fs.lstatSync(file);
+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size === 0) return { corrupted: true };
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return { corrupted: true };
+  }
+}
+
+function stateObjectExpired(state) {
+  return typeof state.expires_at !== 'number' || state.expires_at <= nowEpochSeconds();
+}
+
+function requiredFirstActionsPending(cwd) {
+  const state = readJsonIfExists(path.join(cwd, '.codex', 'pipeline', 'required-first-actions.json'));
+  if (!state) return false;
+  if (state.corrupted) return true;
+  if (!stateObjectIntegrityVerified(state, 'pipeline-required-first-actions')) return true;
+  if (
+    !state
+    || typeof state !== 'object'
+    || state.status !== 'active'
+    || state.plugin !== PIPELINE_NAMESPACE
+    || stateObjectExpired(state)
+  ) {
+    return false;
+  }
+  const requiredActions = Array.isArray(state.required_actions)
+    ? state.required_actions.filter((entry) => typeof entry === 'string')
+    : [];
+  const completedActions = new Set(
+    Array.isArray(state.completed_actions)
+      ? state.completed_actions.filter((entry) => typeof entry === 'string')
+      : [],
+  );
+  return requiredActions.some((action) => !completedActions.has(action));
+}
+
 function normalizeLexicalRelativePath(cwd, filePath) {
   return path.relative(path.resolve(cwd), path.resolve(cwd, filePath)).replace(/\\/g, '/');
 }
@@ -392,6 +434,26 @@ function handle(input) {
 
   // No active session → not in pipeline context → allow
   if (!lock || lock.expires_at <= now) {
+    return;
+  }
+
+  if (toolName === 'Bash' && requiredFirstActionsPending(cwd)) {
+    recordHookEvent({
+      hook: 'edit-guard',
+      event: 'PreToolUse',
+      decision: 'deny',
+      attempted: toolName,
+      reason: 'required first actions pending',
+    });
+    emit({
+      hookSpecificOutput: {
+        permissionDecision: 'deny',
+        permissionDecisionReason:
+          'Edit guard blocked Bash: required pipeline first actions are still pending. ' +
+          'Only the visible plan, workflow/capability gates, canonical pipeline-controller spawn, and wait_agent may run before bootstrap completes. ' +
+          'Do not stop or switch to manual fallback; redirect immediately to the canonical pipeline-controller bootstrap sequence.',
+      },
+    });
     return;
   }
 

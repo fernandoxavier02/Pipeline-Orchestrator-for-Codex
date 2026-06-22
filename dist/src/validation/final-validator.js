@@ -128,6 +128,9 @@ export function runFinalValidator(input) {
         rollbackHint,
     };
 }
+function isResolvedRuntimeMode(mode) {
+    return mode !== undefined && mode !== "pending-real-agent";
+}
 /**
  * After a final-validator dispatch returns, persist the
  * `post_final_validator` checkpoint so sentinel can confirm the pipeline
@@ -151,7 +154,7 @@ export async function recordPostFinalValidatorCheckpoint(input) {
         ...(prior?.run_id ? { run_id: prior.run_id } : {}),
         ...(prior?.workflow_id ? { workflow_id: prior.workflow_id } : {}),
         ...(typeof prior?.created_by_runtime === "boolean" ? { created_by_runtime: prior.created_by_runtime } : {}),
-        ...(prior?.runtime_mode ? { runtime_mode: prior.runtime_mode } : {}),
+        ...(isResolvedRuntimeMode(prior?.runtime_mode) ? { runtime_mode: prior.runtime_mode } : {}),
         pipelineActive: input.decision === "NO-GO" ? true : false,
         currentPhase: "phase-3",
         currentAgent: "final-validator",

@@ -73,9 +73,38 @@ function ledgerEntryIntegrityVerified(entry) {
     && crypto.timingSafeEqual(expectedBytes, actualBytes);
 }
 
+function stateObjectIntegrityVerified(state, scope) {
+  const key = resolveSentinelIntegrityHmacKey();
+  if (!key) return true;
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return false;
+
+  const integrity = state._integrity && typeof state._integrity === 'object' && !Array.isArray(state._integrity)
+    ? state._integrity
+    : undefined;
+  if (
+    !integrity
+    || integrity.algorithm !== 'hmac-sha256'
+    || integrity.scope !== scope
+    || typeof integrity.signature !== 'string'
+    || !HMAC_SHA256_HEX_SIGNATURE.test(integrity.signature)
+  ) {
+    return false;
+  }
+
+  const unsignedState = { ...state };
+  delete unsignedState._integrity;
+  const expected = crypto.createHmac('sha256', key).update(canonicalize(unsignedState)).digest('hex');
+  const expectedBytes = Buffer.from(expected, 'hex');
+  const actualBytes = Buffer.from(integrity.signature, 'hex');
+  return actualBytes.length > 0
+    && expectedBytes.length === actualBytes.length
+    && crypto.timingSafeEqual(expectedBytes, actualBytes);
+}
+
 module.exports = {
   canonicalize,
   ledgerEntryIntegrityVerified,
   resolveSentinelIntegrityHmacKey,
   signLedgerEntry,
+  stateObjectIntegrityVerified,
 };

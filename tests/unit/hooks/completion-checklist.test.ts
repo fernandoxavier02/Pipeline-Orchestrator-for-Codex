@@ -563,6 +563,9 @@ describe("completion-checklist Stop enforcement", () => {
 
     expect(output.continue).toBe(false);
     expect(output.stopReason).toContain("PipelineGovernanceArtifact");
+    expect(output.systemMessage).toContain("Do not stop");
+    expect(output.systemMessage).toContain("canonical sequence");
+    expect(output.systemMessage).toContain("pipeline-orchestrator-for-codex:core:pipeline-controller");
   });
 
   it("TDD: blocks quiet stop when malformed workflow intent is the only pipeline signal", () => {
@@ -2010,6 +2013,59 @@ describe("completion-checklist Stop enforcement", () => {
 
     expect(output.continue).toBe(false);
     expect(output.stopReason).toContain("required_action:WORKFLOW_METHOD_GATE");
+  });
+
+  it("TDD: blocks final PASS when required-first-actions rely on stale same-session ledgers", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-required-actions-stale-ledger-"));
+    const artifact = {
+      ...validArtifact(),
+      run_id: "current-run",
+      session_id: "current-session",
+    };
+    const stateDir = writeLedgerProof(cwd, artifact);
+    writeActiveSentinel(cwd, {
+      run_id: "current-run",
+      session_id: "current-session",
+    });
+    appendFileSync(
+      join(stateDir, "gate-decisions.jsonl"),
+      JSON.stringify(signLedgerEntry({
+        gate: "CAPABILITY_GATE",
+        decision: "approved",
+        status: "PASS",
+        run_id: "current-run",
+        session_id: "current-session",
+        timestamp: new Date(Date.now() - 60_000).toISOString(),
+      })) + "\n",
+      "utf8",
+    );
+    writeFileSync(
+      join(stateDir, "required-first-actions.json"),
+      JSON.stringify(signStateObject({
+        schema_version: 1,
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        run_id: "current-run",
+        session_id: "current-session",
+        created_at: new Date(Date.now() + 60_000).toISOString(),
+        required_actions: ["CAPABILITY_GATE"],
+        completed_actions: [],
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      }, "pipeline-required-first-actions")),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE",
+        pipelineGovernanceArtifact: artifact,
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("required_action:CAPABILITY_GATE");
   });
 
   it("TDD: blocks final PASS when active pipeline obligation files are deleted", () => {
