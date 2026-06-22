@@ -167,6 +167,8 @@ function detectPluginFrontDoorMention(prompt) {
     new RegExp(`\\[(?:[@$])?pipeline orchestrator for codex\\]\\((?:plugin|app):\\/\\/${canonicalUri}\\)(?<tail>[\\s\\S]*)`, 'i'),
     new RegExp(`[@$]pipeline-orchestrator-for-codex${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
     new RegExp(`[@$]pipeline orchestrator for codex${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
+    new RegExp(`#plugin\\s+pipeline-orchestrator-for-codex${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
+    new RegExp(`#plugin\\s+pipeline\\s+orchestrator(?:\\s+for\\s+codex)?${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
   ];
 
   for (const pattern of patterns) {

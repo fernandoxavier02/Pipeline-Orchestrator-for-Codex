@@ -529,10 +529,38 @@ describe("force pipeline agents hook", () => {
     }
   });
 
+  it("ATDD: #plugin pipeline orchestrator enters the canonical pipeline front door", () => {
+    const cases = [
+      "#plugin pipeline orchestrator",
+      "#plugin pipeline orchestrator audite a execucao anterior",
+      "#plugin pipeline orchestrator for codex audite a execucao anterior",
+      "#plugin pipeline-orchestrator-for-codex audite a execucao anterior",
+    ];
+
+    for (const prompt of cases) {
+      const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-"));
+      const result = runHook(cwd, prompt);
+      const output = parseOutput(result);
+
+      expect(output.systemMessage, prompt).toContain("MANDATORY SUBAGENT EXECUTION");
+      expect(output.systemMessage, prompt).toContain("plugin front door");
+      expect(output.systemMessage, prompt).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller");
+
+      const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
+      expect(event, prompt).toMatchObject({
+        decision: "enforce_pipeline_skill_message",
+        attempted: "pipeline",
+        reason: "explicit plugin-mention-default workflow intent persisted",
+      });
+    }
+  });
+
   it("ATDD: similar plugin slugs do not enter the canonical pipeline front door", () => {
     const cases = [
       "[$Pipeline Orchestrator for Codex](app://pipeline-orchestrator-for-codex-clone) apenas abra o app",
       "[@pipeline-orchestrator-for-codexical](plugin://pipeline-orchestrator-for-codexical) apenas abra o app",
+      "#plugin pipeline orchestration apenas abra o app",
+      "#plugin pipeline-orchestrator-for-codexical apenas abra o app",
     ];
 
     for (const prompt of cases) {
@@ -545,6 +573,23 @@ describe("force pipeline agents hook", () => {
       const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
       expect(event, prompt).not.toMatchObject({
         decision: "enforce_pipeline_skill_message",
+      });
+    }
+  });
+
+  it("ATDD: preserves explicit governed #plugin workflow variants exactly", () => {
+    const cases = ["bugfix-heavy", "spec-init", "validate-design"];
+
+    for (const workflow of cases) {
+      const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-"));
+      const result = runHook(cwd, `#plugin pipeline orchestrator ${workflow} executar fluxo`);
+      const output = parseOutput(result);
+
+      expect(output.systemMessage, workflow).toContain(`/pipeline-orchestrator-for-codex:${workflow}`);
+      const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
+      expect(event, workflow).toMatchObject({
+        decision: "enforce_workflow_skill_message",
+        attempted: workflow,
       });
     }
   });
