@@ -1,2167 +1,394 @@
-diff --git a/dist/src/cli/pipeline-cli.js b/dist/src/cli/pipeline-cli.js
-index d215e94..c865852 100755
---- a/dist/src/cli/pipeline-cli.js
-+++ b/dist/src/cli/pipeline-cli.js
-@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
- import { pathToFileURL } from "node:url";
- import { join } from "node:path";
- import { loadAgentRuntimeAdapter } from "./agent-runtime-loader.js";
--import { sentinelStateSchema, sessionStateSchema } from "../domain/pipeline-schemas.js";
-+import { sentinelStateReadSchema, sessionStateSchema } from "../domain/pipeline-schemas.js";
- import { resolveSentinelIntegrityHmacKey } from "../security/ledger-integrity.js";
- export function resolveCliExitCode(result) {
-     if (!result || typeof result !== "object") {
-@@ -188,7 +188,7 @@ function pendingGateResponse(options) {
-         };
-     }
-     const parsedSession = sessionStateSchema.safeParse(session.value);
--    const parsedSentinel = sentinelStateSchema.safeParse(sentinel.value);
-+    const parsedSentinel = sentinelStateReadSchema.safeParse(sentinel.value);
-     if (!parsedSession.success || !parsedSentinel.success) {
-         return {
-             kind: "blocked",
-diff --git a/dist/src/domain/pipeline-schemas.js b/dist/src/domain/pipeline-schemas.js
-index 44144da..7d03c5b 100644
---- a/dist/src/domain/pipeline-schemas.js
-+++ b/dist/src/domain/pipeline-schemas.js
-@@ -12,6 +12,15 @@ const confidenceBandSchema = z.enum(["low", "medium", "high"]);
- const classificationTypeSchema = z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation", "Spec"]);
- const pipelineComplexitySchema = z.enum(["SIMPLES", "MEDIA", "COMPLEXA"]);
- const runtimeModeSchema = z.enum(["real-agent", "harness", "blocked-no-agent-runtime", "dev-bypass"]);
-+const sentinelRuntimeModeSchema = z.union([runtimeModeSchema, z.literal("pending-real-agent")]);
-+const sentinelLastCheckpointSchema = z.enum([
-+    "workflow_intent_persisted",
-+    "post_orchestrator",
-+    "phase_0_to_1",
-+    "phase_1_to_2",
-+    "phase_2_to_3",
-+    "post_final_validator",
-+]);
- const executionIdentitySchema = z.object({
-     trace_id: z.string(),
-     workflow_id: z.string(),
-@@ -207,15 +216,12 @@ export const sentinelStateSchema = z.object({
-         status: z.string(),
-     }),
-     consecutiveCorrections: z.number().int().nonnegative(),
--    lastCheckpoint: z.enum([
--        "post_orchestrator",
--        "phase_0_to_1",
--        "phase_1_to_2",
--        "phase_2_to_3",
--        "post_final_validator",
--    ]),
-+    lastCheckpoint: sentinelLastCheckpointSchema,
-     updatedAt: z.string(),
- });
-+export const sentinelStateReadSchema = sentinelStateSchema.extend({
-+    runtime_mode: sentinelRuntimeModeSchema.optional(),
-+});
- export const checkpointSchema = z.object({
-     name: z.string(),
-     phase: pipelinePhaseSchema,
-diff --git a/dist/src/sentinel/sentinel-state.js b/dist/src/sentinel/sentinel-state.js
-index 86df833..102635e 100644
---- a/dist/src/sentinel/sentinel-state.js
-+++ b/dist/src/sentinel/sentinel-state.js
-@@ -1,7 +1,7 @@
- import { mkdir, readFile, writeFile } from "node:fs/promises";
- import { createHmac } from "node:crypto";
- import { join } from "node:path";
--import { sentinelStateSchema } from "../domain/pipeline-schemas.js";
-+import { sentinelStateReadSchema, sentinelStateSchema } from "../domain/pipeline-schemas.js";
- import { resolveSentinelIntegrityHmacKey } from "../security/ledger-integrity.js";
- function canonicalize(value) {
-     if (Array.isArray(value)) {
-@@ -38,7 +38,12 @@ export function createSentinelStateStore(root) {
-         },
-         async load() {
-             const raw = await readFile(file, "utf8");
--            return sentinelStateSchema.parse(JSON.parse(raw));
-+            const parsed = sentinelStateReadSchema.parse(JSON.parse(raw));
-+            if (parsed.runtime_mode === "pending-real-agent") {
-+                const { runtime_mode: _legacyRuntimeMode, ...strictState } = parsed;
-+                return sentinelStateSchema.parse(strictState);
-+            }
-+            return sentinelStateSchema.parse(parsed);
-         },
-     };
- }
-diff --git a/dist/src/validation/final-validator.js b/dist/src/validation/final-validator.js
-index e9f6a50..cb3ddba 100644
---- a/dist/src/validation/final-validator.js
-+++ b/dist/src/validation/final-validator.js
-@@ -128,6 +128,9 @@ export function runFinalValidator(input) {
-         rollbackHint,
-     };
- }
-+function isResolvedRuntimeMode(mode) {
-+    return mode !== undefined && mode !== "pending-real-agent";
-+}
- /**
-  * After a final-validator dispatch returns, persist the
-  * `post_final_validator` checkpoint so sentinel can confirm the pipeline
-@@ -151,7 +154,7 @@ export async function recordPostFinalValidatorCheckpoint(input) {
-         ...(prior?.run_id ? { run_id: prior.run_id } : {}),
-         ...(prior?.workflow_id ? { workflow_id: prior.workflow_id } : {}),
-         ...(typeof prior?.created_by_runtime === "boolean" ? { created_by_runtime: prior.created_by_runtime } : {}),
--        ...(prior?.runtime_mode ? { runtime_mode: prior.runtime_mode } : {}),
-+        ...(isResolvedRuntimeMode(prior?.runtime_mode) ? { runtime_mode: prior.runtime_mode } : {}),
-         pipelineActive: input.decision === "NO-GO" ? true : false,
-         currentPhase: "phase-3",
-         currentAgent: "final-validator",
 diff --git a/evals/outputs/latest_output.md b/evals/outputs/latest_output.md
-index fe189d3..67547cc 100644
+index 67547cc..bc07a2f 100644
 --- a/evals/outputs/latest_output.md
 +++ b/evals/outputs/latest_output.md
-@@ -3,65 +3,79 @@
+@@ -3,79 +3,46 @@
  ## What was inspected
 
  - Repository: `D:\Pipeline Orchestrator for Codex`.
--- Active request: publish and synchronize the runtime-subagent fix across the canonical repo, GitHub, Codex marketplace-backed plugin directory, and installed Codex plugin cache.
--- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `.agents/skills/workflow-eval-gate/SKILL.md`, `.agents/skills/bugfix-heavy/SKILL.md`, and `evals/README.md`.
--- Runtime/code surfaces: `src/adapters/codex-cli-process-runtime.ts`, `src/cli/agent-runtime-loader.ts`, `hooks/**`, `commands/**`, `skills/**`, `.agents/skills/**`, `dist/**`, and runtime/gate tests.
--- Publication surfaces: `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`, `C:\Users\win\.agents\plugins\marketplace.json`, `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`, and `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
-+- Active request: fix the critical recovery path so pipeline-rule violations do not simply stop or fall back manually; they must identify the problem and redirect to the canonical controller bootstrap.
-+- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `.agents/skills/bugfix-heavy/SKILL.md`, `skills/pipeline/SKILL.md`, `commands/pipeline.md`, `references/openai-codex-kb/INDEX.md`, and `evals/README.md`.
-+- Runtime surfaces: `hooks/dispatch-guard.cjs`, `hooks/edit-guard-hook.cjs`, `hooks/completion-checklist.cjs`, `hooks/ledger-integrity.cjs`, `hooks/hooks.json`, `hooks/force-pipeline-agents.cjs`, `src/cli/pipeline-cli.ts`, `src/domain/pipeline-schemas.ts`, `src/sentinel/sentinel-state.ts`, and `src/validation/final-validator.ts`.
-+- Test/evidence surfaces: `tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts`, `tests/unit/hooks/edit-guard-hook.test.ts`, `tests/unit/hooks/completion-checklist.test.ts`, `tests/unit/sentinel/sentinel-state.test.ts`, `dist/**`, `evals/telemetry/**`.
- - behavior_cases: 5.
+-- Active request: fix the critical recovery path so pipeline-rule violations do not simply stop or fall back manually; they must identify the problem and redirect to the canonical controller bootstrap.
+-- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `.agents/skills/bugfix-heavy/SKILL.md`, `skills/pipeline/SKILL.md`, `commands/pipeline.md`, `references/openai-codex-kb/INDEX.md`, and `evals/README.md`.
+-- Runtime surfaces: `hooks/dispatch-guard.cjs`, `hooks/edit-guard-hook.cjs`, `hooks/completion-checklist.cjs`, `hooks/ledger-integrity.cjs`, `hooks/hooks.json`, `hooks/force-pipeline-agents.cjs`, `src/cli/pipeline-cli.ts`, `src/domain/pipeline-schemas.ts`, `src/sentinel/sentinel-state.ts`, and `src/validation/final-validator.ts`.
+-- Test/evidence surfaces: `tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts`, `tests/unit/hooks/edit-guard-hook.test.ts`, `tests/unit/hooks/completion-checklist.test.ts`, `tests/unit/sentinel/sentinel-state.test.ts`, `dist/**`, `evals/telemetry/**`.
+-- behavior_cases: 5.
++- Active request: guarantee that `.gitignore` parity is an explicit local-to-Contabo VPS mirror validation criterion.
++- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `evals/README.md`, `skills/pipeline/SKILL.md`, and `references/openai-codex-kb/INDEX.md`.
++- Runtime surfaces: `scripts/sync-contabo-fernando-vps-mirror.ps1` and `scripts/enqueue-contabo-vps-sync-request.ps1`.
 
  ## What was changed
 
--- Fixed the Codex CLI process runtime so `codex-cli` / `codex-cli-process` use a safe real-agent runtime by default instead of dangerous bypass flags.
--- Kept dangerous bypass behavior behind explicit `codex-cli-dev-bypass` / `codex-cli-process-dev-bypass` aliases, which remain blocked by `CAPABILITY_GATE`.
--- Added deterministic tests proving the safe runtime passes the capability gate and the explicit dev-bypass path remains blocked.
--- Preserved the prior deterministic workflow hardening changes in hooks, controller, gate log, ledger evidence, final validation, batch-loop evidence, and completion enforcement.
--- Rebuilt `dist/**` from source.
--- Refreshed the installed Codex cache at `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
--- Refreshed the marketplace-backed global plugin at `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`.
--- Verified the global marketplace entry still points to `./plugins/pipeline-orchestrator-for-codex` with `INSTALLED_BY_DEFAULT`.
--- Created filesystem backups before replacement:
--  - `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1-backup-sync-*`
--  - `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex-backup-sync-*`
+-- `hooks/dispatch-guard.cjs` now enforces required first actions while they are pending: generic `spawn_agent`, `Agent`, and `Skill` are denied with recovery guidance; canonical controller `spawn_agent`, `update_plan`, and `wait_agent` are allowed only in the bootstrap sequence.
+-- `hooks/dispatch-guard.cjs` records first-action completion only from successful `PostToolUse`, not from `PreToolUse`; missing or non-object `tool_response` is treated as not successful.
+-- `hooks/dispatch-guard.cjs` reconciles `WORKFLOW_METHOD_GATE` and `CAPABILITY_GATE` through trusted ledgers, accepts unsigned ledgers only when no HMAC key is configured, rejects tampered HMAC state, rejects symlink ancestors for state writes, and blocks replay by requiring ledger timestamps to be current relative to `required-first-actions.created_at`.
+-- `hooks/edit-guard-hook.cjs` blocks Bash, including read-only Bash, while required first actions are pending under an active pipeline session and preserves protected pipeline state files.
+-- `hooks/completion-checklist.cjs` treats incomplete or corrupted required first actions as a recovery condition, emits a canonical redirect instead of allowing a quiet stop, and applies the same current-ledger check for required first-action proof.
+-- `hooks/ledger-integrity.cjs` exports shared state-object HMAC verification so hook surfaces keep one HMAC policy.
+-- `hooks/hooks.json` registers `PostToolUse` for `spawn_agent|wait_agent|update_plan` and `PreToolUse` for `update_plan` and `wait_agent`.
+-- `hooks/force-pipeline-agents.cjs`, `src/domain/pipeline-schemas.ts`, `src/sentinel/sentinel-state.ts`, `src/cli/pipeline-cli.ts`, and `src/validation/final-validator.ts` keep `pending-real-agent` as legacy readable sentinel recovery only, not a newly persisted final checkpoint runtime mode.
+-- `dist/src/cli/pipeline-cli.js`, `dist/src/domain/pipeline-schemas.js`, `dist/src/sentinel/sentinel-state.js`, and `dist/src/validation/final-validator.js` were regenerated by `npm run build`.
+-- Regression tests were added for PreToolUse vs PostToolUse completion, HMAC tamper fail-closed behavior, signed and unsigned gate reconciliation, old ledger replay, wait target binding, Stop-hook recovery, edit/Bash blocking, symlink ancestor rejection, and legacy sentinel compatibility.
 -
--## Batch review and fix loop
+-## Adversarial review
 -
--- Batch 1, source/runtime: adversarial review found the default process adapter was self-identifying as `dev-bypass`; fix applied and focused runtime/gate tests passed.
--- Batch 2, host config and executable resolution: adversarial review found broken Codex TOML and Windows wrapper risk; TOML was repaired and the adapter now resolves the real `codex.exe`.
--- Batch 3, cache/global adoption: adversarial review found stale global plugin content and missing runtime dependencies in one installed copy; both install targets were rebuilt from the same package and dependencies were restored.
--- Batch 4, publication parity: package-file parity was checked across canonical repo, Codex cache, and marketplace-backed global plugin before moving to commit/push.
-+- `hooks/dispatch-guard.cjs` now enforces required first actions while they are pending: generic `spawn_agent`, `Agent`, and `Skill` are denied with recovery guidance; canonical controller `spawn_agent`, `update_plan`, and `wait_agent` are allowed only in the bootstrap sequence.
-+- `hooks/dispatch-guard.cjs` records first-action completion only from successful `PostToolUse`, not from `PreToolUse`; missing or non-object `tool_response` is treated as not successful.
-+- `hooks/dispatch-guard.cjs` reconciles `WORKFLOW_METHOD_GATE` and `CAPABILITY_GATE` through trusted ledgers, accepts unsigned ledgers only when no HMAC key is configured, rejects tampered HMAC state, rejects symlink ancestors for state writes, and blocks replay by requiring ledger timestamps to be current relative to `required-first-actions.created_at`.
-+- `hooks/edit-guard-hook.cjs` blocks Bash, including read-only Bash, while required first actions are pending under an active pipeline session and preserves protected pipeline state files.
-+- `hooks/completion-checklist.cjs` treats incomplete or corrupted required first actions as a recovery condition, emits a canonical redirect instead of allowing a quiet stop, and applies the same current-ledger check for required first-action proof.
-+- `hooks/ledger-integrity.cjs` exports shared state-object HMAC verification so hook surfaces keep one HMAC policy.
-+- `hooks/hooks.json` registers `PostToolUse` for `spawn_agent|wait_agent|update_plan` and `PreToolUse` for `update_plan` and `wait_agent`.
-+- `hooks/force-pipeline-agents.cjs`, `src/domain/pipeline-schemas.ts`, `src/sentinel/sentinel-state.ts`, `src/cli/pipeline-cli.ts`, and `src/validation/final-validator.ts` keep `pending-real-agent` as legacy readable sentinel recovery only, not a newly persisted final checkpoint runtime mode.
-+- `dist/src/cli/pipeline-cli.js`, `dist/src/domain/pipeline-schemas.js`, `dist/src/sentinel/sentinel-state.js`, and `dist/src/validation/final-validator.js` were regenerated by `npm run build`.
-+- Regression tests were added for PreToolUse vs PostToolUse completion, HMAC tamper fail-closed behavior, signed and unsigned gate reconciliation, old ledger replay, wait target binding, Stop-hook recovery, edit/Bash blocking, symlink ancestor rejection, and legacy sentinel compatibility.
-+
-+## Adversarial review
-+
-+- BUP/adversarial review was executed in security, architecture, and quality passes.
-+- Corrected BLOCKER: first actions were previously completed during PreToolUse before tool execution.
-+- Corrected BLOCKER: textual gates could remain pending forever and deadlock the canonical bootstrap.
-+- Corrected BLOCKER from the second pass: unsigned ledgers without an HMAC key now release only when no key is configured and the ledgers are current.
-+- Corrected MAJOR: ledgers are tied to current run/session identity where available and to `created_at` freshness when identity is weak or reused.
-+- Corrected MAJOR: `wait_agent` completion is bound to the bootstrap controller agent id.
-+- Corrected MAJOR: state writes reject symlink ancestors and use unique temp files.
-+- Final local adversarial review found no remaining BLOCKER or MAJOR issue in the changed surfaces.
+-- BUP/adversarial review was executed in security, architecture, and quality passes.
+-- Corrected BLOCKER: first actions were previously completed during PreToolUse before tool execution.
+-- Corrected BLOCKER: textual gates could remain pending forever and deadlock the canonical bootstrap.
+-- Corrected BLOCKER from the second pass: unsigned ledgers without an HMAC key now release only when no key is configured and the ledgers are current.
+-- Corrected MAJOR: ledgers are tied to current run/session identity where available and to `created_at` freshness when identity is weak or reused.
+-- Corrected MAJOR: `wait_agent` completion is bound to the bootstrap controller agent id.
+-- Corrected MAJOR: state writes reject symlink ancestors and use unique temp files.
+-- Final local adversarial review found no remaining BLOCKER or MAJOR issue in the changed surfaces.
++- `scripts/sync-contabo-fernando-vps-mirror.ps1` now defines one critical-file list for mirror validation.
++- `.gitignore` is included in the critical-file list with the mirror scripts, `hooks/force-pipeline-agents.cjs`, and `.git/HEAD`.
++- Local SHA-256 hashes are computed before archive creation, sent to the remote validator, and compared after extraction on the VPS.
++- Missing or mismatched critical files now fail the mirror instead of only printing remote hashes.
++- `scripts/enqueue-contabo-vps-sync-request.ps1` now states that critical hash parity includes `.gitignore`.
 
  ## What was not changed
 
--- No new dependency was added.
--- No prompt-only recommendation was used as an enforcement mechanism.
--- No remote/VPS installation was altered.
--- The global marketplace registry schema was not rewritten because its existing entry was already correct and installed by default.
--- Hook trust in the active Codex UI was not asserted; telemetry is treated as manual/local unless `/hooks` proves trust.
-+- No dependency was added.
-+- No prompt-only workaround was used.
-+- No direct push to `main` was made.
-+- No VPS runtime was changed.
-+- No `.git`, `node_modules`, cache internals, logs, or `.stfolder/` files were deleted or normalized.
-+- Active Codex UI hook trust was not asserted; `/hooks` still has to be trusted in the UI for local Eval Gate hooks to run automatically.
-
- ## Eval result
-
- EVAL RESULT: PASS from `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
-
--Direct publication evidence:
+-- No dependency was added.
+-- No prompt-only workaround was used.
+-- No direct push to `main` was made.
+-- No VPS runtime was changed.
+-- No `.git`, `node_modules`, cache internals, logs, or `.stfolder/` files were deleted or normalized.
+-- Active Codex UI hook trust was not asserted; `/hooks` still has to be trusted in the UI for local Eval Gate hooks to run automatically.
 -
--- `npm pack --dry-run --json` identified 1111 package files.
--- Package parity passed for all 1111 files across:
--  - `D:\Pipeline Orchestrator for Codex`
--  - `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`
--  - `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`
--- External-cwd smoke passed for the Codex cache CLI: `CAPABILITY_GATE: PASS`.
--- External-cwd smoke passed for the marketplace-backed global plugin CLI: `CAPABILITY_GATE: PASS`.
--- Global marketplace entry passed: `pipeline-orchestrator-for-codex`, path `./plugins/pipeline-orchestrator-for-codex`, policy `INSTALLED_BY_DEFAULT`.
+-## Eval result
 -
--The local Codex installation now has the same packaged plugin files in the canonical repo, the installed Codex cache, and the marketplace-backed global plugin directory.
-+Validation completed in the final pass:
-+
-+- `npm run lint:types`: PASS.
-+- `npm run build`: PASS.
-+- `npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS, 26 tests.
-+- `npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS, 185 tests.
-+- `npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS.
-+- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 63 tests.
-+- `git diff --check`: PASS, with Git CRLF warnings only.
-+- Installed-cache smoke: PASS on `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
-+- Global plugin smoke: PASS on `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`.
-+- Cache parity: PASS, `PARITY_OK files=22 targets=2`.
-+
-+Smoke coverage completed:
-+
-+- Required-first-actions pending denies generic `spawn_agent`.
-+- Controller `spawn_agent` is allowed in `PreToolUse` without completing early.
-+- Controller `spawn_agent` completes only after successful `PostToolUse`.
-+- Wrong `wait_agent` target does not complete; correct controller target completes.
-+- Bash is denied while first actions are pending.
-+- Stop hook emits the recovery redirect.
-+- HMAC tamper fails closed.
-+- Unsigned gate ledgers without an HMAC key release only when current.
+-EVAL RESULT: PASS from `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
++- The contents of `.gitignore` were not changed.
++- No `.agents/skills`, `agents/skills`, or manual `dist/**` edit was made.
++- GitHub is still not treated as the source of truth for the VPS; the local checkout remains the source of truth.
+
+-Validation completed in the final pass:
++## Validation completed
+
++- PowerShell syntax parse for both changed scripts: PASS.
++- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sync-contabo-fernando-vps-mirror.ps1`: PASS.
++- Contabo mirror evidence: `.gitignore` local and remote SHA-256 both `2ec011f04e364d6b8af68ddc08960ff690aed67548ee786217886da0bcea62e0`.
++- Contabo mirror evidence: local and remote `HEAD` both `862643181bf50c91ec9e1587fe65121b407eed96`.
++- Contabo mirror evidence: remote origin is `https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git`.
++- Contabo mirror evidence: local and remote item count both `30468`, and file byte sum both `443132880`.
+ - `npm run lint:types`: PASS.
+ - `npm run build`: PASS.
+-- `npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS, 26 tests.
+-- `npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS, 185 tests.
+-- `npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS.
+-- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 63 tests.
++- `npm test`: PASS.
+ - `git diff --check`: PASS, with Git CRLF warnings only.
+-- Installed-cache smoke: PASS on `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
+-- Global plugin smoke: PASS on `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`.
+-- Cache parity: PASS, `PARITY_OK files=22 targets=2`.
+
+-Smoke coverage completed:
++## Eval result
+
+-- Required-first-actions pending denies generic `spawn_agent`.
+-- Controller `spawn_agent` is allowed in `PreToolUse` without completing early.
+-- Controller `spawn_agent` completes only after successful `PostToolUse`.
+-- Wrong `wait_agent` target does not complete; correct controller target completes.
+-- Bash is denied while first actions are pending.
+-- Stop hook emits the recovery redirect.
+-- HMAC tamper fails closed.
+-- Unsigned gate ledgers without an HMAC key release only when current.
++Pending: `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` must pass after telemetry refresh for this current report.
 
  ## Remaining risks
 
--- Files excluded by `.npmignore`, such as `evals/telemetry/**`, are intentionally not part of package parity.
--- `node_modules/**` is operational dependency state, not package source; it was restored/copied for local runtime smoke but is not counted as canonical package source.
--- The active Codex app may require a restart or plugin reload before UI-discovered skills reflect the refreshed global plugin files.
--- Hook activation still depends on `/hooks` trust in the Codex UI.
-+- If the live Codex host changes `PostToolUse` response shape, conservative success detection may leave actions pending instead of falsely completing them.
-+- UI/runtime adoption still depends on the app loading the refreshed plugin cache and trusting hooks where applicable.
-+- `.stfolder/` remains a pre-existing untracked marker and is intentionally excluded from staging.
+-- If the live Codex host changes `PostToolUse` response shape, conservative success detection may leave actions pending instead of falsely completing them.
+-- UI/runtime adoption still depends on the app loading the refreshed plugin cache and trusting hooks where applicable.
+-- `.stfolder/` remains a pre-existing untracked marker and is intentionally excluded from staging.
++- The post-commit hook creates an NLP request for the VPS mirror; it does not itself run the remote mirror automatically.
++- Git may continue to show CRLF warnings on Windows even when `git diff --check` passes.
 
  ## Next safest step
 
--Commit and push the validated source changes, then rerun the public slash command from a different project to confirm the Codex UI has reloaded the updated global plugin surface.
-+Open a branch from `main`, commit the validated source/cache evidence changes, push the branch, and open a PR against `main`.
+-Open a branch from `main`, commit the validated source/cache evidence changes, push the branch, and open a PR against `main`.
++Refresh telemetry, rerun the Eval Gate, then commit and push the two script changes plus current eval evidence.
 diff --git a/evals/telemetry/changed_files.txt b/evals/telemetry/changed_files.txt
-index 915c95d..a96057b 100644
+index a96057b..915c95d 100644
 --- a/evals/telemetry/changed_files.txt
 +++ b/evals/telemetry/changed_files.txt
-@@ -1,3 +1,22 @@
-+dist/src/cli/pipeline-cli.js
-+dist/src/domain/pipeline-schemas.js
-+dist/src/sentinel/sentinel-state.js
-+dist/src/validation/final-validator.js
-+evals/outputs/latest_output.md
+@@ -1,22 +1,3 @@
+-dist/src/cli/pipeline-cli.js
+-dist/src/domain/pipeline-schemas.js
+-dist/src/sentinel/sentinel-state.js
+-dist/src/validation/final-validator.js
+-evals/outputs/latest_output.md
  evals/telemetry/changed_files.txt
  evals/telemetry/git_diff.patch
  evals/telemetry/latest_trace.json
-+hooks/completion-checklist.cjs
-+hooks/dispatch-guard.cjs
-+hooks/edit-guard-hook.cjs
-+hooks/force-pipeline-agents.cjs
-+hooks/hooks.json
-+hooks/ledger-integrity.cjs
-+src/cli/pipeline-cli.ts
-+src/domain/pipeline-schemas.ts
-+src/sentinel/sentinel-state.ts
-+src/validation/final-validator.ts
-+tests/unit/hooks/completion-checklist.test.ts
-+tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts
-+tests/unit/hooks/edit-guard-hook.test.ts
-+tests/unit/sentinel/sentinel-state.test.ts
+-hooks/completion-checklist.cjs
+-hooks/dispatch-guard.cjs
+-hooks/edit-guard-hook.cjs
+-hooks/force-pipeline-agents.cjs
+-hooks/hooks.json
+-hooks/ledger-integrity.cjs
+-src/cli/pipeline-cli.ts
+-src/domain/pipeline-schemas.ts
+-src/sentinel/sentinel-state.ts
+-src/validation/final-validator.ts
+-tests/unit/hooks/completion-checklist.test.ts
+-tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts
+-tests/unit/hooks/edit-guard-hook.test.ts
+-tests/unit/sentinel/sentinel-state.test.ts
 diff --git a/evals/telemetry/latest_trace.json b/evals/telemetry/latest_trace.json
-index b4f157b..5590f92 100644
+index f7bc7ca..4a1f166 100644
 --- a/evals/telemetry/latest_trace.json
 +++ b/evals/telemetry/latest_trace.json
-@@ -1,15 +1,34 @@
+@@ -1,34 +1,15 @@
  {
    "added_unrequested_features": false,
    "changed_files": [
-+    "dist/src/cli/pipeline-cli.js",
-+    "dist/src/domain/pipeline-schemas.js",
-+    "dist/src/sentinel/sentinel-state.js",
-+    "dist/src/validation/final-validator.js",
-+    "evals/outputs/latest_output.md",
+-    "dist/src/cli/pipeline-cli.js",
+-    "dist/src/domain/pipeline-schemas.js",
+-    "dist/src/sentinel/sentinel-state.js",
+-    "dist/src/validation/final-validator.js",
+-    "evals/outputs/latest_output.md",
      "evals/telemetry/changed_files.txt",
      "evals/telemetry/git_diff.patch",
--    "evals/telemetry/latest_trace.json"
-+    "evals/telemetry/latest_trace.json",
-+    "hooks/completion-checklist.cjs",
-+    "hooks/dispatch-guard.cjs",
-+    "hooks/edit-guard-hook.cjs",
-+    "hooks/force-pipeline-agents.cjs",
-+    "hooks/hooks.json",
-+    "hooks/ledger-integrity.cjs",
-+    "src/cli/pipeline-cli.ts",
-+    "src/domain/pipeline-schemas.ts",
-+    "src/sentinel/sentinel-state.ts",
-+    "src/validation/final-validator.ts",
-+    "tests/unit/hooks/completion-checklist.test.ts",
-+    "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
-+    "tests/unit/hooks/edit-guard-hook.test.ts",
-+    "tests/unit/sentinel/sentinel-state.test.ts"
+-    "evals/telemetry/latest_trace.json",
+-    "hooks/completion-checklist.cjs",
+-    "hooks/dispatch-guard.cjs",
+-    "hooks/edit-guard-hook.cjs",
+-    "hooks/force-pipeline-agents.cjs",
+-    "hooks/hooks.json",
+-    "hooks/ledger-integrity.cjs",
+-    "src/cli/pipeline-cli.ts",
+-    "src/domain/pipeline-schemas.ts",
+-    "src/sentinel/sentinel-state.ts",
+-    "src/validation/final-validator.ts",
+-    "tests/unit/hooks/completion-checklist.test.ts",
+-    "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
+-    "tests/unit/hooks/edit-guard-hook.test.ts",
+-    "tests/unit/sentinel/sentinel-state.test.ts"
++    "evals/telemetry/latest_trace.json"
    ],
--  "eval_result": "PASS",
-+  "eval_result": "PENDING",
+   "eval_result": "PASS",
    "execution_event": "PostToolUse",
    "execution_identity": {
      "hook_event": "PostToolUse",
--    "session_id": "019ee184-8886-7671-aec3-bf0043bd53f6",
-+    "session_id": "019eec66-5ccf-7530-9aa6-e51872843c4b",
+-    "session_id": "019eec66-5ccf-7530-9aa6-e51872843c4b",
++    "session_id": "019ef197-99f2-7820-8b59-e5d9b936ce49",
      "tool_name": "Bash"
    },
    "execution_observed": true,
-@@ -18,12 +37,12 @@
+@@ -37,12 +18,12 @@
    "last_hook_event": "PostToolUse",
    "plugin_execution": {
      "observed": true,
-+    "status": "smoke-pass",
+-    "status": "smoke-pass",
      "pipeline_agent_fqn": "pipeline-orchestrator-for-codex:core:pipeline-controller",
      "real_agent_runtime": {
        "spawn_agent_observed": true,
        "wait_agent_observed": true
--    },
--    "status": "blocked-no-agent-runtime"
-+    }
+-    }
++    },
++    "status": "smoke-pass"
    },
    "scope_respected": true,
    "scope_review": {
-@@ -74,6 +93,7 @@
-       ".agents/skills/pipeline/SKILL.md": "Mirror skill surface updated with packaged skills so local and installed pipeline instructions share the safe spawn_agent contract.",
-       ".agents/skills/spec-audit-only/steps/03-audit-loop.md": "Mirror skill surface updated with packaged skills so local and installed pipeline instructions share the safe spawn_agent contract.",
-       ".agents/skills/spec/SKILL.md": "Mirror skill surface updated with packaged skills so local and installed pipeline instructions share the safe spawn_agent contract.",
-+      ".stfolder/": "Pre-existing Syncthing marker directory observed in the dirty worktree; not edited and not part of the current pipeline runtime fix.",
-       "CHANGELOG.md": "Requested project context update; records the 0.5.1 release contract and release evidence.",
-       "CLAUDE.md": "Requested project context update; keeps the Claude/Codex local operating context aligned with the new HMAC integrity policy.",
-       "docs/pipeline-orchestrator-codex/12-claude-v8-portability-plan.md": "Pre-existing untracked portability plan observed in dirty worktree; not part of the current implementation scope.",
-@@ -83,55 +103,86 @@
+@@ -103,42 +84,23 @@
      },
      "unexpected_files": []
    },
--  "timestamp": "2026-06-20T03:08:33.470864+00:00",
-+  "timestamp": "2026-06-22T02:08:57.926076+00:00",
+-  "timestamp": "2026-06-22T02:10:03.383306+00:00",
++  "timestamp": "2026-06-22T23:11:31.295821+00:00",
    "untracked_files_included": [],
    "untracked_files_omitted_from_diff": [],
    "validated_target": {
--    "base_commit": "d71e804f0d2471be63a913a3955565c5c13a2ac4",
-+    "base_commit": "51b34b041e2be9731f0f867fb832e88111661321",
+-    "base_commit": "51b34b041e2be9731f0f867fb832e88111661321",
++    "base_commit": "862643181bf50c91ec9e1587fe65121b407eed96",
      "changed_files": [
-+      "dist/src/cli/pipeline-cli.js",
-+      "dist/src/domain/pipeline-schemas.js",
-+      "dist/src/sentinel/sentinel-state.js",
-+      "dist/src/validation/final-validator.js",
-+      "evals/outputs/latest_output.md",
+-      "dist/src/cli/pipeline-cli.js",
+-      "dist/src/domain/pipeline-schemas.js",
+-      "dist/src/sentinel/sentinel-state.js",
+-      "dist/src/validation/final-validator.js",
+-      "evals/outputs/latest_output.md",
        "evals/telemetry/changed_files.txt",
        "evals/telemetry/git_diff.patch",
--      "evals/telemetry/latest_trace.json"
-+      "evals/telemetry/latest_trace.json",
-+      "hooks/completion-checklist.cjs",
-+      "hooks/dispatch-guard.cjs",
-+      "hooks/edit-guard-hook.cjs",
-+      "hooks/force-pipeline-agents.cjs",
-+      "hooks/hooks.json",
-+      "hooks/ledger-integrity.cjs",
-+      "src/cli/pipeline-cli.ts",
-+      "src/domain/pipeline-schemas.ts",
-+      "src/sentinel/sentinel-state.ts",
-+      "src/validation/final-validator.ts",
-+      "tests/unit/hooks/completion-checklist.test.ts",
-+      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
-+      "tests/unit/hooks/edit-guard-hook.test.ts",
-+      "tests/unit/sentinel/sentinel-state.test.ts"
+-      "evals/telemetry/latest_trace.json",
+-      "hooks/completion-checklist.cjs",
+-      "hooks/dispatch-guard.cjs",
+-      "hooks/edit-guard-hook.cjs",
+-      "hooks/force-pipeline-agents.cjs",
+-      "hooks/hooks.json",
+-      "hooks/ledger-integrity.cjs",
+-      "src/cli/pipeline-cli.ts",
+-      "src/domain/pipeline-schemas.ts",
+-      "src/sentinel/sentinel-state.ts",
+-      "src/validation/final-validator.ts",
+-      "tests/unit/hooks/completion-checklist.test.ts",
+-      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
+-      "tests/unit/hooks/edit-guard-hook.test.ts",
+-      "tests/unit/sentinel/sentinel-state.test.ts"
++      "evals/telemetry/latest_trace.json"
      ],
      "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
      "ref": "HEAD+working-tree"
    },
    "validation_evidence": {
      "commands": {
--      "git diff --check": {
--        "command": "git diff --check",
--        "observed_at": "2026-06-20T00:43:31Z",
-+      "npm run lint:types": {
-+        "command": "npm run lint:types",
-+        "observed_at": "2026-06-22T02:09:18Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-       },
-       "npm run build": {
-         "command": "npm run build",
--        "observed_at": "2026-06-20T00:43:31Z",
-+        "observed_at": "2026-06-22T02:09:18Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-       },
 -      "npm run lint:types": {
 -        "command": "npm run lint:types",
--        "observed_at": "2026-06-20T00:43:31Z",
-+      "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
-+        "command": "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
-+        "observed_at": "2026-06-22T02:09:18Z",
-+        "status": "PASS",
-+        "target": "HEAD+working-tree"
-+      },
-+      "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
-+        "command": "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
-+        "observed_at": "2026-06-22T02:09:18Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-       },
-       "npm test": {
--        "command": "npm test -- --testTimeout 30000 --fileParallelism=false",
--        "observed_at": "2026-06-20T00:43:31Z",
-+        "command": "npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks",
-+        "observed_at": "2026-06-22T02:09:18Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-       },
-       "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
-         "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
--        "observed_at": "2026-06-20T00:43:31Z",
-+        "observed_at": "2026-06-22T02:09:18Z",
-+        "status": "PASS",
-+        "target": "HEAD+working-tree"
-+      },
 +      "git diff --check": {
 +        "command": "git diff --check",
-+        "observed_at": "2026-06-22T02:09:18Z",
+         "observed_at": "2026-06-22T02:10:03Z",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+@@ -149,32 +111,32 @@
          "status": "PASS",
          "target": "HEAD+working-tree"
        },
-       "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {
-         "command": "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
--        "observed_at": "2026-06-20T00:44:35Z",
--        "status": "PASS",
-+        "observed_at": "2026-06-22T02:09:18Z",
-+        "status": "PENDING_FINAL_RUN",
+-      "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
+-        "command": "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
++      "npm run lint:types": {
++        "command": "npm run lint:types",
+         "observed_at": "2026-06-22T02:10:03Z",
+         "status": "PASS",
          "target": "HEAD+working-tree"
-       }
-     }
-diff --git a/hooks/completion-checklist.cjs b/hooks/completion-checklist.cjs
-index 93bdd64..42aee78 100755
---- a/hooks/completion-checklist.cjs
-+++ b/hooks/completion-checklist.cjs
-@@ -295,6 +295,7 @@ function readActiveRequiredFirstActions(stateDir) {
-     && required.status === 'active'
-     && required.plugin === 'pipeline-orchestrator-for-codex'
-     && !stateObjectExpired(required)
-+    && stateObjectIntegrityVerified(required, 'pipeline-required-first-actions')
-   ) {
-     return required;
-   }
-@@ -982,7 +983,15 @@ function validateBatchLoopEvidence(artifact, ledgers = undefined, identityContex
-   return missing;
- }
-
--function ledgerRequiredActionCompleted(action, ledgers, identityContext) {
-+function ledgerEntryNotBeforeState(entry, state) {
-+  if (!state || typeof state !== 'object' || typeof state.created_at !== 'string') return true;
-+  if (typeof entry?.timestamp !== 'string') return false;
-+  const createdAt = Date.parse(state.created_at);
-+  const entryAt = Date.parse(entry.timestamp);
-+  return Number.isFinite(createdAt) && Number.isFinite(entryAt) && entryAt >= createdAt;
-+}
-+
-+function ledgerRequiredActionCompleted(action, ledgers, identityContext, requiredState = undefined) {
-   const allLedgers = [
-     ...(ledgers.gateDecisions ?? []),
-     ...(ledgers.checkpoints ?? []),
-@@ -997,6 +1006,7 @@ function ledgerRequiredActionCompleted(action, ledgers, identityContext) {
-     entry
-     && ledgerEntryIntegrityVerified(entry)
-     && entryMatchesActiveRunIdentity(entry, identityContext)
-+    && ledgerEntryNotBeforeState(entry, requiredState)
-     && ['completed', 'PASS', 'pass', 'approved', 'APPROVED', 'confirmed', 'CONFIRMED'].includes(entry.status || entry.decision)
-     && (
-       entry.action === action
-@@ -1042,7 +1052,7 @@ function validateRequiredFirstActions(stateDir, ledgers, identityContext) {
-       missing.push('required_action:valid');
-       continue;
-     }
--    if (!completedActions.has(action) && !ledgerRequiredActionCompleted(action, ledgers, identityContext)) {
-+    if (!completedActions.has(action) && !ledgerRequiredActionCompleted(action, ledgers, identityContext, required)) {
-       missing.push(`required_action:${action}`);
-     }
-   }
-@@ -1050,6 +1060,30 @@ function validateRequiredFirstActions(stateDir, ledgers, identityContext) {
-   return missing;
- }
-
-+function requiredFirstActionsIncomplete(stateDir) {
-+  const raw = readJsonIfExists(path.join(stateDir, REQUIRED_FIRST_ACTIONS_FILE));
-+  if (raw?.corrupted) return true;
-+  if (
-+    raw
-+    && typeof raw === 'object'
-+    && raw.status === 'active'
-+    && raw.plugin === 'pipeline-orchestrator-for-codex'
-+    && !stateObjectExpired(raw)
-+    && !stateObjectIntegrityVerified(raw, 'pipeline-required-first-actions')
-+  ) {
-+    return true;
-+  }
-+  const required = readActiveRequiredFirstActions(stateDir);
-+  if (!required) return false;
-+  const requiredActions = Array.isArray(required.required_actions) ? required.required_actions : [];
-+  const completedActions = new Set(
-+    Array.isArray(required.completed_actions)
-+      ? required.completed_actions.filter((action) => typeof action === 'string')
-+      : [],
-+  );
-+  return requiredActions.some((action) => typeof action === 'string' && !completedActions.has(action));
-+}
-+
- function readLedgers(stateDir) {
-   return {
-     protocolEvents: readJsonlIfExists(path.join(stateDir, 'protocol-events.jsonl')),
-@@ -1321,6 +1355,11 @@ process.stdin.on('end', () => {
-     const payload = parsePayload(input);
-     const stopEnforcement = evaluateStopEnforcement(payload, input);
-     if (!stopEnforcement.ok) {
-+      const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
-+      const stateDir = path.join(cwd, '.codex', 'pipeline');
-+      const hasRequiredFirstActionGap = stopEnforcement.missing.some((entry) => (
-+        typeof entry === 'string' && entry.startsWith('required_action:')
-+      )) || requiredFirstActionsIncomplete(stateDir);
-       recordHookEvent({
-         hook: 'completion-checklist',
-         event: 'Stop',
-@@ -1331,10 +1370,16 @@ process.stdin.on('end', () => {
-       console.log(JSON.stringify({
-         continue: false,
-         stopReason: `Pipeline completion blocked: missing governance evidence: ${stopEnforcement.missing.join(', ')}`,
--        systemMessage: [
--          'PIPELINE STOP ENFORCEMENT: explicit pipeline completion requires a validated PipelineGovernanceArtifact.',
--          'Emit BLOCKED with pipeline_valid=false, or complete the missing gates/hooks/agent artifacts before finalizing.',
--        ].join('\n'),
-+        systemMessage: hasRequiredFirstActionGap
-+          ? [
-+              'PIPELINE STOP ENFORCEMENT: required first actions are incomplete.',
-+              'Do not stop or switch to manual fallback. Redirect immediately to the canonical sequence: update_plan, WORKFLOW_METHOD_GATE, CAPABILITY_GATE, spawn_agent with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller, then wait_agent.',
-+              'Emit BLOCKED only if the real runtime capability is unavailable after attempting the canonical recovery path.',
-+            ].join('\n')
-+          : [
-+              'PIPELINE STOP ENFORCEMENT: explicit pipeline completion requires a validated PipelineGovernanceArtifact.',
-+              'Emit BLOCKED with pipeline_valid=false, or complete the missing gates/hooks/agent artifacts before finalizing.',
-+            ].join('\n'),
-       }));
-       return;
-     }
-diff --git a/hooks/dispatch-guard.cjs b/hooks/dispatch-guard.cjs
-index ecd5c7e..6eb77e5 100644
---- a/hooks/dispatch-guard.cjs
-+++ b/hooks/dispatch-guard.cjs
-@@ -17,11 +17,20 @@
-
- const { recordHookEvent } = require('./hook-events.cjs');
- const { GOVERNED_SKILL_SET } = require('./governed-workflows.cjs');
-+const {
-+  canonicalize,
-+  ledgerEntryIntegrityVerified,
-+  resolveSentinelIntegrityHmacKey,
-+  stateObjectIntegrityVerified,
-+} = require('./ledger-integrity.cjs');
- const fs = require('fs');
- const path = require('path');
-+const crypto = require('crypto');
-
- const PIPELINE_NAMESPACE = 'pipeline-orchestrator-for-codex';
- const LEGACY_PIPELINE_NAMESPACE = 'pipeline-orchestrator';
-+const REQUIRED_FIRST_ACTIONS_FILE = path.join('.codex', 'pipeline', 'required-first-actions.json');
-+const CONTROLLER_FQN = `${PIPELINE_NAMESPACE}:core:pipeline-controller`;
- const GOVERNED_SKILLS = GOVERNED_SKILL_SET;
- const ALLOWED_AGENT_TYPES = new Set(['worker', 'default', 'explorer']);
- const ALLOWED_GATES_AT = new Set(['phase-0', 'phase-1', 'phase-1.5', 'phase-2', 'phase-3', 'continue']);
-@@ -120,6 +129,417 @@ function allow() {
-   // Silent allow (consistent with sentinel hook)
- }
-
-+function readJsonIfExists(file) {
-+  try {
-+    if (!fs.existsSync(file)) return undefined;
-+    const stats = fs.lstatSync(file);
-+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size === 0) return { corrupted: true };
-+    return JSON.parse(fs.readFileSync(file, 'utf8'));
-+  } catch {
-+    return { corrupted: true };
-+  }
-+}
-+
-+function readJsonlIfExists(file) {
-+  try {
-+    if (!fs.existsSync(file)) return [];
-+    const stats = fs.lstatSync(file);
-+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size === 0) return [];
-+    return fs.readFileSync(file, 'utf8')
-+      .split(/\r?\n/u)
-+      .filter(Boolean)
-+      .map((line) => {
-+        try {
-+          return JSON.parse(line);
-+        } catch {
-+          return undefined;
-+        }
-+      })
-+      .filter(Boolean);
-+  } catch {
-+    return [];
-+  }
-+}
-+
-+function stateObjectExpired(state) {
-+  return typeof state.expires_at !== 'number' || state.expires_at <= Math.floor(Date.now() / 1000);
-+}
-+
-+function ledgerEntryStatusCompleted(entry) {
-+  return ['completed', 'PASS', 'pass', 'approved', 'APPROVED', 'confirmed', 'CONFIRMED']
-+    .includes(entry?.status || entry?.decision);
-+}
-+
-+function ledgerEntryTrusted(entry) {
-+  return resolveSentinelIntegrityHmacKey()
-+    ? ledgerEntryIntegrityVerified(entry)
-+    : !!(entry && typeof entry === 'object' && !Array.isArray(entry));
-+}
-+
-+function collectStrings(...values) {
-+  return values.flatMap((value) => {
-+    if (typeof value === 'string' && value.trim()) return [value.trim()];
-+    if (Array.isArray(value)) {
-+      return value.filter((entry) => typeof entry === 'string' && entry.trim()).map((entry) => entry.trim());
-+    }
-+    return [];
-+  });
-+}
-+
-+function entryMatchesRequiredState(entry, state) {
-+  if (!state || typeof state !== 'object') return true;
-+  const payload = entry?.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload)
-+    ? entry.payload
-+    : {};
-+  const identity = entry?.execution_identity && typeof entry.execution_identity === 'object' && !Array.isArray(entry.execution_identity)
-+    ? entry.execution_identity
-+    : {};
-+  const runCandidates = collectStrings(entry?.run_id, entry?.runId, payload.run_id, payload.runId, identity.run_id, identity.runId);
-+  const sessionCandidates = collectStrings(
-+    entry?.session_id,
-+    entry?.sessionId,
-+    payload.session_id,
-+    payload.sessionId,
-+    identity.session_id,
-+    identity.sessionId,
-+  );
-+  if (typeof state.run_id === 'string' && runCandidates.length > 0 && !runCandidates.includes(state.run_id)) return false;
-+  if (typeof state.session_id === 'string' && sessionCandidates.length > 0 && !sessionCandidates.includes(state.session_id)) return false;
-+  const hasIdentity = runCandidates.length > 0 || sessionCandidates.length > 0;
-+  if (typeof state.created_at !== 'string') return hasIdentity;
-+  if (typeof entry?.timestamp !== 'string') return false;
-+  const createdAt = Date.parse(state.created_at);
-+  const entryAt = Date.parse(entry.timestamp);
-+  const currentEnough = Number.isFinite(createdAt) && Number.isFinite(entryAt) && entryAt >= createdAt;
-+  return currentEnough;
-+}
-+
-+function ledgerRequiredActionCompleted(action, stateDir, state) {
-+  const requiredSpawnTarget = typeof action === 'string' && action.startsWith('spawn:')
-+    ? action.slice('spawn:'.length)
-+    : undefined;
-+  const requiredSpawnLeaf = requiredSpawnTarget ? requiredSpawnTarget.split(':').pop() : undefined;
-+  const entries = [
-+    ...readJsonlIfExists(path.join(stateDir, 'gate-decisions.jsonl')),
-+    ...readJsonlIfExists(path.join(stateDir, 'protocol-events.jsonl')),
-+    ...readJsonlIfExists(path.join(stateDir, 'hook-events.jsonl')),
-+  ];
-+  return entries.some((entry) => (
-+    entry
-+    && ledgerEntryTrusted(entry)
-+    && entryMatchesRequiredState(entry, state)
-+    && ledgerEntryStatusCompleted(entry)
-+    && (
-+      entry.action === action
-+      || entry.required_action === action
-+      || entry.completed_action === action
-+      || entry.gate === action
-+      || entry.kind === action
-+      || entry.event === action
-+      || (
-+        action === 'wait_agent'
-+        && entry.payload
-+        && typeof entry.payload === 'object'
-+        && entry.payload.capability === 'wait_agent'
-+        && entry.payload.event === 'WAIT_AGENT_COMPLETED'
-+      )
-+      || (
-+        requiredSpawnTarget
-+        && entry.kind === 'DISPATCH_REQUEST'
-+        && entry.status === 'completed'
-+        && entry.dispatchMode === 'real'
-+        && entry.payload
-+        && typeof entry.payload === 'object'
-+        && (
-+          entry.payload.targetName === requiredSpawnTarget
-+          || entry.payload.targetName === requiredSpawnLeaf
-+        )
-+      )
-+    )
-+  ));
-+}
-+
-+function readRequiredFirstActionsState() {
-+  const stateDir = path.join(process.cwd(), '.codex', 'pipeline');
-+  const state = readJsonIfExists(path.join(process.cwd(), REQUIRED_FIRST_ACTIONS_FILE));
-+  if (!state) return undefined;
-+  if (state.corrupted) {
-+    return { active: true, pending: true, corrupted: true, requiredActions: [], completedActions: new Set() };
-+  }
-+  if (!stateObjectIntegrityVerified(state, 'pipeline-required-first-actions')) {
-+    return { active: true, pending: true, corrupted: true, requiredActions: [], completedActions: new Set() };
-+  }
-+  if (
-+    !state
-+    || typeof state !== 'object'
-+    || state.status !== 'active'
-+    || state.plugin !== PIPELINE_NAMESPACE
-+    || stateObjectExpired(state)
-+  ) {
-+    return undefined;
-+  }
-+  const requiredActions = Array.isArray(state.required_actions)
-+    ? state.required_actions.filter((entry) => typeof entry === 'string')
-+    : [];
-+  const completedActions = new Set(
-+    Array.isArray(state.completed_actions)
-+      ? state.completed_actions.filter((entry) => typeof entry === 'string')
-+      : [],
-+  );
-+  return {
-+    active: true,
-+    pending: requiredActions.some((action) => (
-+      !completedActions.has(action) && !ledgerRequiredActionCompleted(action, stateDir, state)
-+    )),
-+    corrupted: false,
-+    state,
-+    requiredActions,
-+    completedActions,
-+  };
-+}
-+
-+function signStateObject(state, scope) {
-+  const key = resolveSentinelIntegrityHmacKey();
-+  if (!key) return state;
-+  const unsignedState = { ...state };
-+  delete unsignedState._integrity;
-+  return {
-+    ...unsignedState,
-+    _integrity: {
-+      algorithm: 'hmac-sha256',
-+      scope,
-+      signature: crypto.createHmac('sha256', key).update(canonicalize(unsignedState)).digest('hex'),
-+    },
-+  };
-+}
-+
-+function rejectSymlinkAncestors(file) {
-+  const cwd = process.cwd();
-+  const relative = path.relative(cwd, file).split(path.sep).filter(Boolean);
-+  let cursor = cwd;
-+  for (const part of relative.slice(0, -1)) {
-+    cursor = path.join(cursor, part);
-+    try {
-+      if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) {
-+        throw new Error(`Refusing to write pipeline state through symlink ancestor: ${cursor}`);
-+      }
-+    } catch (err) {
-+      if (err && err.message && err.message.startsWith('Refusing to write')) throw err;
-+    }
-+  }
-+}
-+
-+function writeJsonAtomic(file, value) {
-+  rejectSymlinkAncestors(file);
-+  const dir = path.dirname(file);
-+  fs.mkdirSync(dir, { recursive: true });
-+  const tmpFile = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
-+  for (const candidate of [dir, file, tmpFile]) {
-+    try {
-+      if (fs.lstatSync(candidate).isSymbolicLink()) {
-+        throw new Error(`Refusing to write pipeline state through symlink: ${candidate}`);
-+      }
-+    } catch (err) {
-+      if (err && err.message && err.message.startsWith('Refusing to write')) throw err;
-+    }
-+  }
-+  fs.writeFileSync(tmpFile, JSON.stringify(value, null, 2), 'utf8');
-+  fs.renameSync(tmpFile, file);
-+}
-+
-+function recordRequiredFirstActionCompleted(action, detail, updates = {}) {
-+  const requiredPath = path.join(process.cwd(), REQUIRED_FIRST_ACTIONS_FILE);
-+  const state = readJsonIfExists(requiredPath);
-+  if (
-+    state
-+    && !state.corrupted
-+    && typeof state === 'object'
-+    && state.status === 'active'
-+    && state.plugin === PIPELINE_NAMESPACE
-+    && !stateObjectExpired(state)
-+    && stateObjectIntegrityVerified(state, 'pipeline-required-first-actions')
-+  ) {
-+    const completedActions = new Set(
-+      Array.isArray(state.completed_actions)
-+        ? state.completed_actions.filter((entry) => typeof entry === 'string')
-+        : [],
-+    );
-+    completedActions.add(action);
-+    writeJsonAtomic(requiredPath, signStateObject({
-+      ...state,
-+      ...updates,
-+      completed_actions: [...completedActions],
-+      updated_at: new Date().toISOString(),
-+    }, 'pipeline-required-first-actions'));
-+  }
-+
-+  recordHookEvent({
-+    hook: 'dispatch-guard',
-+    event: action,
-+    decision: 'completed',
-+    attempted: action,
-+    expected: 'required-first-actions',
-+    reason: detail || 'required first action observed',
-+  });
-+}
-+
-+function toolSucceeded(payload) {
-+  const response = payload && (payload.tool_response || payload.toolResponse);
-+  if (!response || typeof response !== 'object' || Array.isArray(response)) return false;
-+  if (response.is_error === true || response.error === true) return false;
-+  const status = typeof response.status === 'string' ? response.status.toLowerCase() : '';
-+  if (['error', 'failed', 'failure', 'denied', 'blocked'].includes(status)) return false;
-+  return true;
-+}
-+
-+function extractAgentIdFromResponse(payload) {
-+  const response = payload && (payload.tool_response || payload.toolResponse);
-+  if (!response || typeof response !== 'object' || Array.isArray(response)) return undefined;
-+  return collectStrings(
-+    response.agent_id,
-+    response.agentId,
-+    response.id,
-+    response.target,
-+    response.target_id,
-+    response.targetId,
-+    response.output && typeof response.output === 'object' ? response.output.agent_id : undefined,
-+    response.output && typeof response.output === 'object' ? response.output.agentId : undefined,
-+    response.output && typeof response.output === 'object' ? response.output.id : undefined,
-+  )[0];
-+}
-+
-+function extractWaitTargets(toolInput) {
-+  return collectStrings(
-+    toolInput?.target,
-+    toolInput?.targets,
-+    toolInput?.agent_id,
-+    toolInput?.agentId,
-+    toolInput?.id,
-+  );
-+}
-+
-+function activeFirstActionsPostTool(payload, toolName, toolInput) {
-+  const required = readRequiredFirstActionsState();
-+  if (!required?.active || !required.pending || !toolSucceeded(payload)) return undefined;
-+
-+  if (toolName === 'update_plan') {
-+    recordRequiredFirstActionCompleted('update_plan', 'visible plan tool completed');
-+    return { kind: 'allow' };
-+  }
-+
-+  if (toolName === 'wait_agent') {
-+    const expectedControllerAgentId = typeof required.state?.bootstrap_controller_agent_id === 'string'
-+      ? required.state.bootstrap_controller_agent_id
-+      : undefined;
-+    if (!expectedControllerAgentId || !extractWaitTargets(toolInput).includes(expectedControllerAgentId)) {
-+      recordRequiredFirstActionAllowed('wait_agent', 'wait_agent completed but did not match bootstrap controller id');
-+      return { kind: 'allow' };
-+    }
-+    recordRequiredFirstActionCompleted('wait_agent', 'wait_agent tool completed for bootstrap controller');
-+    return { kind: 'allow' };
-+  }
-+
-+  if (toolName === 'spawn_agent') {
-+    const identity = extractPipelineAgentType(toolInput, { requireMarker: true });
-+    if (typeof identity === 'string' && identity === CONTROLLER_FQN) {
-+      const bootstrapControllerAgentId = extractAgentIdFromResponse(payload);
-+      recordRequiredFirstActionCompleted(
-+        `spawn:${CONTROLLER_FQN}`,
-+        'canonical controller spawn completed',
-+        bootstrapControllerAgentId ? { bootstrap_controller_agent_id: bootstrapControllerAgentId } : {},
-+      );
-+      return { kind: 'allow' };
-+    }
-+  }
-+
-+  return undefined;
-+}
-+
-+function recordRequiredFirstActionAllowed(action, detail) {
-+  recordHookEvent({
-+    hook: 'dispatch-guard',
-+    event: action,
-+    decision: 'allow',
-+    attempted: action,
-+    expected: 'required-first-actions',
-+    reason: detail || 'required first action allowed',
-+  });
-+}
-+
-+function activeFirstActionsPreTool(toolName, toolInput) {
-+  const required = readRequiredFirstActionsState();
-+  if (!required?.active || !required.pending) return undefined;
-+
-+  if (toolName === 'update_plan') {
-+    recordRequiredFirstActionAllowed('update_plan', 'visible plan tool allowed');
-+    return { kind: 'allow' };
-+  }
-+
-+  if (toolName === 'wait_agent') {
-+    const spawnAction = `spawn:${CONTROLLER_FQN}`;
-+    if (
-+      !required.completedActions.has(spawnAction)
-+      && !ledgerRequiredActionCompleted(spawnAction, path.join(process.cwd(), '.codex', 'pipeline'), required.state)
-+    ) {
-+      return {
-+        kind: 'deny',
-+        reason:
-+          `FIRST_ACTIONS_GUARD: wait_agent cannot run before the canonical pipeline-controller spawn is completed. ` +
-+          `Do not stop or switch to manual fallback; redirect immediately to the canonical controller bootstrap sequence.`,
-+        attempted: toolName,
-+        expected: CONTROLLER_FQN,
-+      };
-+    }
-+    const expectedControllerAgentId = typeof required.state?.bootstrap_controller_agent_id === 'string'
-+      ? required.state.bootstrap_controller_agent_id
-+      : undefined;
-+    if (expectedControllerAgentId && !extractWaitTargets(toolInput).includes(expectedControllerAgentId)) {
-+      return {
-+        kind: 'deny',
-+        reason:
-+          `FIRST_ACTIONS_GUARD: wait_agent must target the bootstrap pipeline-controller agent before the controller bootstrap is complete. ` +
-+          `Do not stop or switch to manual fallback; wait for the controller agent returned by the canonical spawn.`,
-+        attempted: toolName,
-+        expected: expectedControllerAgentId,
-+      };
-+    }
-+    recordRequiredFirstActionAllowed('wait_agent', 'wait_agent tool allowed');
-+    return { kind: 'allow' };
-+  }
-+
-+  if (toolName === 'spawn_agent') {
-+    const identity = extractPipelineAgentType(toolInput, { requireMarker: true });
-+    if (typeof identity === 'string' && identity === CONTROLLER_FQN) {
-+      recordRequiredFirstActionAllowed(`spawn:${CONTROLLER_FQN}`, 'canonical controller spawn allowed');
-+      return { kind: 'allow' };
-+    }
-+    return {
-+      kind: 'deny',
-+      reason:
-+        `FIRST_ACTIONS_GUARD: required first actions are pending. Only update_plan, ` +
-+        `WORKFLOW_METHOD_GATE, CAPABILITY_GATE, spawn_agent with PIPELINE_AGENT_FQN: ${CONTROLLER_FQN}, ` +
-+        `and wait_agent may run before the controller bootstrap is complete. ` +
-+        `Do not stop or switch to manual fallback; redirect immediately to the canonical controller bootstrap sequence.`,
-+      attempted: typeof identity === 'string' && identity ? identity : toolName,
-+      expected: CONTROLLER_FQN,
-+    };
-+  }
-+
-+  if (['Agent', 'Skill'].includes(toolName)) {
-+    return {
-+      kind: 'deny',
-+      reason:
-+        `FIRST_ACTIONS_GUARD: required first actions are pending. ${toolName} is not allowed before ` +
-+        `the canonical pipeline-controller spawn/wait sequence completes. ` +
-+        `Do not stop or switch to manual fallback; redirect immediately to the canonical controller bootstrap sequence.`,
-+      attempted: toolName,
-+      expected: CONTROLLER_FQN,
-+    };
-+  }
-+
-+  return undefined;
-+}
-+
- function extractFrontmatterBlock(raw) {
-   if (typeof raw !== 'string') return undefined;
-   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-@@ -423,9 +843,22 @@ function evaluateSkill(toolInput) {
- function handle(input) {
-   const toolName = (input && (input.tool_name || input.toolName)) || '';
-   const toolInput = (input && (input.tool_input || input.toolInput)) || {};
-+  const hookEventName = (input && (input.hook_event_name || input.hookEventName)) || 'PreToolUse';
-
-   let verdict = { kind: 'allow' };
-
-+  if (hookEventName === 'PostToolUse') {
-+    activeFirstActionsPostTool(input, toolName, toolInput);
-+    return;
-+  }
-+
-+  const firstActionsVerdict = activeFirstActionsPreTool(toolName, toolInput);
-+  if (firstActionsVerdict?.kind === 'deny') {
-+    deny(firstActionsVerdict.reason, firstActionsVerdict.attempted, firstActionsVerdict.expected);
-+    return;
-+  }
-+  if (firstActionsVerdict?.kind === 'allow') return;
-+
-   if (toolName === 'Agent' || toolName === 'spawn_agent') {
-     verdict = evaluateAgent(toolInput, { requireMarker: toolName === 'spawn_agent' });
-   } else if (toolName === 'Skill') {
-diff --git a/hooks/edit-guard-hook.cjs b/hooks/edit-guard-hook.cjs
-index 654a6dd..409de3b 100644
---- a/hooks/edit-guard-hook.cjs
-+++ b/hooks/edit-guard-hook.cjs
-@@ -21,8 +21,10 @@
- const fs = require('fs');
- const path = require('path');
- const { recordHookEvent } = require('./hook-events.cjs');
-+const { stateObjectIntegrityVerified } = require('./ledger-integrity.cjs');
-
- const PROTECTED_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash']);
-+const PIPELINE_NAMESPACE = 'pipeline-orchestrator-for-codex';
- const ALLOWED_PATHS = ['.codex', 'pipeline-runs'];
- const PROTECTED_PIPELINE_STATE_FILES = new Set([
-   '.codex/pipeline/workflow-intent.json',
-@@ -271,6 +273,46 @@ function normalizeRelativePath(cwd, filePath) {
-   return path.relative(workspaceRoot, resolved).replace(/\\/g, '/');
- }
-
-+function readJsonIfExists(file) {
-+  try {
-+    if (!fs.existsSync(file)) return undefined;
-+    const stats = fs.lstatSync(file);
-+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size === 0) return { corrupted: true };
-+    return JSON.parse(fs.readFileSync(file, 'utf8'));
-+  } catch {
-+    return { corrupted: true };
-+  }
-+}
-+
-+function stateObjectExpired(state) {
-+  return typeof state.expires_at !== 'number' || state.expires_at <= nowEpochSeconds();
-+}
-+
-+function requiredFirstActionsPending(cwd) {
-+  const state = readJsonIfExists(path.join(cwd, '.codex', 'pipeline', 'required-first-actions.json'));
-+  if (!state) return false;
-+  if (state.corrupted) return true;
-+  if (!stateObjectIntegrityVerified(state, 'pipeline-required-first-actions')) return true;
-+  if (
-+    !state
-+    || typeof state !== 'object'
-+    || state.status !== 'active'
-+    || state.plugin !== PIPELINE_NAMESPACE
-+    || stateObjectExpired(state)
-+  ) {
-+    return false;
-+  }
-+  const requiredActions = Array.isArray(state.required_actions)
-+    ? state.required_actions.filter((entry) => typeof entry === 'string')
-+    : [];
-+  const completedActions = new Set(
-+    Array.isArray(state.completed_actions)
-+      ? state.completed_actions.filter((entry) => typeof entry === 'string')
-+      : [],
-+  );
-+  return requiredActions.some((action) => !completedActions.has(action));
-+}
-+
- function normalizeLexicalRelativePath(cwd, filePath) {
-   return path.relative(path.resolve(cwd), path.resolve(cwd, filePath)).replace(/\\/g, '/');
- }
-@@ -395,6 +437,26 @@ function handle(input) {
-     return;
-   }
-
-+  if (toolName === 'Bash' && requiredFirstActionsPending(cwd)) {
-+    recordHookEvent({
-+      hook: 'edit-guard',
-+      event: 'PreToolUse',
-+      decision: 'deny',
-+      attempted: toolName,
-+      reason: 'required first actions pending',
-+    });
-+    emit({
-+      hookSpecificOutput: {
-+        permissionDecision: 'deny',
-+        permissionDecisionReason:
-+          'Edit guard blocked Bash: required pipeline first actions are still pending. ' +
-+          'Only the visible plan, workflow/capability gates, canonical pipeline-controller spawn, and wait_agent may run before bootstrap completes. ' +
-+          'Do not stop or switch to manual fallback; redirect immediately to the canonical pipeline-controller bootstrap sequence.',
-+      },
-+    });
-+    return;
-+  }
-+
-   // Bash special handling: if command modifies files, treat like Edit/Write
-   if (toolName === 'Bash') {
-     const command = toolInput.command || '';
-diff --git a/hooks/force-pipeline-agents.cjs b/hooks/force-pipeline-agents.cjs
-index 84e6837..f6891a8 100755
---- a/hooks/force-pipeline-agents.cjs
-+++ b/hooks/force-pipeline-agents.cjs
-@@ -480,7 +480,6 @@ function writeWorkflowIntent(intent) {
-     run_id: runId,
-     workflow_id: intent.workflow,
-     created_by_hook: 'force-pipeline-agents',
--    runtime_mode: 'pending-real-agent',
-     expires_at: expiresAt,
-     pipelineActive: true,
-     currentPhase: 'phase-0',
-diff --git a/hooks/hooks.json b/hooks/hooks.json
-index 84d5077..298329d 100644
---- a/hooks/hooks.json
-+++ b/hooks/hooks.json
-@@ -41,6 +41,17 @@
-         ]
-       }
-     ],
-+    "PostToolUse": [
-+      {
-+        "matcher": "spawn_agent|wait_agent|update_plan",
-+        "hooks": [
-+          {
-+            "type": "command",
-+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
-+          }
-+        ]
-+      }
-+    ],
-     "PreToolUse": [
-       {
-         "matcher": "spawn_agent",
-@@ -55,6 +66,24 @@
-           }
-         ]
        },
-+      {
-+        "matcher": "wait_agent",
-+        "hooks": [
-+          {
-+            "type": "command",
-+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
-+          }
-+        ]
-+      },
-+      {
-+        "matcher": "update_plan",
-+        "hooks": [
-+          {
-+            "type": "command",
-+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
-+          }
-+        ]
-+      },
-       {
-         "matcher": "Agent",
-         "hooks": [
-diff --git a/hooks/ledger-integrity.cjs b/hooks/ledger-integrity.cjs
-index a0f8f8f..15bc6a3 100644
---- a/hooks/ledger-integrity.cjs
-+++ b/hooks/ledger-integrity.cjs
-@@ -73,9 +73,38 @@ function ledgerEntryIntegrityVerified(entry) {
-     && crypto.timingSafeEqual(expectedBytes, actualBytes);
+-      "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
+-        "command": "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
++      "npm test": {
++        "command": "npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks",
+         "observed_at": "2026-06-22T02:10:03Z",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+       },
+-      "npm test": {
+-        "command": "npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks",
++      "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
++        "command": "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
+         "observed_at": "2026-06-22T02:10:03Z",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+       },
+-      "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
+-        "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
++      "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
++        "command": "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
+         "observed_at": "2026-06-22T02:10:03Z",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+       },
+-      "git diff --check": {
+-        "command": "git diff --check",
++      "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
++        "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
+         "observed_at": "2026-06-22T02:10:03Z",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+diff --git a/scripts/enqueue-contabo-vps-sync-request.ps1 b/scripts/enqueue-contabo-vps-sync-request.ps1
+index 6c37e81..c15725f 100644
+--- a/scripts/enqueue-contabo-vps-sync-request.ps1
++++ b/scripts/enqueue-contabo-vps-sync-request.ps1
+@@ -49,7 +49,7 @@ Acao esperada do Codex:
+ 1. Executar scripts/sync-contabo-fernando-vps-mirror.ps1 a partir da raiz local.
+ 2. Espelhar o diretorio local completo para o destino remoto, incluindo .git e artefatos locais.
+ 3. Garantir que o Git na VPS aponte para o mesmo origin do projeto local.
+-4. Conferir paridade local x VPS por HEAD, contagem de itens, soma de bytes e hashes criticos.
++4. Conferir paridade local x VPS por HEAD, contagem de itens, soma de bytes e hashes criticos, incluindo .gitignore.
+ 5. Lembrar que GitHub nao e fonte de verdade para a VPS; o local e a fonte de verdade.
+
+ Criado em UTC:
+diff --git a/scripts/sync-contabo-fernando-vps-mirror.ps1 b/scripts/sync-contabo-fernando-vps-mirror.ps1
+index 31ef4a4..ab75ed8 100644
+--- a/scripts/sync-contabo-fernando-vps-mirror.ps1
++++ b/scripts/sync-contabo-fernando-vps-mirror.ps1
+@@ -53,6 +53,20 @@ function Sum-LocalFileBytes($path) {
+   return [Int64]$sum
  }
 
-+function stateObjectIntegrityVerified(state, scope) {
-+  const key = resolveSentinelIntegrityHmacKey();
-+  if (!key) return true;
-+  if (!state || typeof state !== 'object' || Array.isArray(state)) return false;
-+
-+  const integrity = state._integrity && typeof state._integrity === 'object' && !Array.isArray(state._integrity)
-+    ? state._integrity
-+    : undefined;
-+  if (
-+    !integrity
-+    || integrity.algorithm !== 'hmac-sha256'
-+    || integrity.scope !== scope
-+    || typeof integrity.signature !== 'string'
-+    || !HMAC_SHA256_HEX_SIGNATURE.test(integrity.signature)
-+  ) {
-+    return false;
-+  }
-+
-+  const unsignedState = { ...state };
-+  delete unsignedState._integrity;
-+  const expected = crypto.createHmac('sha256', key).update(canonicalize(unsignedState)).digest('hex');
-+  const expectedBytes = Buffer.from(expected, 'hex');
-+  const actualBytes = Buffer.from(integrity.signature, 'hex');
-+  return actualBytes.length > 0
-+    && expectedBytes.length === actualBytes.length
-+    && crypto.timingSafeEqual(expectedBytes, actualBytes);
++function Get-CriticalFileHashes($root, [string[]]$relativePaths) {
++  return @($relativePaths | ForEach-Object {
++    $relativePath = $_
++    $fullPath = Join-Path $root $relativePath
++    if (!(Test-Path -LiteralPath $fullPath -PathType Leaf)) {
++      Fail "Critical mirror file is missing: $relativePath"
++    }
++    [PSCustomObject]@{
++      path = $relativePath
++      sha256 = Get-Sha256 $fullPath
++    }
++  })
 +}
 +
- module.exports = {
-   canonicalize,
-   ledgerEntryIntegrityVerified,
-   resolveSentinelIntegrityHmacKey,
-   signLedgerEntry,
-+  stateObjectIntegrityVerified,
- };
-diff --git a/src/cli/pipeline-cli.ts b/src/cli/pipeline-cli.ts
-index c8e9d58..18c4ed0 100644
---- a/src/cli/pipeline-cli.ts
-+++ b/src/cli/pipeline-cli.ts
-@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from "node:fs";
- import { pathToFileURL } from "node:url";
- import { join } from "node:path";
- import { loadAgentRuntimeAdapter } from "./agent-runtime-loader.js";
--import { sentinelStateSchema, sessionStateSchema } from "../domain/pipeline-schemas.js";
-+import { sentinelStateReadSchema, sessionStateSchema } from "../domain/pipeline-schemas.js";
- import { resolveSentinelIntegrityHmacKey } from "../security/ledger-integrity.js";
+ $projectRootFull = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ProjectRoot).Path)
+ if (!(Test-Path -LiteralPath (Join-Path $projectRootFull ".git") -PathType Container)) {
+   Fail "Project root is not a Git checkout: $projectRootFull"
+@@ -65,12 +79,24 @@ $head = (Run-Git $projectRootFull @("rev-parse", "HEAD")).Trim()
+ $origin = (Run-Git $projectRootFull @("remote", "get-url", "origin")).Trim()
+ $localItems = Count-LocalItems $projectRootFull
+ $localBytes = Sum-LocalFileBytes $projectRootFull
++$criticalPaths = @(
++  ".gitignore",
++  "scripts/sync-contabo-fernando-vps-mirror.ps1",
++  "scripts/enqueue-contabo-vps-sync-request.ps1",
++  "hooks/force-pipeline-agents.cjs",
++  ".git/HEAD"
++)
++$criticalHashes = Get-CriticalFileHashes $projectRootFull $criticalPaths
++$criticalHashesJson = @($criticalHashes) | ConvertTo-Json -Compress
 
- export function resolveCliExitCode(result: unknown) {
-@@ -234,7 +234,7 @@ function pendingGateResponse(options: PipelineCliOptions): PendingGateResolution
-   }
+ $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+ $archive = Join-Path $env:TEMP "pipeline-orchestrator-contabo-mirror-$timestamp.tar.gz"
+ $remoteArchive = "/tmp/pipeline-orchestrator-contabo-mirror-$timestamp.tar.gz"
 
-   const parsedSession = sessionStateSchema.safeParse(session.value);
--  const parsedSentinel = sentinelStateSchema.safeParse(sentinel.value);
-+  const parsedSentinel = sentinelStateReadSchema.safeParse(sentinel.value);
-   if (!parsedSession.success || !parsedSentinel.success) {
-     return {
-       kind: "blocked",
-diff --git a/src/domain/pipeline-schemas.ts b/src/domain/pipeline-schemas.ts
-index d2af763..55b92b0 100644
---- a/src/domain/pipeline-schemas.ts
-+++ b/src/domain/pipeline-schemas.ts
-@@ -13,6 +13,15 @@ const confidenceBandSchema = z.enum(["low", "medium", "high"]);
- const classificationTypeSchema = z.enum(["Bug Fix", "Feature", "User Story", "Audit", "UX Simulation", "Spec"]);
- const pipelineComplexitySchema = z.enum(["SIMPLES", "MEDIA", "COMPLEXA"]);
- const runtimeModeSchema = z.enum(["real-agent", "harness", "blocked-no-agent-runtime", "dev-bypass"]);
-+const sentinelRuntimeModeSchema = z.union([runtimeModeSchema, z.literal("pending-real-agent")]);
-+const sentinelLastCheckpointSchema = z.enum([
-+  "workflow_intent_persisted",
-+  "post_orchestrator",
-+  "phase_0_to_1",
-+  "phase_1_to_2",
-+  "phase_2_to_3",
-+  "post_final_validator",
-+]);
-
- const executionIdentitySchema = z.object({
-   trace_id: z.string(),
-@@ -227,16 +236,14 @@ export const sentinelStateSchema = z.object({
-     status: z.string(),
-   }),
-   consecutiveCorrections: z.number().int().nonnegative(),
--  lastCheckpoint: z.enum([
--    "post_orchestrator",
--    "phase_0_to_1",
--    "phase_1_to_2",
--    "phase_2_to_3",
--    "post_final_validator",
--  ]),
-+  lastCheckpoint: sentinelLastCheckpointSchema,
-   updatedAt: z.string(),
- });
-
-+export const sentinelStateReadSchema = sentinelStateSchema.extend({
-+  runtime_mode: sentinelRuntimeModeSchema.optional(),
-+});
-+
- export const checkpointSchema = z.object({
-   name: z.string(),
-   phase: pipelinePhaseSchema,
-diff --git a/src/sentinel/sentinel-state.ts b/src/sentinel/sentinel-state.ts
-index 689a218..08f7c54 100644
---- a/src/sentinel/sentinel-state.ts
-+++ b/src/sentinel/sentinel-state.ts
-@@ -1,7 +1,7 @@
- import { mkdir, readFile, writeFile } from "node:fs/promises";
- import { createHmac } from "node:crypto";
- import { join } from "node:path";
--import { sentinelStateSchema } from "../domain/pipeline-schemas.js";
-+import { sentinelStateReadSchema, sentinelStateSchema } from "../domain/pipeline-schemas.js";
- import { resolveSentinelIntegrityHmacKey } from "../security/ledger-integrity.js";
-
- export type SentinelState = ReturnType<typeof sentinelStateSchema.parse>;
-@@ -46,7 +46,12 @@ export function createSentinelStateStore(root: string) {
-     },
-     async load() {
-       const raw = await readFile(file, "utf8");
--      return sentinelStateSchema.parse(JSON.parse(raw));
-+      const parsed = sentinelStateReadSchema.parse(JSON.parse(raw));
-+      if (parsed.runtime_mode === "pending-real-agent") {
-+        const { runtime_mode: _legacyRuntimeMode, ...strictState } = parsed;
-+        return sentinelStateSchema.parse(strictState);
-+      }
-+      return sentinelStateSchema.parse(parsed);
-     },
-   };
+ Write-Host "Creating full local mirror archive from $projectRootFull"
++$criticalHashes | ForEach-Object {
++  Write-Host "LOCAL_SHA256 $($_.path) $($_.sha256)"
++}
+ if (Test-Path -LiteralPath $archive) {
+   Remove-Item -LiteralPath $archive -Force
  }
-diff --git a/src/validation/final-validator.ts b/src/validation/final-validator.ts
-index 346bb8c..6071fca 100644
---- a/src/validation/final-validator.ts
-+++ b/src/validation/final-validator.ts
-@@ -199,11 +199,22 @@ type SentinelStateInput = {
-   updatedAt: string;
- };
+@@ -104,6 +130,7 @@ dest = "$RemotePath"
+ expected_dest = "/home/fernando/projetos/pipeline-orchestrator-codex"
+ origin = "$origin"
+ expected_head = "$head"
++critical_hashes = $criticalHashesJson
 
-+type SentinelStateRead = Omit<SentinelStateInput, "runtime_mode" | "lastCheckpoint"> & {
-+  runtime_mode?: SentinelStateInput["runtime_mode"] | "pending-real-agent";
-+  lastCheckpoint: SentinelStateInput["lastCheckpoint"] | "workflow_intent_persisted";
-+};
-+
- type SentinelStoreLike = {
-   save?: (state: SentinelStateInput) => Promise<void> | void;
--  load?: () => Promise<SentinelStateInput> | SentinelStateInput;
-+  load?: () => Promise<SentinelStateRead> | SentinelStateRead;
- };
+ if os.path.abspath(dest) != expected_dest:
+     raise SystemExit(f"unsafe destination: {dest}")
+@@ -146,12 +173,6 @@ if head != expected_head:
 
-+type ResolvedRuntimeMode = Exclude<SentinelStateInput["runtime_mode"], "pending-real-agent" | undefined>;
-+
-+function isResolvedRuntimeMode(mode: SentinelStateRead["runtime_mode"]): mode is ResolvedRuntimeMode {
-+  return mode !== undefined && mode !== "pending-real-agent";
-+}
-+
- /**
-  * After a final-validator dispatch returns, persist the
-  * `post_final_validator` checkpoint so sentinel can confirm the pipeline
-@@ -219,7 +230,7 @@ export async function recordPostFinalValidatorCheckpoint(input: {
-   if (!input.sentinelStore?.save) {
-     return;
-   }
--  let prior: SentinelStateInput | undefined;
-+  let prior: SentinelStateRead | undefined;
-   try {
-     prior = (await input.sentinelStore.load?.()) ?? undefined;
-   } catch {
-@@ -233,7 +244,7 @@ export async function recordPostFinalValidatorCheckpoint(input: {
-     ...(prior?.run_id ? { run_id: prior.run_id } : {}),
-     ...(prior?.workflow_id ? { workflow_id: prior.workflow_id } : {}),
-     ...(typeof prior?.created_by_runtime === "boolean" ? { created_by_runtime: prior.created_by_runtime } : {}),
--    ...(prior?.runtime_mode ? { runtime_mode: prior.runtime_mode } : {}),
-+    ...(isResolvedRuntimeMode(prior?.runtime_mode) ? { runtime_mode: prior.runtime_mode } : {}),
-     pipelineActive: input.decision === "NO-GO" ? true : false,
-     currentPhase: "phase-3",
-     currentAgent: "final-validator",
-diff --git a/tests/unit/hooks/completion-checklist.test.ts b/tests/unit/hooks/completion-checklist.test.ts
-index 46845d6..9cbf49b 100644
---- a/tests/unit/hooks/completion-checklist.test.ts
-+++ b/tests/unit/hooks/completion-checklist.test.ts
-@@ -563,6 +563,9 @@ describe("completion-checklist Stop enforcement", () => {
+ item_count = 0
+ file_bytes = 0
+-critical = [
+-    "scripts/sync-contabo-fernando-vps-mirror.ps1",
+-    "scripts/enqueue-contabo-vps-sync-request.ps1",
+-    "hooks/force-pipeline-agents.cjs",
+-    ".git/HEAD",
+-]
+ for root, dirs, files in os.walk(dest):
+     item_count += len(dirs) + len(files)
+     for name in files:
+@@ -161,14 +182,20 @@ print(f"REMOTE_HEAD={head}")
+ print(f"REMOTE_ITEMS={item_count}")
+ print(f"REMOTE_FILE_BYTES={file_bytes}")
+ print("REMOTE_ORIGIN=" + subprocess.check_output(["git", "-C", dest, "remote", "get-url", "origin"], text=True).strip())
+-for rel in critical:
++for critical_file in critical_hashes:
++    rel = critical_file["path"]
++    expected = critical_file["sha256"]
+     path = os.path.join(dest, rel)
+-    if os.path.isfile(path):
+-        h = hashlib.sha256()
+-        with open(path, "rb") as f:
+-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+-                h.update(chunk)
+-        print(f"REMOTE_SHA256 {rel} {h.hexdigest()}")
++    if not os.path.isfile(path):
++        raise SystemExit(f"critical file missing after mirror: {rel}")
++    h = hashlib.sha256()
++    with open(path, "rb") as f:
++        for chunk in iter(lambda: f.read(1024 * 1024), b""):
++            h.update(chunk)
++    actual = h.hexdigest()
++    if actual != expected:
++        raise SystemExit(f"critical hash mismatch for {rel}: {actual} != {expected}")
++    print(f"REMOTE_SHA256 {rel} {actual}")
+ "@
 
-     expect(output.continue).toBe(false);
-     expect(output.stopReason).toContain("PipelineGovernanceArtifact");
-+    expect(output.systemMessage).toContain("Do not stop");
-+    expect(output.systemMessage).toContain("canonical sequence");
-+    expect(output.systemMessage).toContain("pipeline-orchestrator-for-codex:core:pipeline-controller");
-   });
-
-   it("TDD: blocks quiet stop when malformed workflow intent is the only pipeline signal", () => {
-@@ -2012,6 +2015,59 @@ describe("completion-checklist Stop enforcement", () => {
-     expect(output.stopReason).toContain("required_action:WORKFLOW_METHOD_GATE");
-   });
-
-+  it("TDD: blocks final PASS when required-first-actions rely on stale same-session ledgers", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-required-actions-stale-ledger-"));
-+    const artifact = {
-+      ...validArtifact(),
-+      run_id: "current-run",
-+      session_id: "current-session",
-+    };
-+    const stateDir = writeLedgerProof(cwd, artifact);
-+    writeActiveSentinel(cwd, {
-+      run_id: "current-run",
-+      session_id: "current-session",
-+    });
-+    appendFileSync(
-+      join(stateDir, "gate-decisions.jsonl"),
-+      JSON.stringify(signLedgerEntry({
-+        gate: "CAPABILITY_GATE",
-+        decision: "approved",
-+        status: "PASS",
-+        run_id: "current-run",
-+        session_id: "current-session",
-+        timestamp: new Date(Date.now() - 60_000).toISOString(),
-+      })) + "\n",
-+      "utf8",
-+    );
-+    writeFileSync(
-+      join(stateDir, "required-first-actions.json"),
-+      JSON.stringify(signStateObject({
-+        schema_version: 1,
-+        status: "active",
-+        plugin: "pipeline-orchestrator-for-codex",
-+        workflow: "bugfix-heavy",
-+        run_id: "current-run",
-+        session_id: "current-session",
-+        created_at: new Date(Date.now() + 60_000).toISOString(),
-+        required_actions: ["CAPABILITY_GATE"],
-+        completed_actions: [],
-+        expires_at: Math.floor(Date.now() / 1000) + 3600,
-+      }, "pipeline-required-first-actions")),
-+      "utf8",
-+    );
-+
-+    const output = runHook(cwd, {
-+      cwd,
-+      output: {
-+        text: "PIPELINE COMPLETE",
-+        pipelineGovernanceArtifact: artifact,
-+      },
-+    });
-+
-+    expect(output.continue).toBe(false);
-+    expect(output.stopReason).toContain("required_action:CAPABILITY_GATE");
-+  });
-+
-   it("TDD: blocks final PASS when active pipeline obligation files are deleted", () => {
-     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-obligation-files-missing-"));
-     const artifact = {
-diff --git a/tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts b/tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts
-index 746a32e..56cd6a6 100644
---- a/tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts
-+++ b/tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts
-@@ -1,4 +1,5 @@
--import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-+import { createHmac } from "node:crypto";
- import { tmpdir } from "node:os";
- import { join } from "node:path";
- import { spawnSync } from "node:child_process";
-@@ -42,6 +43,143 @@ function writeTrustedSkill(root: string, skillName: string, frontmatter: string)
-   ].join("\n"), "utf8");
- }
-
-+function canonicalize(value: unknown): string {
-+  if (Array.isArray(value)) {
-+    return `[${value.map((entry) => canonicalize(entry)).join(",")}]`;
-+  }
-+  if (value && typeof value === "object") {
-+    const entries = Object.entries(value as Record<string, unknown>)
-+      .filter(([, entry]) => entry !== undefined)
-+      .sort(([left], [right]) => left.localeCompare(right));
-+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`).join(",")}}`;
-+  }
-+  return JSON.stringify(value);
-+}
-+
-+function signState<T extends Record<string, unknown>>(state: T, scope: string, key: string): T {
-+  const unsigned = { ...state };
-+  delete unsigned._integrity;
-+  return {
-+    ...unsigned,
-+    _integrity: {
-+      algorithm: "hmac-sha256",
-+      scope,
-+      signature: createHmac("sha256", key).update(canonicalize(unsigned)).digest("hex"),
-+    },
-+  } as T;
-+}
-+
-+function signLedger<T extends Record<string, unknown>>(entry: T, key: string): T {
-+  const unsigned = { ...entry };
-+  delete unsigned._integrity;
-+  return {
-+    ...unsigned,
-+    _integrity: {
-+      algorithm: "hmac-sha256",
-+      scope: "pipeline-ledger-entry",
-+      signature: createHmac("sha256", key).update(canonicalize(unsigned)).digest("hex"),
-+    },
-+  } as T;
-+}
-+
-+function writePendingRequiredFirstActions(cwd: string) {
-+  const stateDir = join(cwd, ".codex", "pipeline");
-+  mkdirSync(stateDir, { recursive: true });
-+  writeFileSync(join(stateDir, "required-first-actions.json"), JSON.stringify({
-+    schema_version: 1,
-+    status: "active",
-+    plugin: "pipeline-orchestrator-for-codex",
-+    workflow: "pipeline",
-+    required_actions: [
-+      "update_plan",
-+      "WORKFLOW_METHOD_GATE",
-+      "CAPABILITY_GATE",
-+      "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+      "wait_agent",
-+    ],
-+    completed_actions: [],
-+    expires_at: Math.floor(Date.now() / 1000) + 3600,
-+  }), "utf8");
-+}
-+
-+function writeRequiredFirstActions(cwd: string, state: Record<string, unknown>) {
-+  const stateDir = join(cwd, ".codex", "pipeline");
-+  mkdirSync(stateDir, { recursive: true });
-+  writeFileSync(join(stateDir, "required-first-actions.json"), JSON.stringify({
-+    schema_version: 1,
-+    status: "active",
-+    plugin: "pipeline-orchestrator-for-codex",
-+    workflow: "pipeline",
-+    required_actions: [
-+      "update_plan",
-+      "WORKFLOW_METHOD_GATE",
-+      "CAPABILITY_GATE",
-+      "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+      "wait_agent",
-+    ],
-+    completed_actions: [],
-+    expires_at: Math.floor(Date.now() / 1000) + 3600,
-+    ...state,
-+  }), "utf8");
-+}
-+
-+function writeGateLedgers(cwd: string, key: string) {
-+  const stateDir = join(cwd, ".codex", "pipeline");
-+  mkdirSync(stateDir, { recursive: true });
-+  const now = new Date().toISOString();
-+  const entries = [
-+    signLedger({
-+      gate: "WORKFLOW_METHOD_GATE",
-+      hardness: "MANDATORY",
-+      phase: "phase-0",
-+      decision: "approved",
-+      decided_by: "user",
-+      timestamp: now,
-+      detail: "test workflow method gate",
-+      confidence_impact: 0,
-+    }, key),
-+    signLedger({
-+      gate: "CAPABILITY_GATE",
-+      hardness: "MANDATORY",
-+      phase: "phase-0",
-+      decision: "approved",
-+      decided_by: "system",
-+      timestamp: now,
-+      detail: "test capability gate",
-+      confidence_impact: 0,
-+    }, key),
-+  ];
-+  writeFileSync(join(stateDir, "gate-decisions.jsonl"), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
-+}
-+
-+function writeUnsignedGateLedgers(cwd: string, timestamp = new Date().toISOString()) {
-+  const stateDir = join(cwd, ".codex", "pipeline");
-+  mkdirSync(stateDir, { recursive: true });
-+  const entries = [
-+    {
-+      gate: "WORKFLOW_METHOD_GATE",
-+      hardness: "MANDATORY",
-+      phase: "phase-0",
-+      decision: "approved",
-+      decided_by: "user",
-+      timestamp,
-+      detail: "test workflow method gate",
-+      confidence_impact: 0,
-+    },
-+    {
-+      gate: "CAPABILITY_GATE",
-+      hardness: "MANDATORY",
-+      phase: "phase-0",
-+      decision: "approved",
-+      decided_by: "system",
-+      timestamp,
-+      detail: "test capability gate",
-+      confidence_impact: 0,
-+    },
-+  ];
-+  writeFileSync(join(stateDir, "gate-decisions.jsonl"), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
-+}
-+
- function readLastHookEvent(cwd: string) {
-   const eventsPath = join(cwd, ".codex", "pipeline", "hook-events.jsonl");
-   expect(existsSync(eventsPath)).toBe(true);
-@@ -320,6 +458,376 @@ describe("dispatch-guard frontmatter enforcement", () => {
-     }
-   });
-
-+  it("TDD: denies generic spawn_agent during pending first actions and redirects to controller bootstrap", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-"));
-+    try {
-+      writePendingRequiredFirstActions(cwd);
-+
-+      const result = runHook(cwd, {
-+        tool_name: "spawn_agent",
-+        tool_input: {
-+          agent_type: "worker",
-+          message: "Review this repository manually.",
-+        },
-+      });
-+
-+      expect(result.status).toBe(0);
-+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
-+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("FIRST_ACTIONS_GUARD");
-+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("Do not stop");
-+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain(
-+        "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller",
-+      );
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: allows controller spawn during pending first actions without completing it before the tool runs", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-"));
-+    try {
-+      writePendingRequiredFirstActions(cwd);
-+
-+      const result = runHook(cwd, {
-+        tool_name: "spawn_agent",
-+        tool_input: {
-+          agent_type: "worker",
-+          message: [
-+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller",
-+            "Bootstrap the pipeline.",
-+          ].join("\n"),
-+        },
-+      });
-+
-+      expect(result.status).toBe(0);
-+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
-+      expect(readLastHookEvent(cwd)).toMatchObject({
-+        hook: "dispatch-guard",
-+        event: "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+        decision: "allow",
-+      });
-+      const state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
-+      expect(state.completed_actions).toEqual([]);
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: records controller spawn only after PostToolUse success", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-"));
-+    try {
-+      writePendingRequiredFirstActions(cwd);
-+
-+      const result = runHook(cwd, {
-+        hook_event_name: "PostToolUse",
-+        tool_name: "spawn_agent",
-+        tool_input: {
-+          agent_type: "worker",
-+          message: [
-+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller",
-+            "Bootstrap the pipeline.",
-+          ].join("\n"),
-+        },
-+        tool_response: { status: "success" },
-+      });
-+
-+      expect(result.status).toBe(0);
-+      const state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
-+      expect(state.completed_actions).toContain("spawn:pipeline-orchestrator-for-codex:core:pipeline-controller");
-+      expect(readLastHookEvent(cwd)).toMatchObject({
-+        hook: "dispatch-guard",
-+        event: "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+        decision: "completed",
-+      });
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: denies generic spawn_agent when signed first-actions state was tampered", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-hmac-"));
-+    const key = "unit-test-hmac-key";
-+    try {
-+      writeRequiredFirstActions(cwd, {
-+        completed_actions: [
-+          "update_plan",
-+          "WORKFLOW_METHOD_GATE",
-+          "CAPABILITY_GATE",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+          "wait_agent",
-+        ],
-+        _integrity: {
-+          algorithm: "hmac-sha256",
-+          scope: "pipeline-required-first-actions",
-+          signature: "0".repeat(64),
-+        },
-+      });
-+
-+      const result = runHook(cwd, {
-+        tool_name: "spawn_agent",
-+        tool_input: {
-+          agent_type: "worker",
-+          message: "Review this repository manually.",
-+        },
-+      }, {
-+        PIPELINE_SENTINEL_HMAC_KEY: key,
-+      });
-+
-+      expect(result.status).toBe(0);
-+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
-+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("FIRST_ACTIONS_GUARD");
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: permits next pipeline dispatch after signed gates and completed bootstrap actions", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-complete-"));
-+    const key = "unit-test-hmac-key";
-+    try {
-+      const required = signState({
-+        schema_version: 1,
-+        status: "active",
-+        plugin: "pipeline-orchestrator-for-codex",
-+        workflow: "pipeline",
-+        created_at: new Date(Date.now() - 1000).toISOString(),
-+        required_actions: [
-+          "update_plan",
-+          "WORKFLOW_METHOD_GATE",
-+          "CAPABILITY_GATE",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+          "wait_agent",
-+        ],
-+        completed_actions: [
-+          "update_plan",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+          "wait_agent",
-+        ],
-+        expires_at: Math.floor(Date.now() / 1000) + 3600,
-+      }, "pipeline-required-first-actions", key);
-+      writeRequiredFirstActions(cwd, required);
-+      writeGateLedgers(cwd, key);
-+
-+      const result = runHook(cwd, {
-+        tool_name: "spawn_agent",
-+        tool_input: {
-+          agent_type: "worker",
-+          message: [
-+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:information-gate",
-+            "Continue phase 0.",
-+          ].join("\n"),
-+        },
-+      }, {
-+        PIPELINE_SENTINEL_HMAC_KEY: key,
-+      });
-+
-+      expect(result.status).toBe(0);
-+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: permits next pipeline dispatch with unsigned gate ledgers when no HMAC key is configured", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-complete-unsigned-"));
-+    try {
-+      const createdAt = new Date(Date.now() - 1000).toISOString();
-+      writeRequiredFirstActions(cwd, {
-+        created_at: createdAt,
-+        completed_actions: [
-+          "update_plan",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+          "wait_agent",
-+        ],
-+      });
-+      writeUnsignedGateLedgers(cwd);
-+
-+      const result = runHook(cwd, {
-+        tool_name: "spawn_agent",
-+        tool_input: {
-+          agent_type: "worker",
-+          message: [
-+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:information-gate",
-+            "Continue phase 0.",
-+          ].join("\n"),
-+        },
-+      }, {
-+        PIPELINE_SENTINEL_HMAC_KEY: "",
-+        PIPELINE_INTEGRITY_HMAC_KEY: "",
-+      });
-+
-+      expect(result.status).toBe(0);
-+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: denies next pipeline dispatch when gate ledgers predate the current first-actions state", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-replay-"));
-+    try {
-+      const createdAt = new Date(Date.now() + 60_000).toISOString();
-+      writeRequiredFirstActions(cwd, {
-+        created_at: createdAt,
-+        completed_actions: [
-+          "update_plan",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+          "wait_agent",
-+        ],
-+      });
-+      writeUnsignedGateLedgers(cwd, new Date(Date.now() - 60_000).toISOString());
-+
-+      const result = runHook(cwd, {
-+        tool_name: "spawn_agent",
-+        tool_input: {
-+          agent_type: "worker",
-+          message: [
-+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:information-gate",
-+            "Continue phase 0.",
-+          ].join("\n"),
-+        },
-+      });
-+
-+      expect(result.status).toBe(0);
-+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
-+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("FIRST_ACTIONS_GUARD");
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: denies matching-session gate ledgers that predate the current first-actions state", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-session-replay-"));
-+    try {
-+      const createdAt = new Date(Date.now() + 60_000).toISOString();
-+      writeRequiredFirstActions(cwd, {
-+        created_at: createdAt,
-+        session_id: "current-session",
-+        completed_actions: [
-+          "update_plan",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+          "wait_agent",
-+        ],
-+      });
-+      const stateDir = join(cwd, ".codex", "pipeline");
-+      const oldTimestamp = new Date(Date.now() - 60_000).toISOString();
-+      const entries = [
-+        {
-+          gate: "WORKFLOW_METHOD_GATE",
-+          decision: "approved",
-+          status: "approved",
-+          session_id: "current-session",
-+          timestamp: oldTimestamp,
-+        },
-+        {
-+          gate: "CAPABILITY_GATE",
-+          decision: "approved",
-+          status: "approved",
-+          session_id: "current-session",
-+          timestamp: oldTimestamp,
-+        },
-+      ];
-+      writeFileSync(join(stateDir, "gate-decisions.jsonl"), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
-+
-+      const result = runHook(cwd, {
-+        tool_name: "spawn_agent",
-+        tool_input: {
-+          agent_type: "worker",
-+          message: [
-+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:information-gate",
-+            "Continue phase 0.",
-+          ].join("\n"),
-+        },
-+      });
-+
-+      expect(result.status).toBe(0);
-+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
-+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("FIRST_ACTIONS_GUARD");
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: records wait_agent only when it targets the spawned bootstrap controller", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-wait-"));
-+    try {
-+      writeRequiredFirstActions(cwd, {
-+        completed_actions: [
-+          "update_plan",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+        ],
-+        bootstrap_controller_agent_id: "agent-controller-1",
-+      });
-+
-+      const wrongWait = runHook(cwd, {
-+        hook_event_name: "PostToolUse",
-+        tool_name: "wait_agent",
-+        tool_input: { targets: ["agent-other"] },
-+        tool_response: { status: "success" },
-+      });
-+      expect(wrongWait.status).toBe(0);
-+      let state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
-+      expect(state.completed_actions).not.toContain("wait_agent");
-+
-+      const rightWait = runHook(cwd, {
-+        hook_event_name: "PostToolUse",
-+        tool_name: "wait_agent",
-+        tool_input: { targets: ["agent-controller-1"] },
-+        tool_response: { status: "success" },
-+      });
-+      expect(rightWait.status).toBe(0);
-+      state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
-+      expect(state.completed_actions).toContain("wait_agent");
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: fails closed before writing completed actions through symlink ancestors", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-symlink-"));
-+    const outside = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-outside-"));
-+    try {
-+      try {
-+        symlinkSync(outside, join(cwd, ".codex"), "junction");
-+      } catch {
-+        return;
-+      }
-+      mkdirSync(join(outside, "pipeline"), { recursive: true });
-+      writeFileSync(join(outside, "pipeline", "required-first-actions.json"), JSON.stringify({
-+        schema_version: 1,
-+        status: "active",
-+        plugin: "pipeline-orchestrator-for-codex",
-+        workflow: "pipeline",
-+        required_actions: [
-+          "update_plan",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+        ],
-+        completed_actions: [],
-+        expires_at: Math.floor(Date.now() / 1000) + 3600,
-+      }), "utf8");
-+
-+      const result = runHook(cwd, {
-+        hook_event_name: "PostToolUse",
-+        tool_name: "spawn_agent",
-+        tool_input: {
-+          agent_type: "worker",
-+          message: [
-+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller",
-+            "Bootstrap the pipeline.",
-+          ].join("\n"),
-+        },
-+        tool_response: { status: "success" },
-+      });
-+
-+      expect(result.status).toBe(0);
-+      const state = JSON.parse(readFileSync(join(outside, "pipeline", "required-first-actions.json"), "utf8"));
-+      expect(state.completed_actions).toEqual([]);
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+      rmSync(outside, { recursive: true, force: true });
-+    }
-+  });
-+
-   it("denies Codex spawn_agent payloads that put pipeline FQNs directly in agent_type", () => {
-     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
-     try {
-@@ -406,7 +914,7 @@ describe("dispatch-guard frontmatter enforcement", () => {
-     } finally {
-       rmSync(cwd, { recursive: true, force: true });
-     }
--  }, 20_000);
-+  }, 60_000);
-
-   it("denies governed skill calls when frontmatter cannot be resolved", () => {
-     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-"));
-diff --git a/tests/unit/hooks/edit-guard-hook.test.ts b/tests/unit/hooks/edit-guard-hook.test.ts
-index dc0a80d..72d601c 100644
---- a/tests/unit/hooks/edit-guard-hook.test.ts
-+++ b/tests/unit/hooks/edit-guard-hook.test.ts
-@@ -45,6 +45,26 @@ function writeSessionLock(cwd: string, sessionId: string, expiresAt: number) {
-   }), "utf8");
- }
-
-+function writePendingRequiredFirstActions(cwd: string) {
-+  const dir = join(cwd, ".codex", "pipeline");
-+  mkdirSync(dir, { recursive: true });
-+  writeFileSync(join(dir, "required-first-actions.json"), JSON.stringify({
-+    schema_version: 1,
-+    status: "active",
-+    plugin: "pipeline-orchestrator-for-codex",
-+    workflow: "pipeline",
-+    required_actions: [
-+      "update_plan",
-+      "WORKFLOW_METHOD_GATE",
-+      "CAPABILITY_GATE",
-+      "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+      "wait_agent",
-+    ],
-+    completed_actions: [],
-+    expires_at: Math.floor(Date.now() / 1000) + 3600,
-+  }), "utf8");
-+}
-+
- function writeChangeContract(cwd: string, contract: Record<string, unknown>) {
-   const dir = join(cwd, ".codex", "pipeline");
-   mkdirSync(dir, { recursive: true });
-@@ -271,6 +291,87 @@ describe("edit-guard-hook", () => {
-     }
-   });
-
-+  it("TDD: denies read-only Bash during pending first actions and redirects to controller bootstrap", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-first-actions-"));
-+    try {
-+      writeSessionLock(cwd, "S8a", Math.floor(Date.now() / 1000) + 3600);
-+      writePendingRequiredFirstActions(cwd);
-+
-+      const result = spawnSync(process.execPath, [HOOK], {
-+        cwd,
-+        input: JSON.stringify({
-+          tool_name: "Bash",
-+          tool_input: { command: "ssh hostinger-vps 'ls /root'" },
-+        }),
-+        encoding: "utf8",
-+      });
-+
-+      expect(result.status).toBe(0);
-+      const output = JSON.parse(result.stdout.trim());
-+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
-+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("required pipeline first actions");
-+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("Do not stop");
-+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("pipeline-controller");
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-+  it("TDD: denies read-only Bash when signed first-actions state was tampered", () => {
-+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-first-actions-hmac-"));
-+    try {
-+      writeSessionLock(cwd, "S8a-hmac", Math.floor(Date.now() / 1000) + 3600);
-+      const dir = join(cwd, ".codex", "pipeline");
-+      mkdirSync(dir, { recursive: true });
-+      writeFileSync(join(dir, "required-first-actions.json"), JSON.stringify({
-+        schema_version: 1,
-+        status: "active",
-+        plugin: "pipeline-orchestrator-for-codex",
-+        workflow: "pipeline",
-+        required_actions: [
-+          "update_plan",
-+          "WORKFLOW_METHOD_GATE",
-+          "CAPABILITY_GATE",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+          "wait_agent",
-+        ],
-+        completed_actions: [
-+          "update_plan",
-+          "WORKFLOW_METHOD_GATE",
-+          "CAPABILITY_GATE",
-+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-+          "wait_agent",
-+        ],
-+        expires_at: Math.floor(Date.now() / 1000) + 3600,
-+        _integrity: {
-+          algorithm: "hmac-sha256",
-+          scope: "pipeline-required-first-actions",
-+          signature: "0".repeat(64),
-+        },
-+      }), "utf8");
-+
-+      const result = spawnSync(process.execPath, [HOOK], {
-+        cwd,
-+        input: JSON.stringify({
-+          tool_name: "Bash",
-+          tool_input: { command: "cat src/main.ts" },
-+        }),
-+        encoding: "utf8",
-+        env: {
-+          ...process.env,
-+          PIPELINE_SENTINEL_HMAC_KEY: "unit-test-hmac-key",
-+        },
-+      });
-+
-+      expect(result.status).toBe(0);
-+      const output = JSON.parse(result.stdout.trim());
-+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
-+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("required pipeline first actions");
-+    } finally {
-+      rmSync(cwd, { recursive: true, force: true });
-+    }
-+  });
-+
-   it("denies file-modifying Bash when exec-window is CLOSED", () => {
-     const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-"));
-     try {
-diff --git a/tests/unit/sentinel/sentinel-state.test.ts b/tests/unit/sentinel/sentinel-state.test.ts
-index a3bb413..ab8c626 100644
---- a/tests/unit/sentinel/sentinel-state.test.ts
-+++ b/tests/unit/sentinel/sentinel-state.test.ts
-@@ -1,4 +1,4 @@
--import { mkdtempSync, readFileSync } from "node:fs";
-+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
- import { tmpdir } from "node:os";
- import { join } from "node:path";
- import { describe, expect, it } from "vitest";
-@@ -47,6 +47,84 @@ describe("sentinel state store", () => {
-     expect(loaded.expectedNext).toEqual(["proposal-response"]);
-   });
-
-+  it("accepts hook bootstrap sentinel state before runtime mode is resolved", async () => {
-+    const root = mkdtempSync(join(tmpdir(), "pipeline-sentinel-bootstrap-"));
-+    const store = createSentinelStateStore(root);
-+
-+    await store.save({
-+      session_id: "session-1",
-+      run_id: "run-1",
-+      workflow_id: "pipeline",
-+      pipelineActive: true,
-+      currentPhase: "phase-0",
-+      currentAgent: "force-pipeline-agents",
-+      expectedNext: ["pipeline-controller"],
-+      completedPhases: [],
-+      gateSummary: ["WORKFLOW_INTENT_PERSISTED"],
-+      batchState: {
-+        batchIndex: 0,
-+        status: "awaiting-controller-bootstrap",
-+      },
-+      consecutiveCorrections: 0,
-+      lastCheckpoint: "workflow_intent_persisted",
-+      updatedAt: "2026-04-12T10:00:00.000Z",
-+    });
-+
-+    const loaded = await store.load();
-+    expect(loaded.runtime_mode).toBeUndefined();
-+    expect(loaded.lastCheckpoint).toBe("workflow_intent_persisted");
-+    expect(loaded.expectedNext).toEqual(["pipeline-controller"]);
-+  });
-+
-+  it("accepts legacy pending real-agent sentinel state for recovery only", async () => {
-+    const root = mkdtempSync(join(tmpdir(), "pipeline-sentinel-legacy-bootstrap-"));
-+    const store = createSentinelStateStore(root);
-+
-+    mkdirSync(root, { recursive: true });
-+    writeFileSync(join(root, "sentinel-state.json"), JSON.stringify({
-+      session_id: "session-1",
-+      run_id: "run-1",
-+      workflow_id: "pipeline",
-+      runtime_mode: "pending-real-agent",
-+      pipelineActive: true,
-+      currentPhase: "phase-0",
-+      currentAgent: "force-pipeline-agents",
-+      expectedNext: ["pipeline-controller"],
-+      completedPhases: [],
-+      gateSummary: ["WORKFLOW_INTENT_PERSISTED"],
-+      batchState: {
-+        batchIndex: 0,
-+        status: "awaiting-controller-bootstrap",
-+      },
-+      consecutiveCorrections: 0,
-+      lastCheckpoint: "workflow_intent_persisted",
-+      updatedAt: "2026-04-12T10:00:00.000Z",
-+    }), "utf8");
-+
-+    const loaded = await store.load();
-+    expect(loaded.runtime_mode).toBeUndefined();
-+    expect(loaded.lastCheckpoint).toBe("workflow_intent_persisted");
-+    await expect(store.save({
-+      session_id: "session-1",
-+      run_id: "run-1",
-+      workflow_id: "pipeline",
-+      runtime_mode: "pending-real-agent",
-+      pipelineActive: true,
-+      currentPhase: "phase-0",
-+      currentAgent: "force-pipeline-agents",
-+      expectedNext: ["pipeline-controller"],
-+      completedPhases: [],
-+      gateSummary: ["WORKFLOW_INTENT_PERSISTED"],
-+      batchState: {
-+        batchIndex: 0,
-+        status: "awaiting-controller-bootstrap",
-+      },
-+      consecutiveCorrections: 0,
-+      lastCheckpoint: "workflow_intent_persisted",
-+      updatedAt: "2026-04-12T10:00:00.000Z",
-+    })).rejects.toThrow();
-+  });
-+
-   it("signs sentinel state when HMAC integrity is configured", async () => {
-     const root = mkdtempSync(join(tmpdir(), "pipeline-sentinel-signed-"));
-     const store = createSentinelStateStore(root);
+ $remoteOutput = $remoteScript | ssh $RemoteAlias "python3 -"

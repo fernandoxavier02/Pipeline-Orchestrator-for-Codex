@@ -9,27 +9,15 @@
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
     "evals/telemetry/latest_trace.json",
-    "hooks/completion-checklist.cjs",
-    "hooks/dispatch-guard.cjs",
-    "hooks/edit-guard-hook.cjs",
-    "hooks/force-pipeline-agents.cjs",
-    "hooks/hooks.json",
-    "hooks/ledger-integrity.cjs",
-    "src/cli/pipeline-cli.ts",
-    "src/domain/pipeline-schemas.ts",
-    "src/sentinel/sentinel-state.ts",
-    "src/validation/final-validator.ts",
-    "tests/unit/hooks/completion-checklist.test.ts",
-    "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
-    "tests/unit/hooks/edit-guard-hook.test.ts",
-    "tests/unit/sentinel/sentinel-state.test.ts"
+    "scripts/enqueue-contabo-vps-sync-request.ps1",
+    "scripts/sync-contabo-fernando-vps-mirror.ps1"
   ],
   "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
     "hook_event": "PostToolUse",
-    "session_id": "019eec66-5ccf-7530-9aa6-e51872843c4b",
-    "tool_name": "Bash"
+    "session_id": null,
+    "tool_name": null
   },
   "execution_observed": true,
   "git_diff_captured": true,
@@ -37,12 +25,12 @@
   "last_hook_event": "PostToolUse",
   "plugin_execution": {
     "observed": true,
-    "status": "smoke-pass",
     "pipeline_agent_fqn": "pipeline-orchestrator-for-codex:core:pipeline-controller",
     "real_agent_runtime": {
       "spawn_agent_observed": true,
       "wait_agent_observed": true
-    }
+    },
+    "status": "smoke-pass"
   },
   "scope_respected": true,
   "scope_review": {
@@ -62,6 +50,7 @@
       ".npmignore",
       "agents/",
       "commands/",
+      "scripts/",
       "dist/",
       "hooks/",
       "skills/",
@@ -103,11 +92,11 @@
     },
     "unexpected_files": []
   },
-  "timestamp": "2026-06-22T02:10:03.383306+00:00",
+  "timestamp": "2026-06-22T23:24:30.972903+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "51b34b041e2be9731f0f867fb832e88111661321",
+    "base_commit": "862643181bf50c91ec9e1587fe65121b407eed96",
     "changed_files": [
       "dist/src/cli/pipeline-cli.js",
       "dist/src/domain/pipeline-schemas.js",
@@ -117,34 +106,34 @@
       "evals/telemetry/changed_files.txt",
       "evals/telemetry/git_diff.patch",
       "evals/telemetry/latest_trace.json",
-      "hooks/completion-checklist.cjs",
-      "hooks/dispatch-guard.cjs",
-      "hooks/edit-guard-hook.cjs",
-      "hooks/force-pipeline-agents.cjs",
-      "hooks/hooks.json",
-      "hooks/ledger-integrity.cjs",
-      "src/cli/pipeline-cli.ts",
-      "src/domain/pipeline-schemas.ts",
-      "src/sentinel/sentinel-state.ts",
-      "src/validation/final-validator.ts",
-      "tests/unit/hooks/completion-checklist.test.ts",
-      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
-      "tests/unit/hooks/edit-guard-hook.test.ts",
-      "tests/unit/sentinel/sentinel-state.test.ts"
+      "scripts/enqueue-contabo-vps-sync-request.ps1",
+      "scripts/sync-contabo-fernando-vps-mirror.ps1"
     ],
     "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
     "ref": "HEAD+working-tree"
   },
   "validation_evidence": {
     "commands": {
-      "npm run lint:types": {
-        "command": "npm run lint:types",
+      "git diff --check": {
+        "command": "git diff --check",
         "observed_at": "2026-06-22T02:10:03Z",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "npm run build": {
         "command": "npm run build",
+        "observed_at": "2026-06-22T02:10:03Z",
+        "status": "PASS",
+        "target": "HEAD+working-tree"
+      },
+      "npm run lint:types": {
+        "command": "npm run lint:types",
+        "observed_at": "2026-06-22T02:10:03Z",
+        "status": "PASS",
+        "target": "HEAD+working-tree"
+      },
+      "npm test": {
+        "command": "npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks",
         "observed_at": "2026-06-22T02:10:03Z",
         "status": "PASS",
         "target": "HEAD+working-tree"
@@ -161,20 +150,8 @@
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
-      "npm test": {
-        "command": "npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks",
-        "observed_at": "2026-06-22T02:10:03Z",
-        "status": "PASS",
-        "target": "HEAD+working-tree"
-      },
       "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
         "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
-        "observed_at": "2026-06-22T02:10:03Z",
-        "status": "PASS",
-        "target": "HEAD+working-tree"
-      },
-      "git diff --check": {
-        "command": "git diff --check",
         "observed_at": "2026-06-22T02:10:03Z",
         "status": "PASS",
         "target": "HEAD+working-tree"

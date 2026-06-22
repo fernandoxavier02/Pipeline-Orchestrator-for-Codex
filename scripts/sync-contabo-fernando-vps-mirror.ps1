@@ -53,6 +53,20 @@ function Sum-LocalFileBytes($path) {
   return [Int64]$sum
 }
 
+function Get-CriticalFileHashes($root, [string[]]$relativePaths) {
+  return @($relativePaths | ForEach-Object {
+    $relativePath = $_
+    $fullPath = Join-Path $root $relativePath
+    if (!(Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+      Fail "Critical mirror file is missing: $relativePath"
+    }
+    [PSCustomObject]@{
+      path = $relativePath
+      sha256 = Get-Sha256 $fullPath
+    }
+  })
+}
+
 $projectRootFull = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ProjectRoot).Path)
 if (!(Test-Path -LiteralPath (Join-Path $projectRootFull ".git") -PathType Container)) {
   Fail "Project root is not a Git checkout: $projectRootFull"
@@ -65,12 +79,24 @@ $head = (Run-Git $projectRootFull @("rev-parse", "HEAD")).Trim()
 $origin = (Run-Git $projectRootFull @("remote", "get-url", "origin")).Trim()
 $localItems = Count-LocalItems $projectRootFull
 $localBytes = Sum-LocalFileBytes $projectRootFull
+$criticalPaths = @(
+  ".gitignore",
+  "scripts/sync-contabo-fernando-vps-mirror.ps1",
+  "scripts/enqueue-contabo-vps-sync-request.ps1",
+  "hooks/force-pipeline-agents.cjs",
+  ".git/HEAD"
+)
+$criticalHashes = Get-CriticalFileHashes $projectRootFull $criticalPaths
+$criticalHashesJson = @($criticalHashes) | ConvertTo-Json -Compress
 
 $timestamp = Get-Date -Format "yyyyMMddHHmmss"
 $archive = Join-Path $env:TEMP "pipeline-orchestrator-contabo-mirror-$timestamp.tar.gz"
 $remoteArchive = "/tmp/pipeline-orchestrator-contabo-mirror-$timestamp.tar.gz"
 
 Write-Host "Creating full local mirror archive from $projectRootFull"
+$criticalHashes | ForEach-Object {
+  Write-Host "LOCAL_SHA256 $($_.path) $($_.sha256)"
+}
 if (Test-Path -LiteralPath $archive) {
   Remove-Item -LiteralPath $archive -Force
 }
@@ -104,6 +130,7 @@ dest = "$RemotePath"
 expected_dest = "/home/fernando/projetos/pipeline-orchestrator-codex"
 origin = "$origin"
 expected_head = "$head"
+critical_hashes = $criticalHashesJson
 
 if os.path.abspath(dest) != expected_dest:
     raise SystemExit(f"unsafe destination: {dest}")
@@ -146,12 +173,6 @@ if head != expected_head:
 
 item_count = 0
 file_bytes = 0
-critical = [
-    "scripts/sync-contabo-fernando-vps-mirror.ps1",
-    "scripts/enqueue-contabo-vps-sync-request.ps1",
-    "hooks/force-pipeline-agents.cjs",
-    ".git/HEAD",
-]
 for root, dirs, files in os.walk(dest):
     item_count += len(dirs) + len(files)
     for name in files:
@@ -161,14 +182,20 @@ print(f"REMOTE_HEAD={head}")
 print(f"REMOTE_ITEMS={item_count}")
 print(f"REMOTE_FILE_BYTES={file_bytes}")
 print("REMOTE_ORIGIN=" + subprocess.check_output(["git", "-C", dest, "remote", "get-url", "origin"], text=True).strip())
-for rel in critical:
+for critical_file in critical_hashes:
+    rel = critical_file["path"]
+    expected = critical_file["sha256"]
     path = os.path.join(dest, rel)
-    if os.path.isfile(path):
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                h.update(chunk)
-        print(f"REMOTE_SHA256 {rel} {h.hexdigest()}")
+    if not os.path.isfile(path):
+        raise SystemExit(f"critical file missing after mirror: {rel}")
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    actual = h.hexdigest()
+    if actual != expected:
+        raise SystemExit(f"critical hash mismatch for {rel}: {actual} != {expected}")
+    print(f"REMOTE_SHA256 {rel} {actual}")
 "@
 
 $remoteOutput = $remoteScript | ssh $RemoteAlias "python3 -"
