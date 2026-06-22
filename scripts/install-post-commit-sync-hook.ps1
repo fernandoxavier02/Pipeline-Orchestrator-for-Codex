@@ -16,17 +16,26 @@ if (!(Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
 $hook = @'
 #!/bin/sh
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
-SCRIPT="$PROJECT_ROOT/scripts/sync-codex-plugin-surfaces.ps1"
+SURFACE_SCRIPT="$PROJECT_ROOT/scripts/sync-codex-plugin-surfaces.ps1"
+VPS_REQUEST_SCRIPT="$PROJECT_ROOT/scripts/enqueue-contabo-vps-sync-request.ps1"
 
 if command -v powershell.exe >/dev/null 2>&1; then
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SCRIPT" -ProjectRoot "$PROJECT_ROOT"
+  POWERSHELL_BIN="powershell.exe"
 else
-  powershell -NoProfile -ExecutionPolicy Bypass -File "$SCRIPT" -ProjectRoot "$PROJECT_ROOT"
+  POWERSHELL_BIN="powershell"
 fi
 
+$POWERSHELL_BIN -NoProfile -ExecutionPolicy Bypass -File "$SURFACE_SCRIPT" -ProjectRoot "$PROJECT_ROOT"
 status=$?
 if [ "$status" -ne 0 ]; then
   echo "post-commit: Codex plugin surface sync failed" >&2
+  exit "$status"
+fi
+
+$POWERSHELL_BIN -NoProfile -ExecutionPolicy Bypass -File "$VPS_REQUEST_SCRIPT" -ProjectRoot "$PROJECT_ROOT"
+status=$?
+if [ "$status" -ne 0 ]; then
+  echo "post-commit: Contabo VPS NLP sync request failed" >&2
   exit "$status"
 fi
 '@
