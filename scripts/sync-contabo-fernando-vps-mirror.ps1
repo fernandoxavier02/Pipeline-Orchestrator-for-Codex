@@ -130,8 +130,16 @@ if result.returncode != 0:
     print(result.stderr, file=sys.stderr)
     raise SystemExit(result.returncode)
 
-subprocess.run(["git", "-C", dest, "remote", "remove", "origin"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-subprocess.run(["git", "-C", dest, "remote", "add", "origin", origin], check=True)
+current_origin = subprocess.run(
+    ["git", "-C", dest, "remote", "get-url", "origin"],
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
+)
+if current_origin.returncode != 0:
+    subprocess.run(["git", "-C", dest, "remote", "add", "origin", origin], check=True)
+elif current_origin.stdout.strip() != origin:
+    subprocess.run(["git", "-C", dest, "remote", "set-url", "origin", origin], check=True)
 head = subprocess.check_output(["git", "-C", dest, "rev-parse", "HEAD"], text=True).strip()
 if head != expected_head:
     raise SystemExit(f"head mismatch: {head} != {expected_head}")
