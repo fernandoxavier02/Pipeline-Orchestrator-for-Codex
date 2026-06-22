@@ -32,6 +32,21 @@ function Run-Git($cwd, [string[]]$arguments) {
   return $output
 }
 
+function Get-Sha256($path) {
+  $stream = [System.IO.File]::OpenRead($path)
+  try {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $hashBytes = $sha.ComputeHash($stream)
+      return ([System.BitConverter]::ToString($hashBytes)).Replace("-", "")
+    } finally {
+      $sha.Dispose()
+    }
+  } finally {
+    $stream.Dispose()
+  }
+}
+
 function Get-CodexCommand {
   $candidates = @(
     "D:\DevTools\npm-global\codex.cmd",
@@ -116,8 +131,8 @@ function Copy-TrackedFiles($label, $sourceRoot, $targetRoot, [string[]]$excludeP
       Fail "$label missing synced file: $file"
     }
 
-    $sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFile).Hash
-    $targetHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $targetFile).Hash
+    $sourceHash = Get-Sha256 $sourceFile
+    $targetHash = Get-Sha256 $targetFile
     if ($sourceHash -ne $targetHash) {
       Fail "$label drift detected for $file"
     }
