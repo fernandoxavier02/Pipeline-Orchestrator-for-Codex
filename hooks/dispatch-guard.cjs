@@ -17,11 +17,20 @@
 
 const { recordHookEvent } = require('./hook-events.cjs');
 const { GOVERNED_SKILL_SET } = require('./governed-workflows.cjs');
+const {
+  canonicalize,
+  ledgerEntryIntegrityVerified,
+  resolveSentinelIntegrityHmacKey,
+  stateObjectIntegrityVerified,
+} = require('./ledger-integrity.cjs');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PIPELINE_NAMESPACE = 'pipeline-orchestrator-for-codex';
 const LEGACY_PIPELINE_NAMESPACE = 'pipeline-orchestrator';
+const REQUIRED_FIRST_ACTIONS_FILE = path.join('.codex', 'pipeline', 'required-first-actions.json');
+const CONTROLLER_FQN = `${PIPELINE_NAMESPACE}:core:pipeline-controller`;
 const GOVERNED_SKILLS = GOVERNED_SKILL_SET;
 const ALLOWED_AGENT_TYPES = new Set(['worker', 'default', 'explorer']);
 const ALLOWED_GATES_AT = new Set(['phase-0', 'phase-1', 'phase-1.5', 'phase-2', 'phase-3', 'continue']);
@@ -118,6 +127,417 @@ function deny(reason, attempted, expected) {
 
 function allow() {
   // Silent allow (consistent with sentinel hook)
+}
+
+function readJsonIfExists(file) {
+  try {
+    if (!fs.existsSync(file)) return undefined;
+    const stats = fs.lstatSync(file);
+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size === 0) return { corrupted: true };
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return { corrupted: true };
+  }
+}
+
+function readJsonlIfExists(file) {
+  try {
+    if (!fs.existsSync(file)) return [];
+    const stats = fs.lstatSync(file);
+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size === 0) return [];
+    return fs.readFileSync(file, 'utf8')
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return undefined;
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function stateObjectExpired(state) {
+  return typeof state.expires_at !== 'number' || state.expires_at <= Math.floor(Date.now() / 1000);
+}
+
+function ledgerEntryStatusCompleted(entry) {
+  return ['completed', 'PASS', 'pass', 'approved', 'APPROVED', 'confirmed', 'CONFIRMED']
+    .includes(entry?.status || entry?.decision);
+}
+
+function ledgerEntryTrusted(entry) {
+  return resolveSentinelIntegrityHmacKey()
+    ? ledgerEntryIntegrityVerified(entry)
+    : !!(entry && typeof entry === 'object' && !Array.isArray(entry));
+}
+
+function collectStrings(...values) {
+  return values.flatMap((value) => {
+    if (typeof value === 'string' && value.trim()) return [value.trim()];
+    if (Array.isArray(value)) {
+      return value.filter((entry) => typeof entry === 'string' && entry.trim()).map((entry) => entry.trim());
+    }
+    return [];
+  });
+}
+
+function entryMatchesRequiredState(entry, state) {
+  if (!state || typeof state !== 'object') return true;
+  const payload = entry?.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload)
+    ? entry.payload
+    : {};
+  const identity = entry?.execution_identity && typeof entry.execution_identity === 'object' && !Array.isArray(entry.execution_identity)
+    ? entry.execution_identity
+    : {};
+  const runCandidates = collectStrings(entry?.run_id, entry?.runId, payload.run_id, payload.runId, identity.run_id, identity.runId);
+  const sessionCandidates = collectStrings(
+    entry?.session_id,
+    entry?.sessionId,
+    payload.session_id,
+    payload.sessionId,
+    identity.session_id,
+    identity.sessionId,
+  );
+  if (typeof state.run_id === 'string' && runCandidates.length > 0 && !runCandidates.includes(state.run_id)) return false;
+  if (typeof state.session_id === 'string' && sessionCandidates.length > 0 && !sessionCandidates.includes(state.session_id)) return false;
+  const hasIdentity = runCandidates.length > 0 || sessionCandidates.length > 0;
+  if (typeof state.created_at !== 'string') return hasIdentity;
+  if (typeof entry?.timestamp !== 'string') return false;
+  const createdAt = Date.parse(state.created_at);
+  const entryAt = Date.parse(entry.timestamp);
+  const currentEnough = Number.isFinite(createdAt) && Number.isFinite(entryAt) && entryAt >= createdAt;
+  return currentEnough;
+}
+
+function ledgerRequiredActionCompleted(action, stateDir, state) {
+  const requiredSpawnTarget = typeof action === 'string' && action.startsWith('spawn:')
+    ? action.slice('spawn:'.length)
+    : undefined;
+  const requiredSpawnLeaf = requiredSpawnTarget ? requiredSpawnTarget.split(':').pop() : undefined;
+  const entries = [
+    ...readJsonlIfExists(path.join(stateDir, 'gate-decisions.jsonl')),
+    ...readJsonlIfExists(path.join(stateDir, 'protocol-events.jsonl')),
+    ...readJsonlIfExists(path.join(stateDir, 'hook-events.jsonl')),
+  ];
+  return entries.some((entry) => (
+    entry
+    && ledgerEntryTrusted(entry)
+    && entryMatchesRequiredState(entry, state)
+    && ledgerEntryStatusCompleted(entry)
+    && (
+      entry.action === action
+      || entry.required_action === action
+      || entry.completed_action === action
+      || entry.gate === action
+      || entry.kind === action
+      || entry.event === action
+      || (
+        action === 'wait_agent'
+        && entry.payload
+        && typeof entry.payload === 'object'
+        && entry.payload.capability === 'wait_agent'
+        && entry.payload.event === 'WAIT_AGENT_COMPLETED'
+      )
+      || (
+        requiredSpawnTarget
+        && entry.kind === 'DISPATCH_REQUEST'
+        && entry.status === 'completed'
+        && entry.dispatchMode === 'real'
+        && entry.payload
+        && typeof entry.payload === 'object'
+        && (
+          entry.payload.targetName === requiredSpawnTarget
+          || entry.payload.targetName === requiredSpawnLeaf
+        )
+      )
+    )
+  ));
+}
+
+function readRequiredFirstActionsState() {
+  const stateDir = path.join(process.cwd(), '.codex', 'pipeline');
+  const state = readJsonIfExists(path.join(process.cwd(), REQUIRED_FIRST_ACTIONS_FILE));
+  if (!state) return undefined;
+  if (state.corrupted) {
+    return { active: true, pending: true, corrupted: true, requiredActions: [], completedActions: new Set() };
+  }
+  if (!stateObjectIntegrityVerified(state, 'pipeline-required-first-actions')) {
+    return { active: true, pending: true, corrupted: true, requiredActions: [], completedActions: new Set() };
+  }
+  if (
+    !state
+    || typeof state !== 'object'
+    || state.status !== 'active'
+    || state.plugin !== PIPELINE_NAMESPACE
+    || stateObjectExpired(state)
+  ) {
+    return undefined;
+  }
+  const requiredActions = Array.isArray(state.required_actions)
+    ? state.required_actions.filter((entry) => typeof entry === 'string')
+    : [];
+  const completedActions = new Set(
+    Array.isArray(state.completed_actions)
+      ? state.completed_actions.filter((entry) => typeof entry === 'string')
+      : [],
+  );
+  return {
+    active: true,
+    pending: requiredActions.some((action) => (
+      !completedActions.has(action) && !ledgerRequiredActionCompleted(action, stateDir, state)
+    )),
+    corrupted: false,
+    state,
+    requiredActions,
+    completedActions,
+  };
+}
+
+function signStateObject(state, scope) {
+  const key = resolveSentinelIntegrityHmacKey();
+  if (!key) return state;
+  const unsignedState = { ...state };
+  delete unsignedState._integrity;
+  return {
+    ...unsignedState,
+    _integrity: {
+      algorithm: 'hmac-sha256',
+      scope,
+      signature: crypto.createHmac('sha256', key).update(canonicalize(unsignedState)).digest('hex'),
+    },
+  };
+}
+
+function rejectSymlinkAncestors(file) {
+  const cwd = process.cwd();
+  const relative = path.relative(cwd, file).split(path.sep).filter(Boolean);
+  let cursor = cwd;
+  for (const part of relative.slice(0, -1)) {
+    cursor = path.join(cursor, part);
+    try {
+      if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) {
+        throw new Error(`Refusing to write pipeline state through symlink ancestor: ${cursor}`);
+      }
+    } catch (err) {
+      if (err && err.message && err.message.startsWith('Refusing to write')) throw err;
+    }
+  }
+}
+
+function writeJsonAtomic(file, value) {
+  rejectSymlinkAncestors(file);
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmpFile = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  for (const candidate of [dir, file, tmpFile]) {
+    try {
+      if (fs.lstatSync(candidate).isSymbolicLink()) {
+        throw new Error(`Refusing to write pipeline state through symlink: ${candidate}`);
+      }
+    } catch (err) {
+      if (err && err.message && err.message.startsWith('Refusing to write')) throw err;
+    }
+  }
+  fs.writeFileSync(tmpFile, JSON.stringify(value, null, 2), 'utf8');
+  fs.renameSync(tmpFile, file);
+}
+
+function recordRequiredFirstActionCompleted(action, detail, updates = {}) {
+  const requiredPath = path.join(process.cwd(), REQUIRED_FIRST_ACTIONS_FILE);
+  const state = readJsonIfExists(requiredPath);
+  if (
+    state
+    && !state.corrupted
+    && typeof state === 'object'
+    && state.status === 'active'
+    && state.plugin === PIPELINE_NAMESPACE
+    && !stateObjectExpired(state)
+    && stateObjectIntegrityVerified(state, 'pipeline-required-first-actions')
+  ) {
+    const completedActions = new Set(
+      Array.isArray(state.completed_actions)
+        ? state.completed_actions.filter((entry) => typeof entry === 'string')
+        : [],
+    );
+    completedActions.add(action);
+    writeJsonAtomic(requiredPath, signStateObject({
+      ...state,
+      ...updates,
+      completed_actions: [...completedActions],
+      updated_at: new Date().toISOString(),
+    }, 'pipeline-required-first-actions'));
+  }
+
+  recordHookEvent({
+    hook: 'dispatch-guard',
+    event: action,
+    decision: 'completed',
+    attempted: action,
+    expected: 'required-first-actions',
+    reason: detail || 'required first action observed',
+  });
+}
+
+function toolSucceeded(payload) {
+  const response = payload && (payload.tool_response || payload.toolResponse);
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return false;
+  if (response.is_error === true || response.error === true) return false;
+  const status = typeof response.status === 'string' ? response.status.toLowerCase() : '';
+  if (['error', 'failed', 'failure', 'denied', 'blocked'].includes(status)) return false;
+  return true;
+}
+
+function extractAgentIdFromResponse(payload) {
+  const response = payload && (payload.tool_response || payload.toolResponse);
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return undefined;
+  return collectStrings(
+    response.agent_id,
+    response.agentId,
+    response.id,
+    response.target,
+    response.target_id,
+    response.targetId,
+    response.output && typeof response.output === 'object' ? response.output.agent_id : undefined,
+    response.output && typeof response.output === 'object' ? response.output.agentId : undefined,
+    response.output && typeof response.output === 'object' ? response.output.id : undefined,
+  )[0];
+}
+
+function extractWaitTargets(toolInput) {
+  return collectStrings(
+    toolInput?.target,
+    toolInput?.targets,
+    toolInput?.agent_id,
+    toolInput?.agentId,
+    toolInput?.id,
+  );
+}
+
+function activeFirstActionsPostTool(payload, toolName, toolInput) {
+  const required = readRequiredFirstActionsState();
+  if (!required?.active || !required.pending || !toolSucceeded(payload)) return undefined;
+
+  if (toolName === 'update_plan') {
+    recordRequiredFirstActionCompleted('update_plan', 'visible plan tool completed');
+    return { kind: 'allow' };
+  }
+
+  if (toolName === 'wait_agent') {
+    const expectedControllerAgentId = typeof required.state?.bootstrap_controller_agent_id === 'string'
+      ? required.state.bootstrap_controller_agent_id
+      : undefined;
+    if (!expectedControllerAgentId || !extractWaitTargets(toolInput).includes(expectedControllerAgentId)) {
+      recordRequiredFirstActionAllowed('wait_agent', 'wait_agent completed but did not match bootstrap controller id');
+      return { kind: 'allow' };
+    }
+    recordRequiredFirstActionCompleted('wait_agent', 'wait_agent tool completed for bootstrap controller');
+    return { kind: 'allow' };
+  }
+
+  if (toolName === 'spawn_agent') {
+    const identity = extractPipelineAgentType(toolInput, { requireMarker: true });
+    if (typeof identity === 'string' && identity === CONTROLLER_FQN) {
+      const bootstrapControllerAgentId = extractAgentIdFromResponse(payload);
+      recordRequiredFirstActionCompleted(
+        `spawn:${CONTROLLER_FQN}`,
+        'canonical controller spawn completed',
+        bootstrapControllerAgentId ? { bootstrap_controller_agent_id: bootstrapControllerAgentId } : {},
+      );
+      return { kind: 'allow' };
+    }
+  }
+
+  return undefined;
+}
+
+function recordRequiredFirstActionAllowed(action, detail) {
+  recordHookEvent({
+    hook: 'dispatch-guard',
+    event: action,
+    decision: 'allow',
+    attempted: action,
+    expected: 'required-first-actions',
+    reason: detail || 'required first action allowed',
+  });
+}
+
+function activeFirstActionsPreTool(toolName, toolInput) {
+  const required = readRequiredFirstActionsState();
+  if (!required?.active || !required.pending) return undefined;
+
+  if (toolName === 'update_plan') {
+    recordRequiredFirstActionAllowed('update_plan', 'visible plan tool allowed');
+    return { kind: 'allow' };
+  }
+
+  if (toolName === 'wait_agent') {
+    const spawnAction = `spawn:${CONTROLLER_FQN}`;
+    if (
+      !required.completedActions.has(spawnAction)
+      && !ledgerRequiredActionCompleted(spawnAction, path.join(process.cwd(), '.codex', 'pipeline'), required.state)
+    ) {
+      return {
+        kind: 'deny',
+        reason:
+          `FIRST_ACTIONS_GUARD: wait_agent cannot run before the canonical pipeline-controller spawn is completed. ` +
+          `Do not stop or switch to manual fallback; redirect immediately to the canonical controller bootstrap sequence.`,
+        attempted: toolName,
+        expected: CONTROLLER_FQN,
+      };
+    }
+    const expectedControllerAgentId = typeof required.state?.bootstrap_controller_agent_id === 'string'
+      ? required.state.bootstrap_controller_agent_id
+      : undefined;
+    if (expectedControllerAgentId && !extractWaitTargets(toolInput).includes(expectedControllerAgentId)) {
+      return {
+        kind: 'deny',
+        reason:
+          `FIRST_ACTIONS_GUARD: wait_agent must target the bootstrap pipeline-controller agent before the controller bootstrap is complete. ` +
+          `Do not stop or switch to manual fallback; wait for the controller agent returned by the canonical spawn.`,
+        attempted: toolName,
+        expected: expectedControllerAgentId,
+      };
+    }
+    recordRequiredFirstActionAllowed('wait_agent', 'wait_agent tool allowed');
+    return { kind: 'allow' };
+  }
+
+  if (toolName === 'spawn_agent') {
+    const identity = extractPipelineAgentType(toolInput, { requireMarker: true });
+    if (typeof identity === 'string' && identity === CONTROLLER_FQN) {
+      recordRequiredFirstActionAllowed(`spawn:${CONTROLLER_FQN}`, 'canonical controller spawn allowed');
+      return { kind: 'allow' };
+    }
+    return {
+      kind: 'deny',
+      reason:
+        `FIRST_ACTIONS_GUARD: required first actions are pending. Only update_plan, ` +
+        `WORKFLOW_METHOD_GATE, CAPABILITY_GATE, spawn_agent with PIPELINE_AGENT_FQN: ${CONTROLLER_FQN}, ` +
+        `and wait_agent may run before the controller bootstrap is complete. ` +
+        `Do not stop or switch to manual fallback; redirect immediately to the canonical controller bootstrap sequence.`,
+      attempted: typeof identity === 'string' && identity ? identity : toolName,
+      expected: CONTROLLER_FQN,
+    };
+  }
+
+  if (['Agent', 'Skill'].includes(toolName)) {
+    return {
+      kind: 'deny',
+      reason:
+        `FIRST_ACTIONS_GUARD: required first actions are pending. ${toolName} is not allowed before ` +
+        `the canonical pipeline-controller spawn/wait sequence completes. ` +
+        `Do not stop or switch to manual fallback; redirect immediately to the canonical controller bootstrap sequence.`,
+      attempted: toolName,
+      expected: CONTROLLER_FQN,
+    };
+  }
+
+  return undefined;
 }
 
 function extractFrontmatterBlock(raw) {
@@ -423,8 +843,21 @@ function evaluateSkill(toolInput) {
 function handle(input) {
   const toolName = (input && (input.tool_name || input.toolName)) || '';
   const toolInput = (input && (input.tool_input || input.toolInput)) || {};
+  const hookEventName = (input && (input.hook_event_name || input.hookEventName)) || 'PreToolUse';
 
   let verdict = { kind: 'allow' };
+
+  if (hookEventName === 'PostToolUse') {
+    activeFirstActionsPostTool(input, toolName, toolInput);
+    return;
+  }
+
+  const firstActionsVerdict = activeFirstActionsPreTool(toolName, toolInput);
+  if (firstActionsVerdict?.kind === 'deny') {
+    deny(firstActionsVerdict.reason, firstActionsVerdict.attempted, firstActionsVerdict.expected);
+    return;
+  }
+  if (firstActionsVerdict?.kind === 'allow') return;
 
   if (toolName === 'Agent' || toolName === 'spawn_agent') {
     verdict = evaluateAgent(toolInput, { requireMarker: toolName === 'spawn_agent' });

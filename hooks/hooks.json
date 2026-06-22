@@ -41,6 +41,17 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "spawn_agent|wait_agent|update_plan",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "spawn_agent",
@@ -52,6 +63,24 @@
           {
             "type": "command",
             "command": "node \"${PLUGIN_ROOT}/hooks/sentinel-hook.cjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "wait_agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
+          }
+        ]
+      },
+      {
+        "matcher": "update_plan",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/dispatch-guard.cjs\""
           }
         ]
       },

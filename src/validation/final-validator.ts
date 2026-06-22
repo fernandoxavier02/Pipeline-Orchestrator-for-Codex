@@ -199,10 +199,21 @@ type SentinelStateInput = {
   updatedAt: string;
 };
 
+type SentinelStateRead = Omit<SentinelStateInput, "runtime_mode" | "lastCheckpoint"> & {
+  runtime_mode?: SentinelStateInput["runtime_mode"] | "pending-real-agent";
+  lastCheckpoint: SentinelStateInput["lastCheckpoint"] | "workflow_intent_persisted";
+};
+
 type SentinelStoreLike = {
   save?: (state: SentinelStateInput) => Promise<void> | void;
-  load?: () => Promise<SentinelStateInput> | SentinelStateInput;
+  load?: () => Promise<SentinelStateRead> | SentinelStateRead;
 };
+
+type ResolvedRuntimeMode = Exclude<SentinelStateInput["runtime_mode"], "pending-real-agent" | undefined>;
+
+function isResolvedRuntimeMode(mode: SentinelStateRead["runtime_mode"]): mode is ResolvedRuntimeMode {
+  return mode !== undefined && mode !== "pending-real-agent";
+}
 
 /**
  * After a final-validator dispatch returns, persist the
@@ -219,7 +230,7 @@ export async function recordPostFinalValidatorCheckpoint(input: {
   if (!input.sentinelStore?.save) {
     return;
   }
-  let prior: SentinelStateInput | undefined;
+  let prior: SentinelStateRead | undefined;
   try {
     prior = (await input.sentinelStore.load?.()) ?? undefined;
   } catch {
@@ -233,7 +244,7 @@ export async function recordPostFinalValidatorCheckpoint(input: {
     ...(prior?.run_id ? { run_id: prior.run_id } : {}),
     ...(prior?.workflow_id ? { workflow_id: prior.workflow_id } : {}),
     ...(typeof prior?.created_by_runtime === "boolean" ? { created_by_runtime: prior.created_by_runtime } : {}),
-    ...(prior?.runtime_mode ? { runtime_mode: prior.runtime_mode } : {}),
+    ...(isResolvedRuntimeMode(prior?.runtime_mode) ? { runtime_mode: prior.runtime_mode } : {}),
     pipelineActive: input.decision === "NO-GO" ? true : false,
     currentPhase: "phase-3",
     currentAgent: "final-validator",

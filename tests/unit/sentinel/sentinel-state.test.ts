@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -45,6 +45,84 @@ describe("sentinel state store", () => {
     expect(raw).toContain("\"lastCheckpoint\":\"post_orchestrator\"");
     const loaded = await store.load();
     expect(loaded.expectedNext).toEqual(["proposal-response"]);
+  });
+
+  it("accepts hook bootstrap sentinel state before runtime mode is resolved", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-sentinel-bootstrap-"));
+    const store = createSentinelStateStore(root);
+
+    await store.save({
+      session_id: "session-1",
+      run_id: "run-1",
+      workflow_id: "pipeline",
+      pipelineActive: true,
+      currentPhase: "phase-0",
+      currentAgent: "force-pipeline-agents",
+      expectedNext: ["pipeline-controller"],
+      completedPhases: [],
+      gateSummary: ["WORKFLOW_INTENT_PERSISTED"],
+      batchState: {
+        batchIndex: 0,
+        status: "awaiting-controller-bootstrap",
+      },
+      consecutiveCorrections: 0,
+      lastCheckpoint: "workflow_intent_persisted",
+      updatedAt: "2026-04-12T10:00:00.000Z",
+    });
+
+    const loaded = await store.load();
+    expect(loaded.runtime_mode).toBeUndefined();
+    expect(loaded.lastCheckpoint).toBe("workflow_intent_persisted");
+    expect(loaded.expectedNext).toEqual(["pipeline-controller"]);
+  });
+
+  it("accepts legacy pending real-agent sentinel state for recovery only", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pipeline-sentinel-legacy-bootstrap-"));
+    const store = createSentinelStateStore(root);
+
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "sentinel-state.json"), JSON.stringify({
+      session_id: "session-1",
+      run_id: "run-1",
+      workflow_id: "pipeline",
+      runtime_mode: "pending-real-agent",
+      pipelineActive: true,
+      currentPhase: "phase-0",
+      currentAgent: "force-pipeline-agents",
+      expectedNext: ["pipeline-controller"],
+      completedPhases: [],
+      gateSummary: ["WORKFLOW_INTENT_PERSISTED"],
+      batchState: {
+        batchIndex: 0,
+        status: "awaiting-controller-bootstrap",
+      },
+      consecutiveCorrections: 0,
+      lastCheckpoint: "workflow_intent_persisted",
+      updatedAt: "2026-04-12T10:00:00.000Z",
+    }), "utf8");
+
+    const loaded = await store.load();
+    expect(loaded.runtime_mode).toBeUndefined();
+    expect(loaded.lastCheckpoint).toBe("workflow_intent_persisted");
+    await expect(store.save({
+      session_id: "session-1",
+      run_id: "run-1",
+      workflow_id: "pipeline",
+      runtime_mode: "pending-real-agent",
+      pipelineActive: true,
+      currentPhase: "phase-0",
+      currentAgent: "force-pipeline-agents",
+      expectedNext: ["pipeline-controller"],
+      completedPhases: [],
+      gateSummary: ["WORKFLOW_INTENT_PERSISTED"],
+      batchState: {
+        batchIndex: 0,
+        status: "awaiting-controller-bootstrap",
+      },
+      consecutiveCorrections: 0,
+      lastCheckpoint: "workflow_intent_persisted",
+      updatedAt: "2026-04-12T10:00:00.000Z",
+    })).rejects.toThrow();
   });
 
   it("signs sentinel state when HMAC integrity is configured", async () => {

@@ -45,6 +45,26 @@ function writeSessionLock(cwd: string, sessionId: string, expiresAt: number) {
   }), "utf8");
 }
 
+function writePendingRequiredFirstActions(cwd: string) {
+  const dir = join(cwd, ".codex", "pipeline");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "required-first-actions.json"), JSON.stringify({
+    schema_version: 1,
+    status: "active",
+    plugin: "pipeline-orchestrator-for-codex",
+    workflow: "pipeline",
+    required_actions: [
+      "update_plan",
+      "WORKFLOW_METHOD_GATE",
+      "CAPABILITY_GATE",
+      "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+      "wait_agent",
+    ],
+    completed_actions: [],
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+  }), "utf8");
+}
+
 function writeChangeContract(cwd: string, contract: Record<string, unknown>) {
   const dir = join(cwd, ".codex", "pipeline");
   mkdirSync(dir, { recursive: true });
@@ -266,6 +286,87 @@ describe("edit-guard-hook", () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout.trim()).toBe("");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("TDD: denies read-only Bash during pending first actions and redirects to controller bootstrap", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-first-actions-"));
+    try {
+      writeSessionLock(cwd, "S8a", Math.floor(Date.now() / 1000) + 3600);
+      writePendingRequiredFirstActions(cwd);
+
+      const result = spawnSync(process.execPath, [HOOK], {
+        cwd,
+        input: JSON.stringify({
+          tool_name: "Bash",
+          tool_input: { command: "ssh hostinger-vps 'ls /root'" },
+        }),
+        encoding: "utf8",
+      });
+
+      expect(result.status).toBe(0);
+      const output = JSON.parse(result.stdout.trim());
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("required pipeline first actions");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("Do not stop");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("pipeline-controller");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("TDD: denies read-only Bash when signed first-actions state was tampered", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "edit-guard-hook-first-actions-hmac-"));
+    try {
+      writeSessionLock(cwd, "S8a-hmac", Math.floor(Date.now() / 1000) + 3600);
+      const dir = join(cwd, ".codex", "pipeline");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "required-first-actions.json"), JSON.stringify({
+        schema_version: 1,
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "pipeline",
+        required_actions: [
+          "update_plan",
+          "WORKFLOW_METHOD_GATE",
+          "CAPABILITY_GATE",
+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+          "wait_agent",
+        ],
+        completed_actions: [
+          "update_plan",
+          "WORKFLOW_METHOD_GATE",
+          "CAPABILITY_GATE",
+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+          "wait_agent",
+        ],
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        _integrity: {
+          algorithm: "hmac-sha256",
+          scope: "pipeline-required-first-actions",
+          signature: "0".repeat(64),
+        },
+      }), "utf8");
+
+      const result = spawnSync(process.execPath, [HOOK], {
+        cwd,
+        input: JSON.stringify({
+          tool_name: "Bash",
+          tool_input: { command: "cat src/main.ts" },
+        }),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PIPELINE_SENTINEL_HMAC_KEY: "unit-test-hmac-key",
+        },
+      });
+
+      expect(result.status).toBe(0);
+      const output = JSON.parse(result.stdout.trim());
+      expect(output.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(output.hookSpecificOutput.permissionDecisionReason).toContain("required pipeline first actions");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

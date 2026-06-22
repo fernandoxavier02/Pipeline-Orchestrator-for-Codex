@@ -13,7 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { loadAgentRuntimeAdapter } from "./agent-runtime-loader.js";
-import { sentinelStateSchema, sessionStateSchema } from "../domain/pipeline-schemas.js";
+import { sentinelStateReadSchema, sessionStateSchema } from "../domain/pipeline-schemas.js";
 import { resolveSentinelIntegrityHmacKey } from "../security/ledger-integrity.js";
 export function resolveCliExitCode(result) {
     if (!result || typeof result !== "object") {
@@ -188,7 +188,7 @@ function pendingGateResponse(options) {
         };
     }
     const parsedSession = sessionStateSchema.safeParse(session.value);
-    const parsedSentinel = sentinelStateSchema.safeParse(sentinel.value);
+    const parsedSentinel = sentinelStateReadSchema.safeParse(sentinel.value);
     if (!parsedSession.success || !parsedSentinel.success) {
         return {
             kind: "blocked",

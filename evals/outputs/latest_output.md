@@ -3,65 +3,79 @@
 ## What was inspected
 
 - Repository: `D:\Pipeline Orchestrator for Codex`.
-- Active request: publish and synchronize the runtime-subagent fix across the canonical repo, GitHub, Codex marketplace-backed plugin directory, and installed Codex plugin cache.
-- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `.agents/skills/workflow-eval-gate/SKILL.md`, `.agents/skills/bugfix-heavy/SKILL.md`, and `evals/README.md`.
-- Runtime/code surfaces: `src/adapters/codex-cli-process-runtime.ts`, `src/cli/agent-runtime-loader.ts`, `hooks/**`, `commands/**`, `skills/**`, `.agents/skills/**`, `dist/**`, and runtime/gate tests.
-- Publication surfaces: `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`, `C:\Users\win\.agents\plugins\marketplace.json`, `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`, and `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
+- Active request: fix the critical recovery path so pipeline-rule violations do not simply stop or fall back manually; they must identify the problem and redirect to the canonical controller bootstrap.
+- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `.agents/skills/bugfix-heavy/SKILL.md`, `skills/pipeline/SKILL.md`, `commands/pipeline.md`, `references/openai-codex-kb/INDEX.md`, and `evals/README.md`.
+- Runtime surfaces: `hooks/dispatch-guard.cjs`, `hooks/edit-guard-hook.cjs`, `hooks/completion-checklist.cjs`, `hooks/ledger-integrity.cjs`, `hooks/hooks.json`, `hooks/force-pipeline-agents.cjs`, `src/cli/pipeline-cli.ts`, `src/domain/pipeline-schemas.ts`, `src/sentinel/sentinel-state.ts`, and `src/validation/final-validator.ts`.
+- Test/evidence surfaces: `tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts`, `tests/unit/hooks/edit-guard-hook.test.ts`, `tests/unit/hooks/completion-checklist.test.ts`, `tests/unit/sentinel/sentinel-state.test.ts`, `dist/**`, `evals/telemetry/**`.
 - behavior_cases: 5.
 
 ## What was changed
 
-- Fixed the Codex CLI process runtime so `codex-cli` / `codex-cli-process` use a safe real-agent runtime by default instead of dangerous bypass flags.
-- Kept dangerous bypass behavior behind explicit `codex-cli-dev-bypass` / `codex-cli-process-dev-bypass` aliases, which remain blocked by `CAPABILITY_GATE`.
-- Added deterministic tests proving the safe runtime passes the capability gate and the explicit dev-bypass path remains blocked.
-- Preserved the prior deterministic workflow hardening changes in hooks, controller, gate log, ledger evidence, final validation, batch-loop evidence, and completion enforcement.
-- Rebuilt `dist/**` from source.
-- Refreshed the installed Codex cache at `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
-- Refreshed the marketplace-backed global plugin at `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`.
-- Verified the global marketplace entry still points to `./plugins/pipeline-orchestrator-for-codex` with `INSTALLED_BY_DEFAULT`.
-- Created filesystem backups before replacement:
-  - `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1-backup-sync-*`
-  - `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex-backup-sync-*`
+- `hooks/dispatch-guard.cjs` now enforces required first actions while they are pending: generic `spawn_agent`, `Agent`, and `Skill` are denied with recovery guidance; canonical controller `spawn_agent`, `update_plan`, and `wait_agent` are allowed only in the bootstrap sequence.
+- `hooks/dispatch-guard.cjs` records first-action completion only from successful `PostToolUse`, not from `PreToolUse`; missing or non-object `tool_response` is treated as not successful.
+- `hooks/dispatch-guard.cjs` reconciles `WORKFLOW_METHOD_GATE` and `CAPABILITY_GATE` through trusted ledgers, accepts unsigned ledgers only when no HMAC key is configured, rejects tampered HMAC state, rejects symlink ancestors for state writes, and blocks replay by requiring ledger timestamps to be current relative to `required-first-actions.created_at`.
+- `hooks/edit-guard-hook.cjs` blocks Bash, including read-only Bash, while required first actions are pending under an active pipeline session and preserves protected pipeline state files.
+- `hooks/completion-checklist.cjs` treats incomplete or corrupted required first actions as a recovery condition, emits a canonical redirect instead of allowing a quiet stop, and applies the same current-ledger check for required first-action proof.
+- `hooks/ledger-integrity.cjs` exports shared state-object HMAC verification so hook surfaces keep one HMAC policy.
+- `hooks/hooks.json` registers `PostToolUse` for `spawn_agent|wait_agent|update_plan` and `PreToolUse` for `update_plan` and `wait_agent`.
+- `hooks/force-pipeline-agents.cjs`, `src/domain/pipeline-schemas.ts`, `src/sentinel/sentinel-state.ts`, `src/cli/pipeline-cli.ts`, and `src/validation/final-validator.ts` keep `pending-real-agent` as legacy readable sentinel recovery only, not a newly persisted final checkpoint runtime mode.
+- `dist/src/cli/pipeline-cli.js`, `dist/src/domain/pipeline-schemas.js`, `dist/src/sentinel/sentinel-state.js`, and `dist/src/validation/final-validator.js` were regenerated by `npm run build`.
+- Regression tests were added for PreToolUse vs PostToolUse completion, HMAC tamper fail-closed behavior, signed and unsigned gate reconciliation, old ledger replay, wait target binding, Stop-hook recovery, edit/Bash blocking, symlink ancestor rejection, and legacy sentinel compatibility.
 
-## Batch review and fix loop
+## Adversarial review
 
-- Batch 1, source/runtime: adversarial review found the default process adapter was self-identifying as `dev-bypass`; fix applied and focused runtime/gate tests passed.
-- Batch 2, host config and executable resolution: adversarial review found broken Codex TOML and Windows wrapper risk; TOML was repaired and the adapter now resolves the real `codex.exe`.
-- Batch 3, cache/global adoption: adversarial review found stale global plugin content and missing runtime dependencies in one installed copy; both install targets were rebuilt from the same package and dependencies were restored.
-- Batch 4, publication parity: package-file parity was checked across canonical repo, Codex cache, and marketplace-backed global plugin before moving to commit/push.
+- BUP/adversarial review was executed in security, architecture, and quality passes.
+- Corrected BLOCKER: first actions were previously completed during PreToolUse before tool execution.
+- Corrected BLOCKER: textual gates could remain pending forever and deadlock the canonical bootstrap.
+- Corrected BLOCKER from the second pass: unsigned ledgers without an HMAC key now release only when no key is configured and the ledgers are current.
+- Corrected MAJOR: ledgers are tied to current run/session identity where available and to `created_at` freshness when identity is weak or reused.
+- Corrected MAJOR: `wait_agent` completion is bound to the bootstrap controller agent id.
+- Corrected MAJOR: state writes reject symlink ancestors and use unique temp files.
+- Final local adversarial review found no remaining BLOCKER or MAJOR issue in the changed surfaces.
 
 ## What was not changed
 
-- No new dependency was added.
-- No prompt-only recommendation was used as an enforcement mechanism.
-- No remote/VPS installation was altered.
-- The global marketplace registry schema was not rewritten because its existing entry was already correct and installed by default.
-- Hook trust in the active Codex UI was not asserted; telemetry is treated as manual/local unless `/hooks` proves trust.
+- No dependency was added.
+- No prompt-only workaround was used.
+- No direct push to `main` was made.
+- No VPS runtime was changed.
+- No `.git`, `node_modules`, cache internals, logs, or `.stfolder/` files were deleted or normalized.
+- Active Codex UI hook trust was not asserted; `/hooks` still has to be trusted in the UI for local Eval Gate hooks to run automatically.
 
 ## Eval result
 
 EVAL RESULT: PASS from `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
 
-Direct publication evidence:
+Validation completed in the final pass:
 
-- `npm pack --dry-run --json` identified 1111 package files.
-- Package parity passed for all 1111 files across:
-  - `D:\Pipeline Orchestrator for Codex`
-  - `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`
-  - `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`
-- External-cwd smoke passed for the Codex cache CLI: `CAPABILITY_GATE: PASS`.
-- External-cwd smoke passed for the marketplace-backed global plugin CLI: `CAPABILITY_GATE: PASS`.
-- Global marketplace entry passed: `pipeline-orchestrator-for-codex`, path `./plugins/pipeline-orchestrator-for-codex`, policy `INSTALLED_BY_DEFAULT`.
+- `npm run lint:types`: PASS.
+- `npm run build`: PASS.
+- `npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS, 26 tests.
+- `npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS, 185 tests.
+- `npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS.
+- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 63 tests.
+- `git diff --check`: PASS, with Git CRLF warnings only.
+- Installed-cache smoke: PASS on `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
+- Global plugin smoke: PASS on `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`.
+- Cache parity: PASS, `PARITY_OK files=22 targets=2`.
 
-The local Codex installation now has the same packaged plugin files in the canonical repo, the installed Codex cache, and the marketplace-backed global plugin directory.
+Smoke coverage completed:
+
+- Required-first-actions pending denies generic `spawn_agent`.
+- Controller `spawn_agent` is allowed in `PreToolUse` without completing early.
+- Controller `spawn_agent` completes only after successful `PostToolUse`.
+- Wrong `wait_agent` target does not complete; correct controller target completes.
+- Bash is denied while first actions are pending.
+- Stop hook emits the recovery redirect.
+- HMAC tamper fails closed.
+- Unsigned gate ledgers without an HMAC key release only when current.
 
 ## Remaining risks
 
-- Files excluded by `.npmignore`, such as `evals/telemetry/**`, are intentionally not part of package parity.
-- `node_modules/**` is operational dependency state, not package source; it was restored/copied for local runtime smoke but is not counted as canonical package source.
-- The active Codex app may require a restart or plugin reload before UI-discovered skills reflect the refreshed global plugin files.
-- Hook activation still depends on `/hooks` trust in the Codex UI.
+- If the live Codex host changes `PostToolUse` response shape, conservative success detection may leave actions pending instead of falsely completing them.
+- UI/runtime adoption still depends on the app loading the refreshed plugin cache and trusting hooks where applicable.
+- `.stfolder/` remains a pre-existing untracked marker and is intentionally excluded from staging.
 
 ## Next safest step
 
-Commit and push the validated source changes, then rerun the public slash command from a different project to confirm the Codex UI has reloaded the updated global plugin surface.
+Open a branch from `main`, commit the validated source/cache evidence changes, push the branch, and open a PR against `main`.

@@ -1,15 +1,34 @@
 {
   "added_unrequested_features": false,
   "changed_files": [
+    "dist/src/cli/pipeline-cli.js",
+    "dist/src/domain/pipeline-schemas.js",
+    "dist/src/sentinel/sentinel-state.js",
+    "dist/src/validation/final-validator.js",
+    "evals/outputs/latest_output.md",
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
-    "evals/telemetry/latest_trace.json"
+    "evals/telemetry/latest_trace.json",
+    "hooks/completion-checklist.cjs",
+    "hooks/dispatch-guard.cjs",
+    "hooks/edit-guard-hook.cjs",
+    "hooks/force-pipeline-agents.cjs",
+    "hooks/hooks.json",
+    "hooks/ledger-integrity.cjs",
+    "src/cli/pipeline-cli.ts",
+    "src/domain/pipeline-schemas.ts",
+    "src/sentinel/sentinel-state.ts",
+    "src/validation/final-validator.ts",
+    "tests/unit/hooks/completion-checklist.test.ts",
+    "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
+    "tests/unit/hooks/edit-guard-hook.test.ts",
+    "tests/unit/sentinel/sentinel-state.test.ts"
   ],
   "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
     "hook_event": "PostToolUse",
-    "session_id": "019ee184-8886-7671-aec3-bf0043bd53f6",
+    "session_id": "019eec66-5ccf-7530-9aa6-e51872843c4b",
     "tool_name": "Bash"
   },
   "execution_observed": true,
@@ -18,12 +37,12 @@
   "last_hook_event": "PostToolUse",
   "plugin_execution": {
     "observed": true,
+    "status": "smoke-pass",
     "pipeline_agent_fqn": "pipeline-orchestrator-for-codex:core:pipeline-controller",
     "real_agent_runtime": {
       "spawn_agent_observed": true,
       "wait_agent_observed": true
-    },
-    "status": "blocked-no-agent-runtime"
+    }
   },
   "scope_respected": true,
   "scope_review": {
@@ -74,6 +93,7 @@
       ".agents/skills/pipeline/SKILL.md": "Mirror skill surface updated with packaged skills so local and installed pipeline instructions share the safe spawn_agent contract.",
       ".agents/skills/spec-audit-only/steps/03-audit-loop.md": "Mirror skill surface updated with packaged skills so local and installed pipeline instructions share the safe spawn_agent contract.",
       ".agents/skills/spec/SKILL.md": "Mirror skill surface updated with packaged skills so local and installed pipeline instructions share the safe spawn_agent contract.",
+      ".stfolder/": "Pre-existing Syncthing marker directory observed in the dirty worktree; not edited and not part of the current pipeline runtime fix.",
       "CHANGELOG.md": "Requested project context update; records the 0.5.1 release contract and release evidence.",
       "CLAUDE.md": "Requested project context update; keeps the Claude/Codex local operating context aligned with the new HMAC integrity policy.",
       "docs/pipeline-orchestrator-codex/12-claude-v8-portability-plan.md": "Pre-existing untracked portability plan observed in dirty worktree; not part of the current implementation scope.",
@@ -83,54 +103,85 @@
     },
     "unexpected_files": []
   },
-  "timestamp": "2026-06-20T03:08:33.470864+00:00",
+  "timestamp": "2026-06-22T02:10:03.383306+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "d71e804f0d2471be63a913a3955565c5c13a2ac4",
+    "base_commit": "51b34b041e2be9731f0f867fb832e88111661321",
     "changed_files": [
+      "dist/src/cli/pipeline-cli.js",
+      "dist/src/domain/pipeline-schemas.js",
+      "dist/src/sentinel/sentinel-state.js",
+      "dist/src/validation/final-validator.js",
+      "evals/outputs/latest_output.md",
       "evals/telemetry/changed_files.txt",
       "evals/telemetry/git_diff.patch",
-      "evals/telemetry/latest_trace.json"
+      "evals/telemetry/latest_trace.json",
+      "hooks/completion-checklist.cjs",
+      "hooks/dispatch-guard.cjs",
+      "hooks/edit-guard-hook.cjs",
+      "hooks/force-pipeline-agents.cjs",
+      "hooks/hooks.json",
+      "hooks/ledger-integrity.cjs",
+      "src/cli/pipeline-cli.ts",
+      "src/domain/pipeline-schemas.ts",
+      "src/sentinel/sentinel-state.ts",
+      "src/validation/final-validator.ts",
+      "tests/unit/hooks/completion-checklist.test.ts",
+      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
+      "tests/unit/hooks/edit-guard-hook.test.ts",
+      "tests/unit/sentinel/sentinel-state.test.ts"
     ],
     "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
     "ref": "HEAD+working-tree"
   },
   "validation_evidence": {
     "commands": {
-      "git diff --check": {
-        "command": "git diff --check",
-        "observed_at": "2026-06-20T00:43:31Z",
+      "npm run lint:types": {
+        "command": "npm run lint:types",
+        "observed_at": "2026-06-22T02:10:03Z",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "npm run build": {
         "command": "npm run build",
-        "observed_at": "2026-06-20T00:43:31Z",
+        "observed_at": "2026-06-22T02:10:03Z",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
-      "npm run lint:types": {
-        "command": "npm run lint:types",
-        "observed_at": "2026-06-20T00:43:31Z",
+      "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
+        "command": "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
+        "observed_at": "2026-06-22T02:10:03Z",
+        "status": "PASS",
+        "target": "HEAD+working-tree"
+      },
+      "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
+        "command": "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
+        "observed_at": "2026-06-22T02:10:03Z",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "npm test": {
-        "command": "npm test -- --testTimeout 30000 --fileParallelism=false",
-        "observed_at": "2026-06-20T00:43:31Z",
+        "command": "npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks",
+        "observed_at": "2026-06-22T02:10:03Z",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
         "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
-        "observed_at": "2026-06-20T00:43:31Z",
+        "observed_at": "2026-06-22T02:10:03Z",
+        "status": "PASS",
+        "target": "HEAD+working-tree"
+      },
+      "git diff --check": {
+        "command": "git diff --check",
+        "observed_at": "2026-06-22T02:10:03Z",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {
         "command": "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
-        "observed_at": "2026-06-20T00:44:35Z",
+        "observed_at": "2026-06-22T02:10:03Z",
         "status": "PASS",
         "target": "HEAD+working-tree"
       }
