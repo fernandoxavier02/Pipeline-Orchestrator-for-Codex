@@ -1554,6 +1554,39 @@ describe("completion-checklist Stop enforcement", () => {
     expect(output.additionalContext).toContain("Artefato final estruturado");
   });
 
+  it("TDD: blocks blocked-no-agent-runtime that claims spawn/wait missing after bootstrap proved them", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-bootstrap-contradiction-"));
+    writeActiveSentinel(cwd);
+    writeActiveWorkflowObligations(cwd, {
+      requiredActions: [
+        "update_plan",
+        "WORKFLOW_METHOD_GATE",
+        "CAPABILITY_GATE",
+        "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+        "wait_agent",
+      ],
+      completedActions: [
+        "update_plan",
+        "WORKFLOW_METHOD_GATE",
+        "CAPABILITY_GATE",
+        "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+        "wait_agent",
+      ],
+    });
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE blocked-no-agent-runtime",
+        pipelineGovernanceArtifact: blockedNoAgentRuntimeArtifact(REQUIRED_PIPELINE_CAPABILITIES),
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("missing_capability_contradicts_bootstrap:spawn_agent");
+    expect(output.stopReason).toContain("missing_capability_contradicts_bootstrap:wait_agent");
+  });
+
   it("RED: accepts structured BLOCKED artifact when real-agent runtime lacks artifact collection", () => {
     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-artifact-collection-"));
     writeActiveSentinel(cwd);

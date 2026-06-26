@@ -1,6 +1,8 @@
 {
   "added_unrequested_features": false,
   "changed_files": [
+    ".agents/skills/pipeline/SKILL.md",
+    "agents/core/pipeline-controller.md",
     "dist/src/cli/pipeline-cli.js",
     "dist/src/domain/pipeline-schemas.js",
     "dist/src/sentinel/sentinel-state.js",
@@ -9,15 +11,20 @@
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
     "evals/telemetry/latest_trace.json",
-    "scripts/enqueue-contabo-vps-sync-request.ps1",
-    "scripts/sync-contabo-fernando-vps-mirror.ps1"
+    "hooks/completion-checklist.cjs",
+    "hooks/force-pipeline-agents.cjs",
+    "skills/pipeline/SKILL.md",
+    "src/adapters/codex-agent-runtime.ts",
+    "tests/integration/adapter-detection.test.ts",
+    "tests/unit/hooks/completion-checklist.test.ts",
+    "tests/unit/hooks/force-pipeline-agents.test.ts"
   ],
   "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
     "hook_event": "PostToolUse",
-    "session_id": null,
-    "tool_name": null
+    "session_id": "019f0162-d4d0-77c1-8259-c95b74e9bff2",
+    "tool_name": "Bash"
   },
   "execution_observed": true,
   "git_diff_captured": true,
@@ -90,14 +97,18 @@
       "package.json": "Version update required by the requested 0.5.1 release, npm pack, and global cache mirroring.",
       "references/gates.md": "Required registry documentation parity for PLAN_GATE_ACTIVE after the typed gate registry and controller prompt exposed the gate."
     },
-    "unexpected_files": []
+    "unexpected_files": [
+      ".agents/skills/pipeline/SKILL.md"
+    ]
   },
-  "timestamp": "2026-06-22T23:24:30.972903+00:00",
+  "timestamp": "2026-06-26T02:51:08.788371+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "862643181bf50c91ec9e1587fe65121b407eed96",
+    "base_commit": "09046a4c4c051f9f82cdb2a33b89e37f2d1d0854",
     "changed_files": [
+      ".agents/skills/pipeline/SKILL.md",
+      "agents/core/pipeline-controller.md",
       "dist/src/cli/pipeline-cli.js",
       "dist/src/domain/pipeline-schemas.js",
       "dist/src/sentinel/sentinel-state.js",
@@ -106,8 +117,13 @@
       "evals/telemetry/changed_files.txt",
       "evals/telemetry/git_diff.patch",
       "evals/telemetry/latest_trace.json",
-      "scripts/enqueue-contabo-vps-sync-request.ps1",
-      "scripts/sync-contabo-fernando-vps-mirror.ps1"
+      "hooks/completion-checklist.cjs",
+      "hooks/force-pipeline-agents.cjs",
+      "skills/pipeline/SKILL.md",
+      "src/adapters/codex-agent-runtime.ts",
+      "tests/integration/adapter-detection.test.ts",
+      "tests/unit/hooks/completion-checklist.test.ts",
+      "tests/unit/hooks/force-pipeline-agents.test.ts"
     ],
     "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
     "ref": "HEAD+working-tree"

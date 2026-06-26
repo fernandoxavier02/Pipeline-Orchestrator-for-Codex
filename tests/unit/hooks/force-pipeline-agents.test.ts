@@ -366,6 +366,8 @@ describe("force pipeline agents hook", () => {
     expect(output.systemMessage).toContain("WORKFLOW_METHOD_GATE");
     expect(output.systemMessage).toContain("agents/core/pipeline-controller.md");
     expect(output.systemMessage).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller");
+    expect(output.systemMessage).toContain("PARENT_PROTOCOL_RUNTIME");
+    expect(output.systemMessage).toContain("parent_handles_dispatch_request");
     expect(output.systemMessage).toContain("blocked-no-agent-runtime");
     expect(output.systemMessage).not.toContain("send_input");
     expect(output.systemMessage).not.toContain("agents/core/task-orchestrator.md");

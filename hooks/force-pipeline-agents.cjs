@@ -272,7 +272,12 @@ Você DEVE iniciar o workflow governado por uma destas duas formas equivalentes:
    - agent_type="worker"
    - fork_context=false
    - message iniciando com:
-     PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller
+      PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller
+      PARENT_PROTOCOL_RUNTIME:
+        mode: real-agent
+        spawn_agent: available
+        wait_agent: available
+        dispatch_contract: parent_handles_dispatch_request
 3. Chamar wait_agent para obter o resultado do controller antes de processar qualquer bloco.
 4. Re-dispatchar por spawn_agent com o estado de protocolo persistido quando precisar continuar o controller.
 
@@ -307,6 +312,13 @@ YOUR FIRST ACTION must be:
 3. Find the agents directory using PLUGIN_ROOT/agents/ (CODEX_PLUGIN_ROOT and CLAUDE_PLUGIN_ROOT are compatibility fallbacks only)
 4. Read agents/core/pipeline-controller.md
 5. Call spawn_agent(agent_type="worker", fork_context=false, message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
+   The message MUST include this parent capability block immediately after the FQN:
+   PARENT_PROTOCOL_RUNTIME:
+     mode: real-agent
+     spawn_agent: available
+     wait_agent: available
+     dispatch_contract: parent_handles_dispatch_request
+   This block means the controller itself should emit DISPATCH_REQUEST/GATE_REQUEST blocks for parent handling; it must not report spawn_agent/wait_agent as missing merely because those tools are unavailable inside the isolated controller.
 6. Call wait_agent for the returned agent id
 7. Process every GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST block before advancing
 8. Re-dispatch with spawn_agent(agent_type="worker", fork_context=false, ...) and persisted protocol state when continuation is required

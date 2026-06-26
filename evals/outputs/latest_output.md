@@ -3,37 +3,35 @@
 ## What was inspected
 
 - Repository: `D:\Pipeline Orchestrator for Codex`.
-- Active request: guarantee that `.gitignore` parity is an explicit local-to-Contabo VPS mirror validation criterion.
-- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `evals/README.md`, `skills/pipeline/SKILL.md`, and `references/openai-codex-kb/INDEX.md`.
-- Runtime surfaces: `scripts/sync-contabo-fernando-vps-mirror.ps1` and `scripts/enqueue-contabo-vps-sync-request.ps1`.
+- Active request: fix the parent/controller runtime mismatch that let a formal pipeline block with `blocked-no-agent-runtime` even after the parent successfully used `spawn_agent` and `wait_agent`.
+- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `skills/pipeline/SKILL.md`, `.agents/skills/pipeline/SKILL.md`, `agents/core/pipeline-controller.md`, and the hook enforcement surfaces.
+- Runtime surfaces: `src/adapters/codex-agent-runtime.ts`, `hooks/force-pipeline-agents.cjs`, and `hooks/completion-checklist.cjs`.
 - behavior_cases: 5.
 
 ## What was changed
 
-- `scripts/sync-contabo-fernando-vps-mirror.ps1` now defines one critical-file list for mirror validation.
-- `.gitignore` is included in the critical-file list with the mirror scripts, `hooks/force-pipeline-agents.cjs`, and `.git/HEAD`.
-- Local SHA-256 hashes are computed before archive creation, sent to the remote validator, and compared after extraction on the VPS.
-- Missing or mismatched critical files now fail the mirror instead of only printing remote hashes.
-- `scripts/enqueue-contabo-vps-sync-request.ps1` now states that critical hash parity includes `.gitignore`.
+- The Codex agent runtime adapter now includes a `PARENT_PROTOCOL_RUNTIME` block in spawned agent messages.
+- Pipeline skill instructions now require the same parent runtime block when bootstrapping `pipeline-controller`.
+- The controller contract now states that parent-protocol runtime means the controller should emit protocol blocks instead of reporting local `spawn_agent`/`wait_agent` missing.
+- The force-pipeline hook now tells the parent to include the parent runtime block during canonical controller spawn.
+- The Stop hook now rejects a structured `blocked-no-agent-runtime` artifact that claims `spawn_agent` or `wait_agent` are missing after required-first-actions prove those bootstrap actions completed.
+- Regression tests cover adapter message shape, hook guidance, and the contradictory blocked artifact.
 
 ## What was not changed
 
-- The contents of `.gitignore` were not changed.
-- No `.agents/skills`, `agents/skills`, or manual `dist/**` edit was made.
-- GitHub is still not treated as the source of truth for the VPS; the local checkout remains the source of truth.
+- No fallback path was made valid pipeline execution.
+- No harness/emulation path was promoted to production runtime.
+- No manual fallback is accepted as approval, PASS, or pipeline evidence.
+- No manual edit was made under `dist/**`.
 
 ## Validation completed
 
-- PowerShell syntax parse for both changed scripts: PASS.
-- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sync-contabo-fernando-vps-mirror.ps1`: PASS.
-- Contabo mirror evidence: `.gitignore` local and remote SHA-256 both `2ec011f04e364d6b8af68ddc08960ff690aed67548ee786217886da0bcea62e0`.
-- Contabo mirror evidence: local and remote `HEAD` both `862643181bf50c91ec9e1587fe65121b407eed96`.
-- Contabo mirror evidence: remote origin is `https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git`.
-- Contabo mirror evidence: local and remote item count both `30468`, and file byte sum both `443132880`.
+- Focused adapter test: PASS.
+- Focused force-pipeline hook test: PASS.
+- Focused completion-checklist hook test: PASS.
 - `npm run lint:types`: PASS.
 - `npm run build`: PASS.
-- `npm test`: PASS.
-- `git diff --check`: PASS, with Git CRLF warnings only.
+- `npm test -- --fileParallelism=false --pool=forks`: PASS.
 
 ## Eval result
 
@@ -41,9 +39,10 @@ EVAL RESULT: PASS from `python .agents/skills/workflow-eval-gate/scripts/run_eva
 
 ## Remaining risks
 
-- The post-commit hook creates an NLP request for the VPS mirror; it does not itself run the remote mirror automatically.
+- The parent runtime block is a contract carried in the controller message; the deterministic backstop is the Stop hook contradiction check.
+- A real live Codex Desktop pipeline rerun is still needed after publication/sync to prove the installed cache uses this source state.
 - Git may continue to show CRLF warnings on Windows even when `git diff --check` passes.
 
 ## Next safest step
 
-Refresh telemetry, rerun the Eval Gate, then commit and push the two script changes plus current eval evidence.
+Sync/publish the updated plugin surfaces, then retest the live Profit DLL workflow from the installed cache.

@@ -111,6 +111,8 @@ describe("R7: createCodexAgentRuntimeAdapter", () => {
     expect(call?.agent_type).toBe("worker");
     expect(call?.fork_context).toBe(false);
     expect(call?.message).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:final-validator");
+    expect(call?.message).toContain("PARENT_PROTOCOL_RUNTIME:");
+    expect(call?.message).toContain("dispatch_contract: parent_handles_dispatch_request");
     expect(typeof call?.message).toBe("string");
     expect(result.mode).toBe("single-agent");
     expect((result.output as Record<string, unknown>).status).toBe("approved");

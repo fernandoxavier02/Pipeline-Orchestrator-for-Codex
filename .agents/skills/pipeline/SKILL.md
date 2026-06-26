@@ -83,7 +83,15 @@ $ARGUMENTS
 **Step 2.** Call `spawn_agent` with:
 - `agent_type: "worker"`
 - `fork_context: false`
-- `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, followed by the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
+- `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, immediately followed by:
+  ```yaml
+  PARENT_PROTOCOL_RUNTIME:
+    mode: real-agent
+    spawn_agent: available
+    wait_agent: available
+    dispatch_contract: parent_handles_dispatch_request
+  ```
+  then the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
 **Step 3.** Call `wait_agent` for the returned agent id
 **Step 4.** Parse structured protocol blocks:
 - `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <target_name>\n<prompt>")` for the requested agent

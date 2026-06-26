@@ -174,6 +174,11 @@ export function createCodexAgentRuntimeAdapter(
           fork_context: false,
           message: [
             `PIPELINE_AGENT_FQN: ${fqn}`,
+            "PARENT_PROTOCOL_RUNTIME:",
+            "  mode: real-agent",
+            "  spawn_agent: available",
+            `  wait_agent: ${typeof options.waitAgent === "function" ? "available" : "missing"}`,
+            "  dispatch_contract: parent_handles_dispatch_request",
             serializeRequest(request),
           ].join("\n"),
         });

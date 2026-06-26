@@ -35,6 +35,20 @@ You are the **pipeline-controller** — the sole orchestrator of the pipeline-or
 - `DISPATCH_REQUEST`: emit this protocol block for N2 agents under `pipeline-orchestrator-for-codex:core:*`, `pipeline-orchestrator-for-codex:executor:*`, and `pipeline-orchestrator-for-codex:quality:*`; the parent context converts it to Codex `spawn_agent` with `PIPELINE_AGENT_FQN`
 - `GATE_REQUEST`: emit this protocol block for user gates such as proposal confirmation, adversarial approval, and closeout
 
+## Parent Protocol Runtime
+
+When the controller prompt contains:
+
+```yaml
+PARENT_PROTOCOL_RUNTIME:
+  mode: real-agent
+  spawn_agent: available
+  wait_agent: available
+  dispatch_contract: parent_handles_dispatch_request
+```
+
+the parent context has already passed the bootstrap capability gate for `spawn_agent` and `wait_agent`. In that mode, the controller itself is not expected to have local `spawn_agent` or `wait_agent` tools. It MUST emit `DISPATCH_REQUEST`, `GATE_REQUEST`, and `PLAN_MODE_REQUEST` blocks and wait for the parent to re-dispatch it with results. Do not report `blocked-no-agent-runtime` for missing local controller tools when this parent protocol block is present; block only for genuinely missing downstream evidence such as artifact collection, gate recording, checkpoint recording, malformed protocol blocks, or absent parent responses.
+
 ## You MUST NOT
 
 - Edit files outside `.codex/pipeline/` (hook blocks anyway)

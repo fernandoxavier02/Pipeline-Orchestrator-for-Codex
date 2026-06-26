@@ -1,3 +1,5 @@
+.agents/skills/pipeline/SKILL.md
+agents/core/pipeline-controller.md
 dist/src/cli/pipeline-cli.js
 dist/src/domain/pipeline-schemas.js
 dist/src/sentinel/sentinel-state.js
@@ -6,5 +8,10 @@ evals/outputs/latest_output.md
 evals/telemetry/changed_files.txt
 evals/telemetry/git_diff.patch
 evals/telemetry/latest_trace.json
-scripts/enqueue-contabo-vps-sync-request.ps1
-scripts/sync-contabo-fernando-vps-mirror.ps1
+hooks/completion-checklist.cjs
+hooks/force-pipeline-agents.cjs
+skills/pipeline/SKILL.md
+src/adapters/codex-agent-runtime.ts
+tests/integration/adapter-detection.test.ts
+tests/unit/hooks/completion-checklist.test.ts
+tests/unit/hooks/force-pipeline-agents.test.ts

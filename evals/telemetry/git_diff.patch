@@ -1,394 +1,434 @@
+diff --git a/.agents/skills/pipeline/SKILL.md b/.agents/skills/pipeline/SKILL.md
+index 6277bc3..b47486a 100644
+--- a/.agents/skills/pipeline/SKILL.md
++++ b/.agents/skills/pipeline/SKILL.md
+@@ -83,7 +83,15 @@ $ARGUMENTS
+ **Step 2.** Call `spawn_agent` with:
+ - `agent_type: "worker"`
+ - `fork_context: false`
+-- `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, followed by the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
++- `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, immediately followed by:
++  ```yaml
++  PARENT_PROTOCOL_RUNTIME:
++    mode: real-agent
++    spawn_agent: available
++    wait_agent: available
++    dispatch_contract: parent_handles_dispatch_request
++  ```
++  then the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
+ **Step 3.** Call `wait_agent` for the returned agent id
+ **Step 4.** Parse structured protocol blocks:
+ - `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <target_name>\n<prompt>")` for the requested agent
+diff --git a/agents/core/pipeline-controller.md b/agents/core/pipeline-controller.md
+index 0bca092..d978449 100644
+--- a/agents/core/pipeline-controller.md
++++ b/agents/core/pipeline-controller.md
+@@ -35,6 +35,20 @@ You are the **pipeline-controller** — the sole orchestrator of the pipeline-or
+ - `DISPATCH_REQUEST`: emit this protocol block for N2 agents under `pipeline-orchestrator-for-codex:core:*`, `pipeline-orchestrator-for-codex:executor:*`, and `pipeline-orchestrator-for-codex:quality:*`; the parent context converts it to Codex `spawn_agent` with `PIPELINE_AGENT_FQN`
+ - `GATE_REQUEST`: emit this protocol block for user gates such as proposal confirmation, adversarial approval, and closeout
+
++## Parent Protocol Runtime
++
++When the controller prompt contains:
++
++```yaml
++PARENT_PROTOCOL_RUNTIME:
++  mode: real-agent
++  spawn_agent: available
++  wait_agent: available
++  dispatch_contract: parent_handles_dispatch_request
++```
++
++the parent context has already passed the bootstrap capability gate for `spawn_agent` and `wait_agent`. In that mode, the controller itself is not expected to have local `spawn_agent` or `wait_agent` tools. It MUST emit `DISPATCH_REQUEST`, `GATE_REQUEST`, and `PLAN_MODE_REQUEST` blocks and wait for the parent to re-dispatch it with results. Do not report `blocked-no-agent-runtime` for missing local controller tools when this parent protocol block is present; block only for genuinely missing downstream evidence such as artifact collection, gate recording, checkpoint recording, malformed protocol blocks, or absent parent responses.
++
+ ## You MUST NOT
+
+ - Edit files outside `.codex/pipeline/` (hook blocks anyway)
 diff --git a/evals/outputs/latest_output.md b/evals/outputs/latest_output.md
-index 67547cc..bc07a2f 100644
+index a0a365e..a5336ad 100644
 --- a/evals/outputs/latest_output.md
 +++ b/evals/outputs/latest_output.md
-@@ -3,79 +3,46 @@
+@@ -3,37 +3,35 @@
  ## What was inspected
 
  - Repository: `D:\Pipeline Orchestrator for Codex`.
--- Active request: fix the critical recovery path so pipeline-rule violations do not simply stop or fall back manually; they must identify the problem and redirect to the canonical controller bootstrap.
--- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `.agents/skills/bugfix-heavy/SKILL.md`, `skills/pipeline/SKILL.md`, `commands/pipeline.md`, `references/openai-codex-kb/INDEX.md`, and `evals/README.md`.
--- Runtime surfaces: `hooks/dispatch-guard.cjs`, `hooks/edit-guard-hook.cjs`, `hooks/completion-checklist.cjs`, `hooks/ledger-integrity.cjs`, `hooks/hooks.json`, `hooks/force-pipeline-agents.cjs`, `src/cli/pipeline-cli.ts`, `src/domain/pipeline-schemas.ts`, `src/sentinel/sentinel-state.ts`, and `src/validation/final-validator.ts`.
--- Test/evidence surfaces: `tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts`, `tests/unit/hooks/edit-guard-hook.test.ts`, `tests/unit/hooks/completion-checklist.test.ts`, `tests/unit/sentinel/sentinel-state.test.ts`, `dist/**`, `evals/telemetry/**`.
--- behavior_cases: 5.
-+- Active request: guarantee that `.gitignore` parity is an explicit local-to-Contabo VPS mirror validation criterion.
-+- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `evals/README.md`, `skills/pipeline/SKILL.md`, and `references/openai-codex-kb/INDEX.md`.
-+- Runtime surfaces: `scripts/sync-contabo-fernando-vps-mirror.ps1` and `scripts/enqueue-contabo-vps-sync-request.ps1`.
+-- Active request: guarantee that `.gitignore` parity is an explicit local-to-Contabo VPS mirror validation criterion.
+-- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `evals/README.md`, `skills/pipeline/SKILL.md`, and `references/openai-codex-kb/INDEX.md`.
+-- Runtime surfaces: `scripts/sync-contabo-fernando-vps-mirror.ps1` and `scripts/enqueue-contabo-vps-sync-request.ps1`.
++- Active request: fix the parent/controller runtime mismatch that let a formal pipeline block with `blocked-no-agent-runtime` even after the parent successfully used `spawn_agent` and `wait_agent`.
++- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `skills/pipeline/SKILL.md`, `.agents/skills/pipeline/SKILL.md`, `agents/core/pipeline-controller.md`, and the hook enforcement surfaces.
++- Runtime surfaces: `src/adapters/codex-agent-runtime.ts`, `hooks/force-pipeline-agents.cjs`, and `hooks/completion-checklist.cjs`.
+ - behavior_cases: 5.
 
  ## What was changed
 
--- `hooks/dispatch-guard.cjs` now enforces required first actions while they are pending: generic `spawn_agent`, `Agent`, and `Skill` are denied with recovery guidance; canonical controller `spawn_agent`, `update_plan`, and `wait_agent` are allowed only in the bootstrap sequence.
--- `hooks/dispatch-guard.cjs` records first-action completion only from successful `PostToolUse`, not from `PreToolUse`; missing or non-object `tool_response` is treated as not successful.
--- `hooks/dispatch-guard.cjs` reconciles `WORKFLOW_METHOD_GATE` and `CAPABILITY_GATE` through trusted ledgers, accepts unsigned ledgers only when no HMAC key is configured, rejects tampered HMAC state, rejects symlink ancestors for state writes, and blocks replay by requiring ledger timestamps to be current relative to `required-first-actions.created_at`.
--- `hooks/edit-guard-hook.cjs` blocks Bash, including read-only Bash, while required first actions are pending under an active pipeline session and preserves protected pipeline state files.
--- `hooks/completion-checklist.cjs` treats incomplete or corrupted required first actions as a recovery condition, emits a canonical redirect instead of allowing a quiet stop, and applies the same current-ledger check for required first-action proof.
--- `hooks/ledger-integrity.cjs` exports shared state-object HMAC verification so hook surfaces keep one HMAC policy.
--- `hooks/hooks.json` registers `PostToolUse` for `spawn_agent|wait_agent|update_plan` and `PreToolUse` for `update_plan` and `wait_agent`.
--- `hooks/force-pipeline-agents.cjs`, `src/domain/pipeline-schemas.ts`, `src/sentinel/sentinel-state.ts`, `src/cli/pipeline-cli.ts`, and `src/validation/final-validator.ts` keep `pending-real-agent` as legacy readable sentinel recovery only, not a newly persisted final checkpoint runtime mode.
--- `dist/src/cli/pipeline-cli.js`, `dist/src/domain/pipeline-schemas.js`, `dist/src/sentinel/sentinel-state.js`, and `dist/src/validation/final-validator.js` were regenerated by `npm run build`.
--- Regression tests were added for PreToolUse vs PostToolUse completion, HMAC tamper fail-closed behavior, signed and unsigned gate reconciliation, old ledger replay, wait target binding, Stop-hook recovery, edit/Bash blocking, symlink ancestor rejection, and legacy sentinel compatibility.
--
--## Adversarial review
--
--- BUP/adversarial review was executed in security, architecture, and quality passes.
--- Corrected BLOCKER: first actions were previously completed during PreToolUse before tool execution.
--- Corrected BLOCKER: textual gates could remain pending forever and deadlock the canonical bootstrap.
--- Corrected BLOCKER from the second pass: unsigned ledgers without an HMAC key now release only when no key is configured and the ledgers are current.
--- Corrected MAJOR: ledgers are tied to current run/session identity where available and to `created_at` freshness when identity is weak or reused.
--- Corrected MAJOR: `wait_agent` completion is bound to the bootstrap controller agent id.
--- Corrected MAJOR: state writes reject symlink ancestors and use unique temp files.
--- Final local adversarial review found no remaining BLOCKER or MAJOR issue in the changed surfaces.
-+- `scripts/sync-contabo-fernando-vps-mirror.ps1` now defines one critical-file list for mirror validation.
-+- `.gitignore` is included in the critical-file list with the mirror scripts, `hooks/force-pipeline-agents.cjs`, and `.git/HEAD`.
-+- Local SHA-256 hashes are computed before archive creation, sent to the remote validator, and compared after extraction on the VPS.
-+- Missing or mismatched critical files now fail the mirror instead of only printing remote hashes.
-+- `scripts/enqueue-contabo-vps-sync-request.ps1` now states that critical hash parity includes `.gitignore`.
+-- `scripts/sync-contabo-fernando-vps-mirror.ps1` now defines one critical-file list for mirror validation.
+-- `.gitignore` is included in the critical-file list with the mirror scripts, `hooks/force-pipeline-agents.cjs`, and `.git/HEAD`.
+-- Local SHA-256 hashes are computed before archive creation, sent to the remote validator, and compared after extraction on the VPS.
+-- Missing or mismatched critical files now fail the mirror instead of only printing remote hashes.
+-- `scripts/enqueue-contabo-vps-sync-request.ps1` now states that critical hash parity includes `.gitignore`.
++- The Codex agent runtime adapter now includes a `PARENT_PROTOCOL_RUNTIME` block in spawned agent messages.
++- Pipeline skill instructions now require the same parent runtime block when bootstrapping `pipeline-controller`.
++- The controller contract now states that parent-protocol runtime means the controller should emit protocol blocks instead of reporting local `spawn_agent`/`wait_agent` missing.
++- The force-pipeline hook now tells the parent to include the parent runtime block during canonical controller spawn.
++- The Stop hook now rejects a structured `blocked-no-agent-runtime` artifact that claims `spawn_agent` or `wait_agent` are missing after required-first-actions prove those bootstrap actions completed.
++- Regression tests cover adapter message shape, hook guidance, and the contradictory blocked artifact.
 
  ## What was not changed
 
--- No dependency was added.
--- No prompt-only workaround was used.
--- No direct push to `main` was made.
--- No VPS runtime was changed.
--- No `.git`, `node_modules`, cache internals, logs, or `.stfolder/` files were deleted or normalized.
--- Active Codex UI hook trust was not asserted; `/hooks` still has to be trusted in the UI for local Eval Gate hooks to run automatically.
--
--## Eval result
--
--EVAL RESULT: PASS from `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
-+- The contents of `.gitignore` were not changed.
-+- No `.agents/skills`, `agents/skills`, or manual `dist/**` edit was made.
-+- GitHub is still not treated as the source of truth for the VPS; the local checkout remains the source of truth.
+-- The contents of `.gitignore` were not changed.
+-- No `.agents/skills`, `agents/skills`, or manual `dist/**` edit was made.
+-- GitHub is still not treated as the source of truth for the VPS; the local checkout remains the source of truth.
++- No fallback path was made valid pipeline execution.
++- No harness/emulation path was promoted to production runtime.
++- No manual fallback is accepted as approval, PASS, or pipeline evidence.
++- No manual edit was made under `dist/**`.
 
--Validation completed in the final pass:
-+## Validation completed
+ ## Validation completed
 
-+- PowerShell syntax parse for both changed scripts: PASS.
-+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sync-contabo-fernando-vps-mirror.ps1`: PASS.
-+- Contabo mirror evidence: `.gitignore` local and remote SHA-256 both `2ec011f04e364d6b8af68ddc08960ff690aed67548ee786217886da0bcea62e0`.
-+- Contabo mirror evidence: local and remote `HEAD` both `862643181bf50c91ec9e1587fe65121b407eed96`.
-+- Contabo mirror evidence: remote origin is `https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git`.
-+- Contabo mirror evidence: local and remote item count both `30468`, and file byte sum both `443132880`.
+-- PowerShell syntax parse for both changed scripts: PASS.
+-- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sync-contabo-fernando-vps-mirror.ps1`: PASS.
+-- Contabo mirror evidence: `.gitignore` local and remote SHA-256 both `2ec011f04e364d6b8af68ddc08960ff690aed67548ee786217886da0bcea62e0`.
+-- Contabo mirror evidence: local and remote `HEAD` both `862643181bf50c91ec9e1587fe65121b407eed96`.
+-- Contabo mirror evidence: remote origin is `https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git`.
+-- Contabo mirror evidence: local and remote item count both `30468`, and file byte sum both `443132880`.
++- Focused adapter test: PASS.
++- Focused force-pipeline hook test: PASS.
++- Focused completion-checklist hook test: PASS.
  - `npm run lint:types`: PASS.
  - `npm run build`: PASS.
--- `npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS, 26 tests.
--- `npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS, 185 tests.
--- `npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks`: PASS.
--- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 63 tests.
-+- `npm test`: PASS.
- - `git diff --check`: PASS, with Git CRLF warnings only.
--- Installed-cache smoke: PASS on `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1`.
--- Global plugin smoke: PASS on `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`.
--- Cache parity: PASS, `PARITY_OK files=22 targets=2`.
+-- `npm test`: PASS.
+-- `git diff --check`: PASS, with Git CRLF warnings only.
++- `npm test -- --fileParallelism=false --pool=forks`: PASS.
 
--Smoke coverage completed:
-+## Eval result
+ ## Eval result
 
--- Required-first-actions pending denies generic `spawn_agent`.
--- Controller `spawn_agent` is allowed in `PreToolUse` without completing early.
--- Controller `spawn_agent` completes only after successful `PostToolUse`.
--- Wrong `wait_agent` target does not complete; correct controller target completes.
--- Bash is denied while first actions are pending.
--- Stop hook emits the recovery redirect.
--- HMAC tamper fails closed.
--- Unsigned gate ledgers without an HMAC key release only when current.
-+Pending: `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` must pass after telemetry refresh for this current report.
+@@ -41,9 +39,10 @@ EVAL RESULT: PASS from `python .agents/skills/workflow-eval-gate/scripts/run_eva
 
  ## Remaining risks
 
--- If the live Codex host changes `PostToolUse` response shape, conservative success detection may leave actions pending instead of falsely completing them.
--- UI/runtime adoption still depends on the app loading the refreshed plugin cache and trusting hooks where applicable.
--- `.stfolder/` remains a pre-existing untracked marker and is intentionally excluded from staging.
-+- The post-commit hook creates an NLP request for the VPS mirror; it does not itself run the remote mirror automatically.
-+- Git may continue to show CRLF warnings on Windows even when `git diff --check` passes.
+-- The post-commit hook creates an NLP request for the VPS mirror; it does not itself run the remote mirror automatically.
++- The parent runtime block is a contract carried in the controller message; the deterministic backstop is the Stop hook contradiction check.
++- A real live Codex Desktop pipeline rerun is still needed after publication/sync to prove the installed cache uses this source state.
+ - Git may continue to show CRLF warnings on Windows even when `git diff --check` passes.
 
  ## Next safest step
 
--Open a branch from `main`, commit the validated source/cache evidence changes, push the branch, and open a PR against `main`.
-+Refresh telemetry, rerun the Eval Gate, then commit and push the two script changes plus current eval evidence.
+-Refresh telemetry, rerun the Eval Gate, then commit and push the two script changes plus current eval evidence.
++Sync/publish the updated plugin surfaces, then retest the live Profit DLL workflow from the installed cache.
 diff --git a/evals/telemetry/changed_files.txt b/evals/telemetry/changed_files.txt
-index a96057b..915c95d 100644
+index 8c429d8..56cd2e1 100644
 --- a/evals/telemetry/changed_files.txt
 +++ b/evals/telemetry/changed_files.txt
-@@ -1,22 +1,3 @@
--dist/src/cli/pipeline-cli.js
--dist/src/domain/pipeline-schemas.js
--dist/src/sentinel/sentinel-state.js
--dist/src/validation/final-validator.js
--evals/outputs/latest_output.md
+@@ -1,3 +1,5 @@
++.agents/skills/pipeline/SKILL.md
++agents/core/pipeline-controller.md
+ dist/src/cli/pipeline-cli.js
+ dist/src/domain/pipeline-schemas.js
+ dist/src/sentinel/sentinel-state.js
+@@ -6,5 +8,10 @@ evals/outputs/latest_output.md
  evals/telemetry/changed_files.txt
  evals/telemetry/git_diff.patch
  evals/telemetry/latest_trace.json
--hooks/completion-checklist.cjs
--hooks/dispatch-guard.cjs
--hooks/edit-guard-hook.cjs
--hooks/force-pipeline-agents.cjs
--hooks/hooks.json
--hooks/ledger-integrity.cjs
--src/cli/pipeline-cli.ts
--src/domain/pipeline-schemas.ts
--src/sentinel/sentinel-state.ts
--src/validation/final-validator.ts
--tests/unit/hooks/completion-checklist.test.ts
--tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts
--tests/unit/hooks/edit-guard-hook.test.ts
--tests/unit/sentinel/sentinel-state.test.ts
+-scripts/enqueue-contabo-vps-sync-request.ps1
+-scripts/sync-contabo-fernando-vps-mirror.ps1
++hooks/completion-checklist.cjs
++hooks/force-pipeline-agents.cjs
++skills/pipeline/SKILL.md
++src/adapters/codex-agent-runtime.ts
++tests/integration/adapter-detection.test.ts
++tests/unit/hooks/completion-checklist.test.ts
++tests/unit/hooks/force-pipeline-agents.test.ts
 diff --git a/evals/telemetry/latest_trace.json b/evals/telemetry/latest_trace.json
-index f7bc7ca..4a1f166 100644
+index 4142634..33bd399 100644
 --- a/evals/telemetry/latest_trace.json
 +++ b/evals/telemetry/latest_trace.json
-@@ -1,34 +1,15 @@
+@@ -1,6 +1,8 @@
  {
    "added_unrequested_features": false,
    "changed_files": [
--    "dist/src/cli/pipeline-cli.js",
--    "dist/src/domain/pipeline-schemas.js",
--    "dist/src/sentinel/sentinel-state.js",
--    "dist/src/validation/final-validator.js",
--    "evals/outputs/latest_output.md",
++    ".agents/skills/pipeline/SKILL.md",
++    "agents/core/pipeline-controller.md",
+     "dist/src/cli/pipeline-cli.js",
+     "dist/src/domain/pipeline-schemas.js",
+     "dist/src/sentinel/sentinel-state.js",
+@@ -9,15 +11,20 @@
      "evals/telemetry/changed_files.txt",
      "evals/telemetry/git_diff.patch",
--    "evals/telemetry/latest_trace.json",
--    "hooks/completion-checklist.cjs",
--    "hooks/dispatch-guard.cjs",
--    "hooks/edit-guard-hook.cjs",
--    "hooks/force-pipeline-agents.cjs",
--    "hooks/hooks.json",
--    "hooks/ledger-integrity.cjs",
--    "src/cli/pipeline-cli.ts",
--    "src/domain/pipeline-schemas.ts",
--    "src/sentinel/sentinel-state.ts",
--    "src/validation/final-validator.ts",
--    "tests/unit/hooks/completion-checklist.test.ts",
--    "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
--    "tests/unit/hooks/edit-guard-hook.test.ts",
--    "tests/unit/sentinel/sentinel-state.test.ts"
-+    "evals/telemetry/latest_trace.json"
+     "evals/telemetry/latest_trace.json",
+-    "scripts/enqueue-contabo-vps-sync-request.ps1",
+-    "scripts/sync-contabo-fernando-vps-mirror.ps1"
++    "hooks/completion-checklist.cjs",
++    "hooks/force-pipeline-agents.cjs",
++    "skills/pipeline/SKILL.md",
++    "src/adapters/codex-agent-runtime.ts",
++    "tests/integration/adapter-detection.test.ts",
++    "tests/unit/hooks/completion-checklist.test.ts",
++    "tests/unit/hooks/force-pipeline-agents.test.ts"
    ],
    "eval_result": "PASS",
    "execution_event": "PostToolUse",
    "execution_identity": {
      "hook_event": "PostToolUse",
--    "session_id": "019eec66-5ccf-7530-9aa6-e51872843c4b",
-+    "session_id": "019ef197-99f2-7820-8b59-e5d9b936ce49",
-     "tool_name": "Bash"
+-    "session_id": null,
+-    "tool_name": null
++    "session_id": "019f0162-d4d0-77c1-8259-c95b74e9bff2",
++    "tool_name": "Bash"
    },
    "execution_observed": true,
-@@ -37,12 +18,12 @@
-   "last_hook_event": "PostToolUse",
-   "plugin_execution": {
-     "observed": true,
--    "status": "smoke-pass",
-     "pipeline_agent_fqn": "pipeline-orchestrator-for-codex:core:pipeline-controller",
-     "real_agent_runtime": {
-       "spawn_agent_observed": true,
-       "wait_agent_observed": true
--    }
-+    },
-+    "status": "smoke-pass"
-   },
-   "scope_respected": true,
-   "scope_review": {
-@@ -103,42 +84,23 @@
+   "git_diff_captured": true,
+@@ -90,14 +97,18 @@
+       "package.json": "Version update required by the requested 0.5.1 release, npm pack, and global cache mirroring.",
+       "references/gates.md": "Required registry documentation parity for PLAN_GATE_ACTIVE after the typed gate registry and controller prompt exposed the gate."
      },
-     "unexpected_files": []
+-    "unexpected_files": []
++    "unexpected_files": [
++      ".agents/skills/pipeline/SKILL.md"
++    ]
    },
--  "timestamp": "2026-06-22T02:10:03.383306+00:00",
-+  "timestamp": "2026-06-22T23:11:31.295821+00:00",
+-  "timestamp": "2026-06-22T23:24:30.972903+00:00",
++  "timestamp": "2026-06-26T02:49:38.981654+00:00",
    "untracked_files_included": [],
    "untracked_files_omitted_from_diff": [],
    "validated_target": {
--    "base_commit": "51b34b041e2be9731f0f867fb832e88111661321",
-+    "base_commit": "862643181bf50c91ec9e1587fe65121b407eed96",
+-    "base_commit": "862643181bf50c91ec9e1587fe65121b407eed96",
++    "base_commit": "09046a4c4c051f9f82cdb2a33b89e37f2d1d0854",
      "changed_files": [
--      "dist/src/cli/pipeline-cli.js",
--      "dist/src/domain/pipeline-schemas.js",
--      "dist/src/sentinel/sentinel-state.js",
--      "dist/src/validation/final-validator.js",
--      "evals/outputs/latest_output.md",
++      ".agents/skills/pipeline/SKILL.md",
++      "agents/core/pipeline-controller.md",
+       "dist/src/cli/pipeline-cli.js",
+       "dist/src/domain/pipeline-schemas.js",
+       "dist/src/sentinel/sentinel-state.js",
+@@ -106,8 +117,13 @@
        "evals/telemetry/changed_files.txt",
        "evals/telemetry/git_diff.patch",
--      "evals/telemetry/latest_trace.json",
--      "hooks/completion-checklist.cjs",
--      "hooks/dispatch-guard.cjs",
--      "hooks/edit-guard-hook.cjs",
--      "hooks/force-pipeline-agents.cjs",
--      "hooks/hooks.json",
--      "hooks/ledger-integrity.cjs",
--      "src/cli/pipeline-cli.ts",
--      "src/domain/pipeline-schemas.ts",
--      "src/sentinel/sentinel-state.ts",
--      "src/validation/final-validator.ts",
--      "tests/unit/hooks/completion-checklist.test.ts",
--      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
--      "tests/unit/hooks/edit-guard-hook.test.ts",
--      "tests/unit/sentinel/sentinel-state.test.ts"
-+      "evals/telemetry/latest_trace.json"
+       "evals/telemetry/latest_trace.json",
+-      "scripts/enqueue-contabo-vps-sync-request.ps1",
+-      "scripts/sync-contabo-fernando-vps-mirror.ps1"
++      "hooks/completion-checklist.cjs",
++      "hooks/force-pipeline-agents.cjs",
++      "skills/pipeline/SKILL.md",
++      "src/adapters/codex-agent-runtime.ts",
++      "tests/integration/adapter-detection.test.ts",
++      "tests/unit/hooks/completion-checklist.test.ts",
++      "tests/unit/hooks/force-pipeline-agents.test.ts"
      ],
      "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
      "ref": "HEAD+working-tree"
-   },
-   "validation_evidence": {
-     "commands": {
--      "npm run lint:types": {
--        "command": "npm run lint:types",
-+      "git diff --check": {
-+        "command": "git diff --check",
-         "observed_at": "2026-06-22T02:10:03Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-@@ -149,32 +111,32 @@
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-       },
--      "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
--        "command": "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
-+      "npm run lint:types": {
-+        "command": "npm run lint:types",
-         "observed_at": "2026-06-22T02:10:03Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-       },
--      "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
--        "command": "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
-+      "npm test": {
-+        "command": "npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks",
-         "observed_at": "2026-06-22T02:10:03Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-       },
--      "npm test": {
--        "command": "npm test -- --testTimeout 60000 --fileParallelism=false --pool=forks",
-+      "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
-+        "command": "npx vitest run tests/integration/execution/controller-routing.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
-         "observed_at": "2026-06-22T02:10:03Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-       },
--      "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
--        "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
-+      "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks": {
-+        "command": "npx vitest run tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts tests/unit/hooks/edit-guard-hook.test.ts tests/unit/hooks/completion-checklist.test.ts tests/unit/sentinel/sentinel-state.test.ts --testTimeout 60000 --fileParallelism=false --pool=forks",
-         "observed_at": "2026-06-22T02:10:03Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-       },
--      "git diff --check": {
--        "command": "git diff --check",
-+      "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
-+        "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
-         "observed_at": "2026-06-22T02:10:03Z",
-         "status": "PASS",
-         "target": "HEAD+working-tree"
-diff --git a/scripts/enqueue-contabo-vps-sync-request.ps1 b/scripts/enqueue-contabo-vps-sync-request.ps1
-index 6c37e81..c15725f 100644
---- a/scripts/enqueue-contabo-vps-sync-request.ps1
-+++ b/scripts/enqueue-contabo-vps-sync-request.ps1
-@@ -49,7 +49,7 @@ Acao esperada do Codex:
- 1. Executar scripts/sync-contabo-fernando-vps-mirror.ps1 a partir da raiz local.
- 2. Espelhar o diretorio local completo para o destino remoto, incluindo .git e artefatos locais.
- 3. Garantir que o Git na VPS aponte para o mesmo origin do projeto local.
--4. Conferir paridade local x VPS por HEAD, contagem de itens, soma de bytes e hashes criticos.
-+4. Conferir paridade local x VPS por HEAD, contagem de itens, soma de bytes e hashes criticos, incluindo .gitignore.
- 5. Lembrar que GitHub nao e fonte de verdade para a VPS; o local e a fonte de verdade.
+diff --git a/hooks/completion-checklist.cjs b/hooks/completion-checklist.cjs
+index 42aee78..93619ae 100755
+--- a/hooks/completion-checklist.cjs
++++ b/hooks/completion-checklist.cjs
+@@ -76,6 +76,11 @@ const REQUIRED_BATCH_LOOP_STEPS = [
+   'adversarial_review',
+   'fix_loop',
+ ];
++const CONTROLLER_FQN = 'pipeline-orchestrator-for-codex:core:pipeline-controller';
++const FOUNDATIONAL_BOOTSTRAP_CAPABILITY_ACTIONS = {
++  spawn_agent: `spawn:${CONTROLLER_FQN}`,
++  wait_agent: 'wait_agent',
++};
 
- Criado em UTC:
-diff --git a/scripts/sync-contabo-fernando-vps-mirror.ps1 b/scripts/sync-contabo-fernando-vps-mirror.ps1
-index 31ef4a4..ab75ed8 100644
---- a/scripts/sync-contabo-fernando-vps-mirror.ps1
-+++ b/scripts/sync-contabo-fernando-vps-mirror.ps1
-@@ -53,6 +53,20 @@ function Sum-LocalFileBytes($path) {
-   return [Int64]$sum
+ const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
+
+@@ -1060,6 +1065,37 @@ function validateRequiredFirstActions(stateDir, ledgers, identityContext) {
+   return missing;
  }
 
-+function Get-CriticalFileHashes($root, [string[]]$relativePaths) {
-+  return @($relativePaths | ForEach-Object {
-+    $relativePath = $_
-+    $fullPath = Join-Path $root $relativePath
-+    if (!(Test-Path -LiteralPath $fullPath -PathType Leaf)) {
-+      Fail "Critical mirror file is missing: $relativePath"
-+    }
-+    [PSCustomObject]@{
-+      path = $relativePath
-+      sha256 = Get-Sha256 $fullPath
-+    }
-+  })
++function requiredFirstActionWasCompleted(stateDir, ledgers, action, identityContext) {
++  const required = readActiveRequiredFirstActions(stateDir);
++  if (!required) return false;
++  const completedActions = new Set(
++    Array.isArray(required.completed_actions)
++      ? required.completed_actions.filter((entry) => typeof entry === 'string')
++      : [],
++  );
++  return completedActions.has(action)
++    || ledgerRequiredActionCompleted(action, ledgers, identityContext, required);
 +}
 +
- $projectRootFull = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ProjectRoot).Path)
- if (!(Test-Path -LiteralPath (Join-Path $projectRootFull ".git") -PathType Container)) {
-   Fail "Project root is not a Git checkout: $projectRootFull"
-@@ -65,12 +79,24 @@ $head = (Run-Git $projectRootFull @("rev-parse", "HEAD")).Trim()
- $origin = (Run-Git $projectRootFull @("remote", "get-url", "origin")).Trim()
- $localItems = Count-LocalItems $projectRootFull
- $localBytes = Sum-LocalFileBytes $projectRootFull
-+$criticalPaths = @(
-+  ".gitignore",
-+  "scripts/sync-contabo-fernando-vps-mirror.ps1",
-+  "scripts/enqueue-contabo-vps-sync-request.ps1",
-+  "hooks/force-pipeline-agents.cjs",
-+  ".git/HEAD"
-+)
-+$criticalHashes = Get-CriticalFileHashes $projectRootFull $criticalPaths
-+$criticalHashesJson = @($criticalHashes) | ConvertTo-Json -Compress
-
- $timestamp = Get-Date -Format "yyyyMMddHHmmss"
- $archive = Join-Path $env:TEMP "pipeline-orchestrator-contabo-mirror-$timestamp.tar.gz"
- $remoteArchive = "/tmp/pipeline-orchestrator-contabo-mirror-$timestamp.tar.gz"
-
- Write-Host "Creating full local mirror archive from $projectRootFull"
-+$criticalHashes | ForEach-Object {
-+  Write-Host "LOCAL_SHA256 $($_.path) $($_.sha256)"
++function validateBlockedRuntimeCapabilityContradictions(artifact, stateDir, ledgers, identityContext) {
++  if (!isStructuredBlockedPipelineArtifact(artifact)) return [];
++  const missingCapabilities = Array.isArray(artifact.missing_capabilities)
++    ? artifact.missing_capabilities
++    : [];
++  const contradictions = [];
++
++  for (const [capability, action] of Object.entries(FOUNDATIONAL_BOOTSTRAP_CAPABILITY_ACTIONS)) {
++    if (
++      missingCapabilities.includes(capability)
++      && requiredFirstActionWasCompleted(stateDir, ledgers, action, identityContext)
++    ) {
++      contradictions.push(`missing_capability_contradicts_bootstrap:${capability}`);
++    }
++  }
++
++  return contradictions;
 +}
- if (Test-Path -LiteralPath $archive) {
-   Remove-Item -LiteralPath $archive -Force
- }
-@@ -104,6 +130,7 @@ dest = "$RemotePath"
- expected_dest = "/home/fernando/projetos/pipeline-orchestrator-codex"
- origin = "$origin"
- expected_head = "$head"
-+critical_hashes = $criticalHashesJson
++
+ function requiredFirstActionsIncomplete(stateDir) {
+   const raw = readJsonIfExists(path.join(stateDir, REQUIRED_FIRST_ACTIONS_FILE));
+   if (raw?.corrupted) return true;
+@@ -1283,9 +1319,22 @@ function evaluateStopEnforcement(payload, rawInput) {
+         missing: obligationIntegrityIssues,
+       };
+     }
++    const identityContext = activeRunIdentityContext(stateDir);
++    const blockedCapabilityContradictions = validateBlockedRuntimeCapabilityContradictions(
++      artifact,
++      stateDir,
++      ledgers,
++      identityContext,
++    );
++    if (blockedCapabilityContradictions.length > 0) {
++      return {
++        ok: false,
++        missing: blockedCapabilityContradictions,
++      };
++    }
+     const blockedObligationIssues = [
+       ...missingObligationIssues,
+-      ...validateRequiredFirstActions(stateDir, ledgers, activeRunIdentityContext(stateDir)),
++      ...validateRequiredFirstActions(stateDir, ledgers, identityContext),
+     ];
+     if (blockedObligationIssues.length > 0) {
+       return {
+diff --git a/hooks/force-pipeline-agents.cjs b/hooks/force-pipeline-agents.cjs
+index bec53e2..f2efc1e 100755
+--- a/hooks/force-pipeline-agents.cjs
++++ b/hooks/force-pipeline-agents.cjs
+@@ -272,7 +272,12 @@ Você DEVE iniciar o workflow governado por uma destas duas formas equivalentes:
+    - agent_type="worker"
+    - fork_context=false
+    - message iniciando com:
+-     PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller
++      PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller
++      PARENT_PROTOCOL_RUNTIME:
++        mode: real-agent
++        spawn_agent: available
++        wait_agent: available
++        dispatch_contract: parent_handles_dispatch_request
+ 3. Chamar wait_agent para obter o resultado do controller antes de processar qualquer bloco.
+ 4. Re-dispatchar por spawn_agent com o estado de protocolo persistido quando precisar continuar o controller.
 
- if os.path.abspath(dest) != expected_dest:
-     raise SystemExit(f"unsafe destination: {dest}")
-@@ -146,12 +173,6 @@ if head != expected_head:
+@@ -307,6 +312,13 @@ YOUR FIRST ACTION must be:
+ 3. Find the agents directory using PLUGIN_ROOT/agents/ (CODEX_PLUGIN_ROOT and CLAUDE_PLUGIN_ROOT are compatibility fallbacks only)
+ 4. Read agents/core/pipeline-controller.md
+ 5. Call spawn_agent(agent_type="worker", fork_context=false, message=<content of that file + user's task>, starting with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller)
++   The message MUST include this parent capability block immediately after the FQN:
++   PARENT_PROTOCOL_RUNTIME:
++     mode: real-agent
++     spawn_agent: available
++     wait_agent: available
++     dispatch_contract: parent_handles_dispatch_request
++   This block means the controller itself should emit DISPATCH_REQUEST/GATE_REQUEST blocks for parent handling; it must not report spawn_agent/wait_agent as missing merely because those tools are unavailable inside the isolated controller.
+ 6. Call wait_agent for the returned agent id
+ 7. Process every GATE_REQUEST, DISPATCH_REQUEST, and PLAN_MODE_REQUEST block before advancing
+ 8. Re-dispatch with spawn_agent(agent_type="worker", fork_context=false, ...) and persisted protocol state when continuation is required
+diff --git a/skills/pipeline/SKILL.md b/skills/pipeline/SKILL.md
+index 547ee76..abb5e12 100644
+--- a/skills/pipeline/SKILL.md
++++ b/skills/pipeline/SKILL.md
+@@ -88,7 +88,15 @@ The public skill dispatches the controller only after the visible plan and workf
+ **Step 2.** Call `spawn_agent` with:
+ - `agent_type: "worker"`
+ - `fork_context: false`
+-- `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, followed by the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
++- `message`: a first line `PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller`, immediately followed by:
++  ```yaml
++  PARENT_PROTOCOL_RUNTIME:
++    mode: real-agent
++    spawn_agent: available
++    wait_agent: available
++    dispatch_contract: parent_handles_dispatch_request
++  ```
++  then the full content of `agents/core/pipeline-controller.md` plus the user's task in a `<context>` block
+ **Step 3.** Call `wait_agent` for the returned agent id
+ **Step 4.** Parse structured protocol blocks:
+ - `=== DISPATCH_REQUEST v1 ===` → call `spawn_agent(agent_type: "worker", fork_context: false, message: "PIPELINE_AGENT_FQN: <target_name>\n<prompt>")` for the requested agent
+diff --git a/src/adapters/codex-agent-runtime.ts b/src/adapters/codex-agent-runtime.ts
+index 7ad2632..ae1b2f4 100644
+--- a/src/adapters/codex-agent-runtime.ts
++++ b/src/adapters/codex-agent-runtime.ts
+@@ -174,6 +174,11 @@ export function createCodexAgentRuntimeAdapter(
+           fork_context: false,
+           message: [
+             `PIPELINE_AGENT_FQN: ${fqn}`,
++            "PARENT_PROTOCOL_RUNTIME:",
++            "  mode: real-agent",
++            "  spawn_agent: available",
++            `  wait_agent: ${typeof options.waitAgent === "function" ? "available" : "missing"}`,
++            "  dispatch_contract: parent_handles_dispatch_request",
+             serializeRequest(request),
+           ].join("\n"),
+         });
+diff --git a/tests/integration/adapter-detection.test.ts b/tests/integration/adapter-detection.test.ts
+index 92f2084..61edd1e 100644
+--- a/tests/integration/adapter-detection.test.ts
++++ b/tests/integration/adapter-detection.test.ts
+@@ -111,6 +111,8 @@ describe("R7: createCodexAgentRuntimeAdapter", () => {
+     expect(call?.agent_type).toBe("worker");
+     expect(call?.fork_context).toBe(false);
+     expect(call?.message).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:final-validator");
++    expect(call?.message).toContain("PARENT_PROTOCOL_RUNTIME:");
++    expect(call?.message).toContain("dispatch_contract: parent_handles_dispatch_request");
+     expect(typeof call?.message).toBe("string");
+     expect(result.mode).toBe("single-agent");
+     expect((result.output as Record<string, unknown>).status).toBe("approved");
+diff --git a/tests/unit/hooks/completion-checklist.test.ts b/tests/unit/hooks/completion-checklist.test.ts
+index 9cbf49b..7025264 100644
+--- a/tests/unit/hooks/completion-checklist.test.ts
++++ b/tests/unit/hooks/completion-checklist.test.ts
+@@ -1554,6 +1554,39 @@ describe("completion-checklist Stop enforcement", () => {
+     expect(output.additionalContext).toContain("Artefato final estruturado");
+   });
 
- item_count = 0
- file_bytes = 0
--critical = [
--    "scripts/sync-contabo-fernando-vps-mirror.ps1",
--    "scripts/enqueue-contabo-vps-sync-request.ps1",
--    "hooks/force-pipeline-agents.cjs",
--    ".git/HEAD",
--]
- for root, dirs, files in os.walk(dest):
-     item_count += len(dirs) + len(files)
-     for name in files:
-@@ -161,14 +182,20 @@ print(f"REMOTE_HEAD={head}")
- print(f"REMOTE_ITEMS={item_count}")
- print(f"REMOTE_FILE_BYTES={file_bytes}")
- print("REMOTE_ORIGIN=" + subprocess.check_output(["git", "-C", dest, "remote", "get-url", "origin"], text=True).strip())
--for rel in critical:
-+for critical_file in critical_hashes:
-+    rel = critical_file["path"]
-+    expected = critical_file["sha256"]
-     path = os.path.join(dest, rel)
--    if os.path.isfile(path):
--        h = hashlib.sha256()
--        with open(path, "rb") as f:
--            for chunk in iter(lambda: f.read(1024 * 1024), b""):
--                h.update(chunk)
--        print(f"REMOTE_SHA256 {rel} {h.hexdigest()}")
-+    if not os.path.isfile(path):
-+        raise SystemExit(f"critical file missing after mirror: {rel}")
-+    h = hashlib.sha256()
-+    with open(path, "rb") as f:
-+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-+            h.update(chunk)
-+    actual = h.hexdigest()
-+    if actual != expected:
-+        raise SystemExit(f"critical hash mismatch for {rel}: {actual} != {expected}")
-+    print(f"REMOTE_SHA256 {rel} {actual}")
- "@
-
- $remoteOutput = $remoteScript | ssh $RemoteAlias "python3 -"
++  it("TDD: blocks blocked-no-agent-runtime that claims spawn/wait missing after bootstrap proved them", () => {
++    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-bootstrap-contradiction-"));
++    writeActiveSentinel(cwd);
++    writeActiveWorkflowObligations(cwd, {
++      requiredActions: [
++        "update_plan",
++        "WORKFLOW_METHOD_GATE",
++        "CAPABILITY_GATE",
++        "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
++        "wait_agent",
++      ],
++      completedActions: [
++        "update_plan",
++        "WORKFLOW_METHOD_GATE",
++        "CAPABILITY_GATE",
++        "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
++        "wait_agent",
++      ],
++    });
++
++    const output = runHook(cwd, {
++      cwd,
++      output: {
++        text: "PIPELINE COMPLETE blocked-no-agent-runtime",
++        pipelineGovernanceArtifact: blockedNoAgentRuntimeArtifact(REQUIRED_PIPELINE_CAPABILITIES),
++      },
++    });
++
++    expect(output.continue).toBe(false);
++    expect(output.stopReason).toContain("missing_capability_contradicts_bootstrap:spawn_agent");
++    expect(output.stopReason).toContain("missing_capability_contradicts_bootstrap:wait_agent");
++  });
++
+   it("RED: accepts structured BLOCKED artifact when real-agent runtime lacks artifact collection", () => {
+     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-blocked-artifact-collection-"));
+     writeActiveSentinel(cwd);
+diff --git a/tests/unit/hooks/force-pipeline-agents.test.ts b/tests/unit/hooks/force-pipeline-agents.test.ts
+index 523dc16..598b69f 100644
+--- a/tests/unit/hooks/force-pipeline-agents.test.ts
++++ b/tests/unit/hooks/force-pipeline-agents.test.ts
+@@ -366,6 +366,8 @@ describe("force pipeline agents hook", () => {
+     expect(output.systemMessage).toContain("WORKFLOW_METHOD_GATE");
+     expect(output.systemMessage).toContain("agents/core/pipeline-controller.md");
+     expect(output.systemMessage).toContain("PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller");
++    expect(output.systemMessage).toContain("PARENT_PROTOCOL_RUNTIME");
++    expect(output.systemMessage).toContain("parent_handles_dispatch_request");
+     expect(output.systemMessage).toContain("blocked-no-agent-runtime");
+     expect(output.systemMessage).not.toContain("send_input");
+     expect(output.systemMessage).not.toContain("agents/core/task-orchestrator.md");

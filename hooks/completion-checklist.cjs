@@ -76,6 +76,11 @@ const REQUIRED_BATCH_LOOP_STEPS = [
   'adversarial_review',
   'fix_loop',
 ];
+const CONTROLLER_FQN = 'pipeline-orchestrator-for-codex:core:pipeline-controller';
+const FOUNDATIONAL_BOOTSTRAP_CAPABILITY_ACTIONS = {
+  spawn_agent: `spawn:${CONTROLLER_FQN}`,
+  wait_agent: 'wait_agent',
+};
 
 const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
 
@@ -1060,6 +1065,37 @@ function validateRequiredFirstActions(stateDir, ledgers, identityContext) {
   return missing;
 }
 
+function requiredFirstActionWasCompleted(stateDir, ledgers, action, identityContext) {
+  const required = readActiveRequiredFirstActions(stateDir);
+  if (!required) return false;
+  const completedActions = new Set(
+    Array.isArray(required.completed_actions)
+      ? required.completed_actions.filter((entry) => typeof entry === 'string')
+      : [],
+  );
+  return completedActions.has(action)
+    || ledgerRequiredActionCompleted(action, ledgers, identityContext, required);
+}
+
+function validateBlockedRuntimeCapabilityContradictions(artifact, stateDir, ledgers, identityContext) {
+  if (!isStructuredBlockedPipelineArtifact(artifact)) return [];
+  const missingCapabilities = Array.isArray(artifact.missing_capabilities)
+    ? artifact.missing_capabilities
+    : [];
+  const contradictions = [];
+
+  for (const [capability, action] of Object.entries(FOUNDATIONAL_BOOTSTRAP_CAPABILITY_ACTIONS)) {
+    if (
+      missingCapabilities.includes(capability)
+      && requiredFirstActionWasCompleted(stateDir, ledgers, action, identityContext)
+    ) {
+      contradictions.push(`missing_capability_contradicts_bootstrap:${capability}`);
+    }
+  }
+
+  return contradictions;
+}
+
 function requiredFirstActionsIncomplete(stateDir) {
   const raw = readJsonIfExists(path.join(stateDir, REQUIRED_FIRST_ACTIONS_FILE));
   if (raw?.corrupted) return true;
@@ -1283,9 +1319,22 @@ function evaluateStopEnforcement(payload, rawInput) {
         missing: obligationIntegrityIssues,
       };
     }
+    const identityContext = activeRunIdentityContext(stateDir);
+    const blockedCapabilityContradictions = validateBlockedRuntimeCapabilityContradictions(
+      artifact,
+      stateDir,
+      ledgers,
+      identityContext,
+    );
+    if (blockedCapabilityContradictions.length > 0) {
+      return {
+        ok: false,
+        missing: blockedCapabilityContradictions,
+      };
+    }
     const blockedObligationIssues = [
       ...missingObligationIssues,
-      ...validateRequiredFirstActions(stateDir, ledgers, activeRunIdentityContext(stateDir)),
+      ...validateRequiredFirstActions(stateDir, ledgers, identityContext),
     ];
     if (blockedObligationIssues.length > 0) {
       return {
