@@ -1,7 +1,6 @@
-.agents/skills/pipeline/SKILL.md
-agents/core/pipeline-controller.md
 dist/src/cli/pipeline-cli.js
 dist/src/domain/pipeline-schemas.js
+dist/src/hooks/pipeline-harness.js
 dist/src/sentinel/sentinel-state.js
 dist/src/validation/final-validator.js
 evals/outputs/latest_output.md
@@ -9,9 +8,13 @@ evals/telemetry/changed_files.txt
 evals/telemetry/git_diff.patch
 evals/telemetry/latest_trace.json
 hooks/completion-checklist.cjs
+hooks/dispatch-guard.cjs
 hooks/force-pipeline-agents.cjs
-skills/pipeline/SKILL.md
-src/adapters/codex-agent-runtime.ts
-tests/integration/adapter-detection.test.ts
+hooks/hook-events.cjs
+hooks/session-cleanup-hook.cjs
+src/hooks/pipeline-harness.ts
 tests/unit/hooks/completion-checklist.test.ts
+tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts
 tests/unit/hooks/force-pipeline-agents.test.ts
+tests/unit/hooks/pipeline-harness.test.ts
+tests/unit/hooks/session-cleanup-hook.test.ts

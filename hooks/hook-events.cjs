@@ -140,6 +140,7 @@ function recordHookEvent(event) {
       decision: clampDetail(event.decision),
       attempted: clampDetail(event.attempted ?? ''),
       expected: clampDetail(event.expected ?? ''),
+      ...(event.harness_runtime ? { harness_runtime: clampDetail(event.harness_runtime) } : {}),
       timestamp,
       cwd: process.cwd(),
       reason: clampDetail(event.reason ?? ''),

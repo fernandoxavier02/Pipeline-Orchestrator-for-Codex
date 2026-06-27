@@ -60,6 +60,10 @@ const GOVERNED_WORKFLOW_PATTERN = new RegExp(
     .join('|')})(?=$|[\\s,.;:!?])`,
   'i',
 );
+const EXPLICIT_PLUGIN_WORKFLOW_TOKENS = new Set([
+  'brainstorm',
+  ...GOVERNED_SKILLS.filter((workflow) => workflow.includes('-')),
+]);
 
 // Padrões de IMPLEMENTAÇÃO - OBRIGATÓRIO usar workflow governado
 const IMPLEMENTATION_PATTERNS = [
@@ -160,13 +164,17 @@ function matchesAnyPromptPattern(prompt, patterns) {
 }
 
 function detectPluginFrontDoorMention(prompt) {
+  if (/\]\((?:plugin|app):\/\/pipeline-orchestrator-for-codex[A-Za-z0-9_-][^)]*\)/i.test(prompt)) {
+    return undefined;
+  }
+
   const canonicalUri = 'pipeline-orchestrator-for-codex(?=[)@/?#])[^)]*';
   const mentionBoundary = '(?=$|[\\s,.;:!?])';
   const patterns = [
     new RegExp(`\\[(?:[@$])?pipeline-orchestrator-for-codex\\]\\((?:plugin|app):\\/\\/${canonicalUri}\\)(?<tail>[\\s\\S]*)`, 'i'),
     new RegExp(`\\[(?:[@$])?pipeline orchestrator for codex\\]\\((?:plugin|app):\\/\\/${canonicalUri}\\)(?<tail>[\\s\\S]*)`, 'i'),
-    new RegExp(`[@$]pipeline-orchestrator-for-codex${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
-    new RegExp(`[@$]pipeline orchestrator for codex${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
+    new RegExp(`(?:^|\\s)[@$]pipeline-orchestrator-for-codex${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
+    new RegExp(`(?:^|\\s)[@$]pipeline orchestrator for codex${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
     new RegExp(`#plugin\\s+pipeline-orchestrator-for-codex${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
     new RegExp(`#plugin\\s+pipeline\\s+orchestrator(?:\\s+for\\s+codex)?${mentionBoundary}(?<tail>[\\s\\S]*)`, 'i'),
   ];
@@ -183,7 +191,7 @@ function detectExplicitWorkflow(prompt) {
   const trimmed = (prompt || '').trim();
   if (!trimmed) return undefined;
 
-  const slashMatch = trimmed.match(/^\/pipeline-orchestrator(?:-for-codex)?:(?<workflow>[a-z0-9-]+)\b/i);
+  const slashMatch = trimmed.match(/(?:^|\s)\/pipeline-orchestrator(?:-for-codex)?:(?<workflow>[a-z0-9-]+)\b/i);
   if (slashMatch?.groups?.workflow) {
     const workflow = normalizeWorkflowName(slashMatch.groups.workflow);
     if (workflow) {
@@ -195,10 +203,10 @@ function detectExplicitWorkflow(prompt) {
 
   const tail = pluginMention?.groups?.tail;
   if (tail) {
-    const workflowMatch = tail.match(GOVERNED_WORKFLOW_PATTERN);
-    if (workflowMatch?.[1]) {
-      const workflow = normalizeWorkflowName(workflowMatch[1].trim());
-      if (workflow) {
+    const workflowMatch = tail.trimStart().match(/^(?<workflow>[a-z0-9-]+)(?=$|[\s,.;:!?])/i);
+    if (workflowMatch?.groups?.workflow) {
+      const workflow = normalizeWorkflowName(workflowMatch.groups.workflow.trim());
+      if (workflow && EXPLICIT_PLUGIN_WORKFLOW_TOKENS.has(workflow)) {
         return { workflow, source: 'plugin-mention' };
       }
     }
@@ -206,6 +214,38 @@ function detectExplicitWorkflow(prompt) {
 
   if (pluginMention) {
     return { workflow: 'pipeline', source: 'plugin-mention-default' };
+  }
+
+  return undefined;
+}
+
+function detectGenericSlashCommand(prompt) {
+  const match = (prompt || '').match(/(?:^|\s)(\/[A-Za-z0-9][A-Za-z0-9_:-]*)(?=$|[\s,.;:!?])/u);
+  return match?.[1];
+}
+
+function normalizeHarnessSource(source) {
+  if (source === 'pipeline-slash-command') return 'slash-command';
+  return source || 'unknown';
+}
+
+function detectFirstMessageHarness(prompt) {
+  const explicitWorkflow = detectExplicitWorkflow(prompt);
+  if (explicitWorkflow) {
+    return {
+      ...explicitWorkflow,
+      harness_runtime: 'cjs',
+    };
+  }
+
+  const slash = detectGenericSlashCommand(prompt);
+  if (slash) {
+    return {
+      workflow: 'pipeline',
+      source: 'generic-slash-command',
+      trigger: slash,
+      harness_runtime: 'cjs',
+    };
   }
 
   return undefined;
@@ -234,11 +274,27 @@ function isInformationalOnlyPrompt(prompt) {
   return informationalPatterns.some((pattern) => pattern.test(normalized));
 }
 
+function isHookDiagnosticMetaPrompt(prompt) {
+  const normalized = normalizePromptText(prompt);
+  if (!normalized) return false;
+  if (!/\bhooks?\b/.test(normalized)) return false;
+  if (isImplementationRequest(normalized)) return false;
+
+  const metaPatterns = [
+    /\b(what'?s going on|what is going on|o que esta acontecendo|o que esta rolando)\b/i,
+    /\b(why|por que|porque)\b/i,
+    /\b(explain|explique|explica|status|estado)\b/i,
+  ];
+
+  return metaPatterns.some((pattern) => pattern.test(normalized));
+}
+
 function isPipelineWorthy(prompt) {
   const trimmed = (prompt || '').trim();
 
   if (!trimmed) return false;
   if (isImplementationRequest(trimmed)) return true;
+  if (isHookDiagnosticMetaPrompt(trimmed)) return false;
   if (isOperationalAuditRequest(trimmed)) return true;
   if (isInformationalOnlyPrompt(trimmed)) return false;
 
@@ -370,6 +426,43 @@ function stateFilePath(fileName) {
   return path.join(process.cwd(), '.codex', 'pipeline', fileName);
 }
 
+function readJsonSafe(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+function stateFileIsFresh(state, nowSeconds) {
+  if (!state || typeof state !== 'object') return false;
+  if (typeof state.expires_at !== 'number') return true;
+  return state.expires_at > nowSeconds;
+}
+
+function activePipelineBootstrap() {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const intent = readJsonSafe(workflowIntentPath());
+  const lock = readJsonSafe(stateFilePath('session-lock.json'));
+  const required = readJsonSafe(stateFilePath('required-first-actions.json'));
+  const sentinel = readJsonSafe(stateFilePath('sentinel-state.json'));
+  const activeIntent = intent?.status === 'active'
+    && intent?.plugin === 'pipeline-orchestrator-for-codex'
+    && stateFileIsFresh(intent, nowSeconds);
+  const activeLock = lock?.status === 'active' && stateFileIsFresh(lock, nowSeconds);
+  const activeRequired = required?.status === 'active'
+    && required?.plugin === 'pipeline-orchestrator-for-codex'
+    && stateFileIsFresh(required, nowSeconds);
+  const activeSentinel = sentinel?.pipelineActive === true && stateFileIsFresh(sentinel, nowSeconds);
+
+  if (!activeIntent && !activeLock && !activeRequired && !activeSentinel) return undefined;
+  return {
+    workflow: intent?.workflow || lock?.workflow || required?.workflow || sentinel?.workflow_id || 'pipeline',
+    run_id: intent?.run_id || lock?.run_id || required?.run_id || sentinel?.run_id,
+    session_id: intent?.session_id || lock?.session_id || required?.session_id || sentinel?.session_id,
+  };
+}
+
 function rejectSymlinkAncestors(file) {
   const cwd = process.cwd();
   const relative = path.relative(cwd, file).split(path.sep).filter(Boolean);
@@ -470,6 +563,23 @@ function writeWorkflowIntent(intent) {
     created_at: nowSeconds,
     expires_at: expiresAt,
     status: 'active',
+  });
+  writeJsonAtomic(stateFilePath('session.json'), {
+    sessionId,
+    session_id: sessionId,
+    run_id: runId,
+    runStartedAt: nowIso,
+    created_at: nowIso,
+    workflow: intent.workflow,
+    mode: intent.workflow,
+    variant: intent.workflow,
+    pipelineActive: true,
+    currentPhase: 'phase-0',
+    phase: 'phase-0',
+    batchIndex: 0,
+    confidenceScore: 1,
+    runtime_mode: 'blocked-no-agent-runtime',
+    pendingDecision: 'controller-bootstrap-required',
   });
   writeJsonAtomic(stateFilePath('required-first-actions.json'), signStateObject({
     schema_version: 1,
@@ -638,7 +748,7 @@ If the workflow cannot be started, stop and report the blocker instead of fallin
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => input += chunk);
-process.stdin.on('end', () => {
+process.stdin.on('end', async () => {
   try {
     const raw = (input || '').trim();
 
@@ -700,21 +810,37 @@ process.stdin.on('end', () => {
       return;
     }
 
-    const explicitWorkflow = detectExplicitWorkflow(prompt);
-    if (explicitWorkflow) {
+    const firstMessageHarness = detectFirstMessageHarness(prompt);
+    if (firstMessageHarness) {
+      const activeBootstrap = activePipelineBootstrap();
+      if (activeBootstrap) {
+        recordHookEvent({
+          hook: 'force-pipeline-agents',
+          event: 'UserPromptSubmit',
+          decision: 'preserve_active_pipeline_state',
+          attempted: firstMessageHarness.workflow,
+          expected: activeBootstrap.workflow,
+          reason: 'active pipeline bootstrap already exists; first-message harness did not overwrite state',
+          harness_runtime: firstMessageHarness.harness_runtime,
+        });
+        console.log(JSON.stringify(enforcedWorkflowOutput(workflowSkillMessage(activeBootstrap.workflow))));
+        return;
+      }
+
       writeWorkflowIntent({
-        workflow: explicitWorkflow.workflow,
-        source: explicitWorkflow.source,
+        workflow: firstMessageHarness.workflow,
+        source: firstMessageHarness.source,
         prompt,
       });
       recordHookEvent({
         hook: 'force-pipeline-agents',
         event: 'UserPromptSubmit',
-        decision: explicitWorkflow.workflow === 'pipeline' ? 'enforce_pipeline_skill_message' : 'enforce_workflow_skill_message',
-        attempted: explicitWorkflow.workflow,
-        reason: `explicit ${explicitWorkflow.source} workflow intent persisted`,
+        decision: firstMessageHarness.workflow === 'pipeline' ? 'enforce_pipeline_skill_message' : 'enforce_workflow_skill_message',
+        attempted: firstMessageHarness.workflow,
+        reason: `explicit ${firstMessageHarness.source} workflow intent persisted`,
+        harness_runtime: firstMessageHarness.harness_runtime,
       });
-      console.log(JSON.stringify(enforcedWorkflowOutput(workflowSkillMessage(explicitWorkflow.workflow))));
+      console.log(JSON.stringify(enforcedWorkflowOutput(workflowSkillMessage(firstMessageHarness.workflow))));
       return;
     }
 

@@ -469,6 +469,11 @@ function recordRequiredFirstActionAllowed(action, detail) {
 function activeFirstActionsPreTool(toolName, toolInput) {
   const required = readRequiredFirstActionsState();
   if (!required?.active || !required.pending) return undefined;
+  const pipelineDir = path.join(process.cwd(), '.codex', 'pipeline');
+  const requiredActionSatisfied = (action) => (
+    required.completedActions.has(action)
+    || ledgerRequiredActionCompleted(action, pipelineDir, required.state)
+  );
 
   if (toolName === 'update_plan') {
     recordRequiredFirstActionAllowed('update_plan', 'visible plan tool allowed');
@@ -510,6 +515,22 @@ function activeFirstActionsPreTool(toolName, toolInput) {
   if (toolName === 'spawn_agent') {
     const identity = extractPipelineAgentType(toolInput, { requireMarker: true });
     if (typeof identity === 'string' && identity === CONTROLLER_FQN) {
+      const missingPrerequisites = [
+        'update_plan',
+        'WORKFLOW_METHOD_GATE',
+        'CAPABILITY_GATE',
+      ].filter((action) => !requiredActionSatisfied(action));
+      if (missingPrerequisites.length > 0) {
+        return {
+          kind: 'deny',
+          reason:
+            `FIRST_ACTIONS_GUARD: canonical pipeline-controller spawn cannot run before ` +
+            `${missingPrerequisites.join(', ')} complete. ` +
+            `Do not stop or switch to manual fallback; run the visible plan and mandatory gates first.`,
+          attempted: identity,
+          expected: missingPrerequisites.join(','),
+        };
+      }
       recordRequiredFirstActionAllowed(`spawn:${CONTROLLER_FQN}`, 'canonical controller spawn allowed');
       return { kind: 'allow' };
     }

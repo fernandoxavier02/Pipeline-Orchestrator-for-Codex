@@ -13,6 +13,14 @@ import {
 const ROOT = process.cwd();
 const HOOK = join(ROOT, "hooks", "completion-checklist.cjs");
 const TEST_HMAC_KEY = "completion-checklist-test-key";
+const STOP_OUTPUT_FIELDS = new Set([
+  "continue",
+  "stopReason",
+  "systemMessage",
+  "suppressOutput",
+  "decision",
+  "reason",
+]);
 
 type TestGateArtifact = {
   gate: string;
@@ -79,7 +87,9 @@ function runHook(
   });
 
   expect(result.status).toBe(0);
-  return JSON.parse(result.stdout);
+  const output = JSON.parse(result.stdout);
+  expect(Object.keys(output).every((key) => STOP_OUTPUT_FIELDS.has(key))).toBe(true);
+  return output;
 }
 
 function canonicalize(value: unknown): string {
@@ -471,7 +481,7 @@ describe("completion-checklist Stop enforcement", () => {
     const output = runHook(cwd, { cwd, output: { text: "ordinary response" } });
 
     expect(output.continue).toBe(true);
-    expect(output.additionalContext).toContain("Checklist de Conclusao");
+    expect(output).toEqual({ continue: true });
   });
 
   it("blocks explicit pipeline completion without a governance artifact", () => {
@@ -684,6 +694,94 @@ describe("completion-checklist Stop enforcement", () => {
       cwd,
       output: {
         text: "blocked-no-agent-runtime: spawn_agent unavailable",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("PipelineGovernanceArtifact");
+  });
+
+  it("TDD: ignores stale orphan blocked-no-agent-runtime state for ordinary non-pipeline stop", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-stale-blocked-orphan-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    const staleTimestamp = new Date(Date.now() - 600_000).toISOString();
+    writeFileSync(
+      join(stateDir, "sentinel-state.json"),
+      JSON.stringify({
+        pipelineActive: true,
+        runtime_mode: "blocked-no-agent-runtime",
+        pendingDecision: "blocked-no-agent-runtime",
+        expectedNext: ["pipeline-controller"],
+        updatedAt: staleTimestamp,
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      join(stateDir, "session.json"),
+      JSON.stringify({
+        runtime_mode: "blocked-no-agent-runtime",
+        pendingDecision: "blocked-no-agent-runtime",
+        runStartedAt: staleTimestamp,
+        currentPhase: "phase-0",
+      }),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "Plain diagnostic answer without pipeline completion claims.",
+      },
+    });
+
+    expect(output.continue).toBe(true);
+  });
+
+  it("TDD: ignores historical transcript pipeline mentions when current stop has no live obligation", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-historical-transcript-"));
+    const transcriptPath = join(cwd, "transcript.txt");
+    writeFileSync(
+      transcriptPath,
+      [
+        "User: /pipeline-orchestrator-for-codex:pipeline fix hooks",
+        "Assistant: blocked-no-agent-runtime",
+        "Stop hook warning: PipelineGovernanceArtifact missing",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      transcript_path: transcriptPath,
+      output: {
+        text: "Plain status answer with no pipeline completion claim.",
+      },
+    });
+
+    expect(output.continue).toBe(true);
+  });
+
+  it("TDD: still blocks stale blocked-no-agent-runtime state when an active lock exists", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-stale-blocked-locked-"));
+    const stateDir = writeActiveSessionLock(cwd);
+    const staleTimestamp = new Date(Date.now() - 600_000).toISOString();
+    writeFileSync(
+      join(stateDir, "sentinel-state.json"),
+      JSON.stringify({
+        pipelineActive: true,
+        runtime_mode: "blocked-no-agent-runtime",
+        pendingDecision: "blocked-no-agent-runtime",
+        expectedNext: ["pipeline-controller"],
+        updatedAt: staleTimestamp,
+      }),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "Plain diagnostic answer without pipeline completion claims.",
       },
     });
 
@@ -1308,7 +1406,7 @@ describe("completion-checklist Stop enforcement", () => {
     });
 
     expect(output.continue).toBe(true);
-    expect(output.additionalContext).toContain("Artefato final estruturado");
+    expect(output).toEqual({ continue: true });
   });
 
   it("TDD: blocks PASS when only a generic workflow_id links the artifact to active state", () => {
@@ -1436,7 +1534,7 @@ describe("completion-checklist Stop enforcement", () => {
     });
 
     expect(output.continue).toBe(true);
-    expect(output.additionalContext).toContain("Artefato final estruturado");
+    expect(output).toEqual({ continue: true });
   });
 
   it("TDD: allows current payload BLOCKED when transcript has an older success verdict", () => {
@@ -1456,7 +1554,7 @@ describe("completion-checklist Stop enforcement", () => {
     });
 
     expect(output.continue).toBe(true);
-    expect(output.additionalContext).toContain("Artefato final estruturado");
+    expect(output).toEqual({ continue: true });
   });
 
   it("ATDD: allows explicit pipeline stop with a structured BLOCKED artifact for the current run", () => {
@@ -1480,7 +1578,7 @@ describe("completion-checklist Stop enforcement", () => {
     });
 
     expect(output.continue).toBe(true);
-    expect(output.additionalContext).toContain("Artefato final estruturado");
+    expect(output).toEqual({ continue: true });
   });
 
   it("TDD: blocks structured BLOCKED artifacts when active obligation files are missing", () => {
@@ -1551,7 +1649,7 @@ describe("completion-checklist Stop enforcement", () => {
     });
 
     expect(output.continue).toBe(true);
-    expect(output.additionalContext).toContain("Artefato final estruturado");
+    expect(output).toEqual({ continue: true });
   });
 
   it("TDD: blocks blocked-no-agent-runtime that claims spawn/wait missing after bootstrap proved them", () => {
@@ -1604,7 +1702,7 @@ describe("completion-checklist Stop enforcement", () => {
     });
 
     expect(output.continue).toBe(true);
-    expect(output.additionalContext).toContain("Artefato final estruturado");
+    expect(output).toEqual({ continue: true });
   });
 
   it("TDD: blocks contradictory real-agent BLOCKED artifacts that claim foundational runtime capabilities are missing", () => {
@@ -1979,7 +2077,7 @@ describe("completion-checklist Stop enforcement", () => {
     });
 
     expect(output.continue).toBe(true);
-    expect(output.additionalContext).toContain("Artefato final estruturado");
+    expect(output).toEqual({ continue: true });
   });
 
   it("TDD: blocks PASS artifacts without cooperative exec window enforcement", () => {
@@ -2625,7 +2723,7 @@ describe("completion-checklist Stop enforcement", () => {
     });
 
     expect(output.continue).toBe(true);
-    expect(output.additionalContext).toContain("Artefato final estruturado");
+    expect(output).toEqual({ continue: true });
   });
 
   it("TDD: blocks PASS with stale run_id when active state only retained sessionId", () => {

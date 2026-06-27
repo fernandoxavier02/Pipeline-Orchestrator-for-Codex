@@ -147,6 +147,27 @@ describe("force pipeline agents hook", () => {
     expect(output.systemMessage).not.toContain("execução inline deste pedido está bloqueada");
   });
 
+  it("TDD: allows hook diagnostic meta questions without pipeline-required", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-meta-hook-"));
+
+    const result = runHook(cwd, "So what's going on with the hook there? I look at it.");
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).not.toBe("pipeline-required");
+    expect(output.systemMessage).not.toContain("execução inline deste pedido está bloqueada");
+  });
+
+  it("TDD: still blocks hook repair requests as pipeline-required", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-repair-"));
+
+    const result = runHook(cwd, "Fix the Pipeline Orchestrator hooks and make them work perfectly");
+    const output = parseOutput(result);
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toBe("pipeline-required");
+  });
+
   it("RED: blocks mixed informational and audit prompts as pipeline-required", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-mixed-audit-"));
 
@@ -443,6 +464,64 @@ describe("force pipeline agents hook", () => {
     });
   });
 
+  it("RED: explicit pipeline bootstrap persists session.json before any execution", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-session-bootstrap-"));
+
+    const result = runHook(cwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo sem runtime real");
+    parseOutput(result);
+
+    const stateDir = join(cwd, ".codex", "pipeline");
+    const intent = JSON.parse(readFileSync(join(stateDir, "workflow-intent.json"), "utf8"));
+    const sessionPath = join(stateDir, "session.json");
+
+    expect(existsSync(sessionPath)).toBe(true);
+    const session = JSON.parse(readFileSync(sessionPath, "utf8"));
+    expect(session).toMatchObject({
+      session_id: intent.session_id,
+      run_id: intent.run_id,
+      workflow: "pipeline",
+      pipelineActive: true,
+      currentPhase: "phase-0",
+    });
+  });
+
+  it.each([
+    {
+      label: "plugin mention default",
+      prompt: "[@pipeline-orchestrator-for-codex](plugin://pipeline-orchestrator-for-codex@fx-studio-ai) audite a execucao anterior",
+      expectedWorkflow: "pipeline",
+    },
+    {
+      label: "direct governed workflow",
+      prompt: "/pipeline-orchestrator-for-codex:bugfix-heavy corrigir enforcement deterministico",
+      expectedWorkflow: "bugfix-heavy",
+    },
+  ])("RED: first-message front door persists coherent session.json for $label", ({ prompt, expectedWorkflow }) => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-session-coherence-"));
+
+    const result = runHook(cwd, prompt);
+    parseOutput(result);
+
+    const stateDir = join(cwd, ".codex", "pipeline");
+    const intent = JSON.parse(readFileSync(join(stateDir, "workflow-intent.json"), "utf8"));
+    const lock = JSON.parse(readFileSync(join(stateDir, "session-lock.json"), "utf8"));
+    const sentinel = JSON.parse(readFileSync(join(stateDir, "sentinel-state.json"), "utf8"));
+    const sessionPath = join(stateDir, "session.json");
+
+    expect(existsSync(sessionPath)).toBe(true);
+    const session = JSON.parse(readFileSync(sessionPath, "utf8"));
+    expect(session).toMatchObject({
+      session_id: intent.session_id,
+      run_id: intent.run_id,
+      workflow: expectedWorkflow,
+      pipelineActive: true,
+      currentPhase: "phase-0",
+    });
+    expect(session.session_id).toBe(lock.session_id);
+    expect(session.run_id).toBe(sentinel.run_id);
+    expect(session.currentPhase).toBe(sentinel.currentPhase);
+  });
+
   it("ATDD: plugin mention without explicit workflow enters the canonical pipeline front door", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-"));
 
@@ -465,6 +544,150 @@ describe("force pipeline agents hook", () => {
       decision: "enforce_pipeline_skill_message",
       attempted: "pipeline",
       reason: "explicit plugin-mention-default workflow intent persisted",
+    });
+  });
+
+  it("ATDD: any slash command arms the first-message pipeline harness", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-generic-slash-"));
+
+    const result = runHook(cwd, "/help quero entender o estado atual");
+    const output = parseOutput(result);
+
+    expect(output.hook_enforcement_mode).toBe("blocking");
+    expect(output.enforcement_stage).toBe("stop-and-pretool");
+    expect(output.systemMessage).toContain("MANDATORY SUBAGENT EXECUTION");
+    expect(output.systemMessage).toContain("plugin front door");
+
+    const stateDir = join(cwd, ".codex", "pipeline");
+    const intent = JSON.parse(readFileSync(join(stateDir, "workflow-intent.json"), "utf8"));
+    expect(intent).toMatchObject({
+      status: "active",
+      plugin: "pipeline-orchestrator-for-codex",
+      workflow: "pipeline",
+      source: "generic-slash-command",
+      deterministic_enforcement: {
+        stop_requires_governance_artifact: true,
+        pretool_requires_canonical_dispatch: true,
+      },
+    });
+
+    const requiredFirstActions = JSON.parse(readFileSync(join(stateDir, "required-first-actions.json"), "utf8"));
+    expect(requiredFirstActions.required_actions).toEqual([
+      "update_plan",
+      "WORKFLOW_METHOD_GATE",
+      "CAPABILITY_GATE",
+      "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+      "wait_agent",
+    ]);
+
+    const event = JSON.parse(readFileSync(join(stateDir, "hook-events.jsonl"), "utf8").trim());
+    expect(event).toMatchObject({
+      decision: "enforce_pipeline_skill_message",
+      attempted: "pipeline",
+      reason: "explicit generic-slash-command workflow intent persisted",
+      harness_runtime: "cjs",
+    });
+  });
+
+  it("TDD: CJS hook is the normal first-message runtime", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-cjs-harness-"));
+
+    const result = runHook(cwd, "/help quero entender o estado atual");
+    parseOutput(result);
+
+    const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
+    expect(event).toMatchObject({
+      decision: "enforce_pipeline_skill_message",
+      attempted: "pipeline",
+      reason: "explicit generic-slash-command workflow intent persisted",
+      harness_runtime: "cjs",
+    });
+  });
+
+  it("TDD: CJS harness enforces slash and plugin mentions without dist runtime dependency", () => {
+    const slashCwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-cjs-slash-"));
+    const slashResult = runHook(slashCwd, "/help quero entender o estado atual");
+    parseOutput(slashResult);
+    const slashEvent = JSON.parse(readFileSync(join(slashCwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
+    expect(slashEvent).toMatchObject({
+      decision: "enforce_pipeline_skill_message",
+      attempted: "pipeline",
+      reason: "explicit generic-slash-command workflow intent persisted",
+      harness_runtime: "cjs",
+    });
+    expect(existsSync(join(slashCwd, ".codex", "pipeline", "session.json"))).toBe(true);
+
+    const pluginCwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-cjs-plugin-"));
+    const pluginResult = runHook(
+      pluginCwd,
+      "[@pipeline-orchestrator-for-codex](plugin://pipeline-orchestrator-for-codex@fx-studio-ai) bugfix-heavy corrigir enforcement",
+    );
+    parseOutput(pluginResult);
+    const pluginEvent = JSON.parse(readFileSync(join(pluginCwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
+    expect(pluginEvent).toMatchObject({
+      decision: "enforce_workflow_skill_message",
+      attempted: "bugfix-heavy",
+      reason: "explicit plugin-mention workflow intent persisted",
+      harness_runtime: "cjs",
+    });
+    expect(existsSync(join(pluginCwd, ".codex", "pipeline", "session.json"))).toBe(true);
+
+    const cloneCwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-cjs-clone-"));
+    const cloneResult = runHook(
+      cloneCwd,
+      "[$Pipeline Orchestrator for Codex](app://pipeline-orchestrator-for-codex-clone) apenas abra o app",
+    );
+    const cloneOutput = parseOutput(cloneResult);
+    expect(cloneOutput.systemMessage).not.toContain("plugin front door");
+  });
+
+  it("TDD: slash prompts do not overwrite an active pipeline bootstrap", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-active-bootstrap-"));
+
+    runHook(cwd, "/pipeline-orchestrator-for-codex:bugfix-heavy corrigir enforcement");
+    const stateDir = join(cwd, ".codex", "pipeline");
+    const firstIntent = JSON.parse(readFileSync(join(stateDir, "workflow-intent.json"), "utf8"));
+
+    const result = runHook(cwd, "ok, agora /help sem reiniciar a run");
+    parseOutput(result);
+
+    const secondIntent = JSON.parse(readFileSync(join(stateDir, "workflow-intent.json"), "utf8"));
+    expect(secondIntent.run_id).toBe(firstIntent.run_id);
+    expect(secondIntent.session_id).toBe(firstIntent.session_id);
+    expect(secondIntent.workflow).toBe("bugfix-heavy");
+
+    const events = readFileSync(join(stateDir, "hook-events.jsonl"), "utf8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line));
+    expect(events.at(-1)).toMatchObject({
+      decision: "preserve_active_pipeline_state",
+      attempted: "pipeline",
+      expected: "bugfix-heavy",
+    });
+  });
+
+  it("TDD: explicit governed slash workflows are preserved outside the first token", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-mid-sentence-workflow-"));
+
+    runHook(cwd, "please run /pipeline-orchestrator-for-codex:bugfix-heavy corrigir enforcement");
+
+    const intent = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "workflow-intent.json"), "utf8"));
+    expect(intent).toMatchObject({
+      workflow: "bugfix-heavy",
+      source: "slash-command",
+    });
+  });
+
+  it("TDD: plugin mentions do not infer common workflow words from natural-language tail", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-plugin-natural-tail-"));
+
+    runHook(cwd, "[$Pipeline Orchestrator for Codex](app://pipeline-orchestrator-for-codex) review this implementation");
+
+    const intent = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "workflow-intent.json"), "utf8"));
+    expect(intent).toMatchObject({
+      workflow: "pipeline",
+      source: "plugin-mention-default",
     });
   });
 

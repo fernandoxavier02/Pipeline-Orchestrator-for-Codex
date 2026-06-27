@@ -483,7 +483,7 @@ describe("dispatch-guard frontmatter enforcement", () => {
     }
   });
 
-  it("TDD: allows controller spawn during pending first actions without completing it before the tool runs", () => {
+  it("TDD: denies controller spawn before visible plan and mandatory gates complete", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-"));
     try {
       writePendingRequiredFirstActions(cwd);
@@ -500,6 +500,55 @@ describe("dispatch-guard frontmatter enforcement", () => {
       });
 
       expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBe("deny");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("FIRST_ACTIONS_GUARD");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("update_plan");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("WORKFLOW_METHOD_GATE");
+      expect(result.output.hookSpecificOutput?.permissionDecisionReason).toContain("CAPABILITY_GATE");
+      const state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
+      expect(state.completed_actions).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("TDD: allows controller spawn after visible plan and mandatory gates complete", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-"));
+    const key = "unit-test-hmac-key";
+    try {
+      const required = signState({
+        schema_version: 1,
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "pipeline",
+        created_at: new Date(Date.now() - 1000).toISOString(),
+        required_actions: [
+          "update_plan",
+          "WORKFLOW_METHOD_GATE",
+          "CAPABILITY_GATE",
+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+          "wait_agent",
+        ],
+        completed_actions: ["update_plan"],
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      }, "pipeline-required-first-actions", key);
+      writeRequiredFirstActions(cwd, required);
+      writeGateLedgers(cwd, key);
+
+      const result = runHook(cwd, {
+        tool_name: "spawn_agent",
+        tool_input: {
+          agent_type: "worker",
+          message: [
+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller",
+            "Bootstrap the pipeline.",
+          ].join("\n"),
+        },
+      }, {
+        PIPELINE_SENTINEL_HMAC_KEY: key,
+      });
+
+      expect(result.status).toBe(0);
       expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
       expect(readLastHookEvent(cwd)).toMatchObject({
         hook: "dispatch-guard",
@@ -507,7 +556,7 @@ describe("dispatch-guard frontmatter enforcement", () => {
         decision: "allow",
       });
       const state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
-      expect(state.completed_actions).toEqual([]);
+      expect(state.completed_actions).toEqual(["update_plan"]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

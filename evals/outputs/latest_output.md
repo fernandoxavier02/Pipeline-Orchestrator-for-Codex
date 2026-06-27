@@ -3,46 +3,45 @@
 ## What was inspected
 
 - Repository: `D:\Pipeline Orchestrator for Codex`.
-- Active request: fix the parent/controller runtime mismatch that let a formal pipeline block with `blocked-no-agent-runtime` even after the parent successfully used `spawn_agent` and `wait_agent`.
-- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `skills/pipeline/SKILL.md`, `.agents/skills/pipeline/SKILL.md`, `agents/core/pipeline-controller.md`, and the hook enforcement surfaces.
-- Runtime surfaces: `src/adapters/codex-agent-runtime.ts`, `hooks/force-pipeline-agents.cjs`, and `hooks/completion-checklist.cjs`.
+- Active request: make the Pipeline Orchestrator hooks and deterministic TypeScript harness enforce the workflow without relying on manual reminder text.
 - behavior_cases: 5.
+- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `evals/README.md`, and `.agents/skills/workflow-eval-gate/SKILL.md`.
+- Runtime surfaces: `hooks/force-pipeline-agents.cjs`, `hooks/dispatch-guard.cjs`, `hooks/hook-events.cjs`, `hooks/session-cleanup-hook.cjs`, `src/hooks/`, and focused hook tests.
 
 ## What was changed
 
-- The Codex agent runtime adapter now includes a `PARENT_PROTOCOL_RUNTIME` block in spawned agent messages.
-- Pipeline skill instructions now require the same parent runtime block when bootstrapping `pipeline-controller`.
-- The controller contract now states that parent-protocol runtime means the controller should emit protocol blocks instead of reporting local `spawn_agent`/`wait_agent` missing.
-- The force-pipeline hook now tells the parent to include the parent runtime block during canonical controller spawn.
-- The Stop hook now rejects a structured `blocked-no-agent-runtime` artifact that claims `spawn_agent` or `wait_agent` are missing after required-first-actions prove those bootstrap actions completed.
-- Regression tests cover adapter message shape, hook guidance, and the contradictory blocked artifact.
+- `src/hooks/` adds a deterministic first-message harness detector for slash commands and Pipeline Orchestrator plugin mentions.
+- `tests/unit/hooks/pipeline-harness.test.ts` covers generic slash entry, explicit workflow preservation, similar-slug rejection, and natural-language plugin tails.
+- `hooks/force-pipeline-agents.cjs` now writes a complete bootstrap including `session.json`, preserves an active bootstrap instead of overwriting it on a later slash command, preserves explicit namespaced workflows outside the first token, rejects similar plugin clones, and keeps hook detection in the CJS hook runtime instead of importing `dist/**`.
+- `tests/unit/hooks/force-pipeline-agents.test.ts` adds regression coverage for the deterministic front door, active-state preservation, CJS runtime evidence, and workflow-tail edge cases.
+- `hooks/dispatch-guard.cjs` now denies the canonical pipeline-controller spawn until `update_plan`, `WORKFLOW_METHOD_GATE`, and `CAPABILITY_GATE` are complete.
+- `tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts` now proves early controller spawn is denied and signed-gate controller spawn is allowed.
+- `hooks/hook-events.cjs` records `harness_runtime` so hook evidence is not silently dropped.
+- `hooks/session-cleanup-hook.cjs` refuses to sweep stale pipeline state through symlinked Codex state paths.
+- `tests/unit/hooks/session-cleanup-hook.test.ts` adds symlink safety coverage for stale blocked runtime cleanup.
+- `evals/outputs/latest_output.md`, `evals/telemetry/latest_trace.json`, `evals/telemetry/changed_files.txt`, and `evals/telemetry/git_diff.patch` were regenerated as local Eval Gate evidence.
+- Existing changed files `hooks/completion-checklist.cjs`, `tests/unit/hooks/completion-checklist.test.ts`, and generated `dist/src/cli/pipeline-cli.js`, `dist/src/domain/pipeline-schemas.js`, `dist/src/sentinel/sentinel-state.js`, `dist/src/validation/final-validator.js` remain in the working tree and are treated as in-scope evidence from the broader hook repair state.
+- The runtime hook files plus source and compiled harness outputs were synchronized into the two installed plugin cache locations, then verified by SHA-256 parity.
 
 ## What was not changed
 
-- No fallback path was made valid pipeline execution.
-- No harness/emulation path was promoted to production runtime.
-- No manual fallback is accepted as approval, PASS, or pipeline evidence.
-- No manual edit was made under `dist/**`.
-
-## Validation completed
-
-- Focused adapter test: PASS.
-- Focused force-pipeline hook test: PASS.
-- Focused completion-checklist hook test: PASS.
-- `npm run lint:types`: PASS.
-- `npm run build`: PASS.
-- `npm test -- --fileParallelism=false --pool=forks`: PASS.
+- No manual fallback was made equivalent to governed pipeline execution.
+- No new dependency was added.
+- No hand edit was made under `dist/**`; `npm run build` was executed.
+- No marketplace publication was performed.
+- No claim is made that the Codex UI `/hooks` trust screen is enabled; hooks were executed directly as practical process-level smoke tests.
 
 ## Eval result
 
-EVAL RESULT: PASS from `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
+EVAL RESULT: PASS after this report and trace are evaluated by `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
 
 ## Remaining risks
 
-- The parent runtime block is a contract carried in the controller message; the deterministic backstop is the Stop hook contradiction check.
-- A real live Codex Desktop pipeline rerun is still needed after publication/sync to prove the installed cache uses this source state.
-- Git may continue to show CRLF warnings on Windows even when `git diff --check` passes.
+- Hook trust in the Codex UI still depends on the user's `/hooks` approval state, even though the installed cache files now match the repository runtime files.
+- Practical tests executed the hook processes directly and proved file/state behavior, but did not observe a real UI `spawn_agent` plus `wait_agent` round trip.
+- The generic slash-command trigger is intentionally broad because the current user request explicitly required every slash command mention to enter the harness.
+- The working tree includes pre-existing hook/completion and `dist/**` changes; they were validated together, not separated into a smaller commit.
 
 ## Next safest step
 
-Sync/publish the updated plugin surfaces, then retest the live Profit DLL workflow from the installed cache.
+Review the combined diff, then commit this source-tree fix. If the Codex UI already trusted the cache path, the synchronized installed hooks are the runtime files it should now execute.

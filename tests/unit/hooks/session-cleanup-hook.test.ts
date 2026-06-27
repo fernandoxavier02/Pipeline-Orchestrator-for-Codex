@@ -243,6 +243,106 @@ describe("session-cleanup-hook (B10)", () => {
     expect(readFileSync(sentinelPath(workspace), "utf8")).toBe(JSON.stringify(sentinelState));
   });
 
+  it("removes stale blocked-no-agent-runtime sentinel and session state when no obligation is active", () => {
+    mkdirSync(join(workspace, ".codex", "pipeline"), { recursive: true });
+    const staleTimestamp = new Date(Date.now() - 600_000).toISOString();
+    writeFileSync(
+      sentinelPath(workspace),
+      JSON.stringify({
+        pipelineActive: true,
+        runtime_mode: "blocked-no-agent-runtime",
+        pendingDecision: "blocked-no-agent-runtime",
+        expectedNext: ["pipeline-controller"],
+        updatedAt: staleTimestamp,
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      join(workspace, ".codex", "pipeline", "session.json"),
+      JSON.stringify({
+        runtime_mode: "blocked-no-agent-runtime",
+        pendingDecision: "blocked-no-agent-runtime",
+        runStartedAt: staleTimestamp,
+        currentPhase: "phase-0",
+      }),
+      "utf8",
+    );
+
+    runHook(workspace);
+
+    expect(existsSync(sentinelPath(workspace))).toBe(false);
+    expect(existsSync(join(workspace, ".codex", "pipeline", "session.json"))).toBe(false);
+  });
+
+  it("does not follow symlinked .codex when sweeping stale blocked runtime state", () => {
+    const external = mkdtempSync(join(tmpdir(), "session-cleanup-external-"));
+    try {
+      const externalCodex = join(external, ".codex");
+      const externalPipeline = join(externalCodex, "pipeline");
+      mkdirSync(externalPipeline, { recursive: true });
+      const staleTimestamp = new Date(Date.now() - 600_000).toISOString();
+      writeFileSync(
+        join(externalPipeline, "sentinel-state.json"),
+        JSON.stringify({
+          pipelineActive: true,
+          runtime_mode: "blocked-no-agent-runtime",
+          updatedAt: staleTimestamp,
+        }),
+        "utf8",
+      );
+      writeFileSync(
+        join(externalPipeline, "session.json"),
+        JSON.stringify({
+          runtime_mode: "blocked-no-agent-runtime",
+          updatedAt: staleTimestamp,
+        }),
+        "utf8",
+      );
+
+      try {
+        symlinkSync(externalCodex, join(workspace, ".codex"), "junction");
+      } catch {
+        return;
+      }
+
+      runHook(workspace);
+
+      expect(existsSync(join(externalPipeline, "sentinel-state.json"))).toBe(true);
+      expect(existsSync(join(externalPipeline, "session.json"))).toBe(true);
+      expect(existsSync(join(externalPipeline, "fidelity-reports"))).toBe(false);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves stale blocked-no-agent-runtime state while an active obligation exists", () => {
+    mkdirSync(join(workspace, ".codex", "pipeline"), { recursive: true });
+    const staleTimestamp = new Date(Date.now() - 600_000).toISOString();
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    writeFileSync(
+      sentinelPath(workspace),
+      JSON.stringify({
+        pipelineActive: true,
+        runtime_mode: "blocked-no-agent-runtime",
+        updatedAt: staleTimestamp,
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      workflowIntentPath(workspace),
+      JSON.stringify({
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        expires_at: future,
+      }),
+      "utf8",
+    );
+
+    runHook(workspace);
+
+    expect(existsSync(sentinelPath(workspace))).toBe(true);
+  });
+
   it("removes sentinel state with explicit expired TTL", () => {
     mkdirSync(join(workspace, ".codex", "pipeline"), { recursive: true });
     writeFileSync(

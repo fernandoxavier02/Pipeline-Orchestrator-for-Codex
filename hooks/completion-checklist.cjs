@@ -83,6 +83,7 @@ const FOUNDATIONAL_BOOTSTRAP_CAPABILITY_ACTIONS = {
 };
 
 const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
+const STALE_BLOCKED_RUNTIME_MS = 300_000;
 
 function parsePayload(raw) {
   if (!raw || raw.trim() === '') return {};
@@ -196,23 +197,6 @@ function collectText(value, depth = 0) {
   return '';
 }
 
-function readTranscriptText(payload) {
-  const transcriptPath = typeof payload.transcript_path === 'string'
-    ? payload.transcript_path
-    : typeof payload.transcriptPath === 'string'
-      ? payload.transcriptPath
-      : undefined;
-  if (!transcriptPath) return '';
-  try {
-    const resolved = path.resolve(transcriptPath);
-    const stats = fs.lstatSync(resolved);
-    if (stats.isSymbolicLink() || !stats.isFile() || stats.size > 2_000_000) return '';
-    return fs.readFileSync(resolved, 'utf8');
-  } catch {
-    return '';
-  }
-}
-
 function explicitPipelineFrontDoorRequested(rawText) {
   if (/\/pipeline-orchestrator(?:-for-codex)?:pipeline\b/iu.test(rawText)) return true;
   if (/\[(?:[@$])?pipeline(?:\s|-)?orchestrator(?:\s|-)?for(?:\s|-)?codex\]\((?:plugin|app):\/\/pipeline-orchestrator-for-codex(?=[)@/?#])[^)]*\)/iu.test(rawText)) return true;
@@ -227,10 +211,15 @@ function pipelineWasExplicitlyRequested(payload, rawText, stateDir) {
   if (activeSessionLock(stateDir)) return true;
   if (payloadContainsGovernanceArtifact(payload, stateDir)) return true;
   const sentinel = readJsonIfExists(path.join(stateDir, 'sentinel-state.json'));
-  if (sentinel && sentinel.pipelineActive === true) return true;
+  if (
+    sentinel
+    && sentinel.pipelineActive === true
+    && !isStaleBlockedRuntimeOrphan(stateDir, sentinel)
+  ) return true;
   const session = readJsonIfExists(path.join(stateDir, 'session.json'));
   return !!(
     session
+    && !isStaleBlockedRuntimeOrphan(stateDir, session)
     && (
       session.pipeline_requested === true
       || typeof session.run_id === 'string'
@@ -242,9 +231,17 @@ function pipelineWasExplicitlyRequested(payload, rawText, stateDir) {
 
 function pipelineStateIsActive(stateDir) {
   const sentinel = readJsonIfExists(path.join(stateDir, 'sentinel-state.json'));
-  if (sentinel && sentinel.pipelineActive === true) return true;
+  if (
+    sentinel
+    && sentinel.pipelineActive === true
+    && !isStaleBlockedRuntimeOrphan(stateDir, sentinel)
+  ) return true;
   const session = readJsonIfExists(path.join(stateDir, 'session.json'));
-  return !!(session && session.pipelineActive === true) || activeSessionLock(stateDir);
+  return !!(
+    session
+    && session.pipelineActive === true
+    && !isStaleBlockedRuntimeOrphan(stateDir, session)
+  ) || activeSessionLock(stateDir);
 }
 
 function activeSessionLock(stateDir) {
@@ -1065,6 +1062,47 @@ function validateRequiredFirstActions(stateDir, ledgers, identityContext) {
   return missing;
 }
 
+function timestampMs(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 10_000_000_000 ? value : value * 1000;
+  }
+  if (typeof value !== 'string' || value.trim().length === 0) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function stateLastTouchedMs(state) {
+  if (!state || typeof state !== 'object') return 0;
+  return Math.max(
+    timestampMs(state.updatedAt),
+    timestampMs(state.updated_at),
+    timestampMs(state.runStartedAt),
+    timestampMs(state.created_at),
+    timestampMs(state.timestamp),
+  );
+}
+
+function isBlockedNoAgentRuntimeState(state) {
+  return !!(
+    state
+    && typeof state === 'object'
+    && (
+      state.runtime_mode === 'blocked-no-agent-runtime'
+      || state.pendingDecision === 'blocked-no-agent-runtime'
+      || state.reason === 'blocked-no-agent-runtime'
+    )
+  );
+}
+
+function isStaleBlockedRuntimeOrphan(stateDir, state) {
+  if (!isBlockedNoAgentRuntimeState(state)) return false;
+  if (activeSessionLock(stateDir) || activeWorkflowObligation(stateDir) || workflowObligationFileRequiresEnforcement(stateDir)) {
+    return false;
+  }
+  const lastTouched = stateLastTouchedMs(state);
+  return lastTouched > 0 && Date.now() - lastTouched > STALE_BLOCKED_RUNTIME_MS;
+}
+
 function requiredFirstActionWasCompleted(stateDir, ledgers, action, identityContext) {
   const required = readActiveRequiredFirstActions(stateDir);
   if (!required) return false;
@@ -1259,12 +1297,10 @@ function findGovernanceArtifactMatch(payload, stateDir) {
 function evaluateStopEnforcement(payload, rawInput) {
   const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
   const stateDir = path.join(cwd, '.codex', 'pipeline');
-  const transcriptText = readTranscriptText(payload);
   const currentText = [rawInput, collectText(payload)].join('\n');
-  const rawText = [currentText, transcriptText].join('\n');
   const workflowObligationFilePresent = workflowObligationFileRequiresEnforcement(stateDir);
-  const explicitFrontDoorRequested = explicitPipelineFrontDoorRequested(rawText);
-  if (!pipelineWasExplicitlyRequested(payload, rawText, stateDir)) {
+  const explicitFrontDoorRequested = explicitPipelineFrontDoorRequested(currentText);
+  if (!pipelineWasExplicitlyRequested(payload, currentText, stateDir)) {
     return { ok: true, missing: [] };
   }
 
@@ -1274,7 +1310,7 @@ function evaluateStopEnforcement(payload, rawInput) {
     && !workflowObligationFilePresent
     && !activeSessionLock(stateDir)
     && !pipelineStateIsActive(stateDir)
-    && !outputAttemptsPipelineCompletion(rawText)
+    && !outputAttemptsPipelineCompletion(currentText)
     && !payloadContainsGovernanceArtifact(payload, stateDir)
   ) {
     return { ok: true, missing: [] };
@@ -1366,36 +1402,6 @@ function evaluateStopEnforcement(payload, rawInput) {
   return validationWithObligations.ok ? { ok: true, missing: [] } : validationWithObligations;
 }
 
-/**
- * Detecta se alguma spec com audit_source existe no projeto.
- * Retorna lista de specs de auditoria encontradas.
- */
-function findAuditSourcedSpecs() {
-  const specsDir = path.join(process.cwd(), '.kiro', 'specs');
-  const found = [];
-  try {
-    if (!fs.existsSync(specsDir)) return found;
-    const dirs = fs.readdirSync(specsDir, { withFileTypes: true });
-    for (const dir of dirs) {
-      if (!dir.isDirectory()) continue;
-      const specJsonPath = path.join(specsDir, dir.name, 'spec.json');
-      try {
-        if (!fs.existsSync(specJsonPath)) continue;
-        const specJson = JSON.parse(fs.readFileSync(specJsonPath, 'utf8'));
-        // Only flag specs that are not yet closed/completed and have audit_source
-        if (specJson.audit_source && specJson.phase !== 'closed') {
-          found.push({
-            name: dir.name,
-            audit_source: specJson.audit_source,
-            phase: specJson.phase || 'unknown'
-          });
-        }
-      } catch { /* ignore parse errors */ }
-    }
-  } catch { /* ignore fs errors */ }
-  return found;
-}
-
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => input += chunk);
@@ -1433,95 +1439,14 @@ process.stdin.on('end', () => {
       return;
     }
 
-    const contextParts = [
-      '## Checklist de Conclusao (auto-injetado)',
-      '',
-    ];
-
-    // Kiro-specific rules — only include if .kiro directory exists
-    const kiroDir = path.join(process.cwd(), '.kiro');
-    if (fs.existsSync(kiroDir)) {
-      contextParts.push(
-        '### Regras Inegociaveis (.kiro/steering/golden-rule.md)',
-        '- [ ] Regra 1: Spec → Design → Tasks antes de codigo?',
-        '- [ ] Regra 2: Evidencia acima de suposicao?',
-        '- [ ] Regra 3: Mudanca minima, diff minimo?',
-        '- [ ] Regra 5: SSOT — regras criticas no backend?',
-        '- [ ] Regra 10: Build obrigatorio, max 2 tentativas?',
-        '- [ ] Regra 15: Nao-Invencao — lacunas preenchidas sem perguntar?',
-        '- [ ] Regra 16: Execucao Nao-Assumptiva — so o que foi pedido?',
-        '',
-        '### SSOT (.kiro/steering/authority-map.md)',
-        '- [ ] Dominio tocado tem SSOT unica? (recusa se 2 fontes detectadas)',
-        '',
-      );
-    }
-
-    contextParts.push(
-      '### Pipeline',
-      '- [ ] ORCHESTRATOR_DECISION emitido no inicio?',
-      '',
-      '### Qualidade',
-      '- [ ] Build/validacao executada? (use o comando de build do projeto)',
-      '- [ ] Testes executados (se existirem)? (use o comando de test do projeto)',
-      '- [ ] Testes passaram? TDD RED->GREEN se implementou codigo',
-      '- [ ] Sem regressoes? Suite de regressao do CHECKPOINT passa',
-    );
-
-    // v2.0: Check for audit-sourced specs
-    const auditSpecs = findAuditSourcedSpecs();
-    if (auditSpecs.length > 0) {
-      contextParts.push('');
-      contextParts.push('### Coverage Gate — Specs de Auditoria (OBRIGATORIO)');
-      contextParts.push(`Specs de auditoria detectadas: ${auditSpecs.map(s => s.name).join(', ')}`);
-      contextParts.push('');
-      for (const spec of auditSpecs) {
-        contextParts.push(`**${spec.name}** (fase: ${spec.phase}, audit: ${spec.audit_source})`);
-      }
-      contextParts.push('');
-      contextParts.push('- [ ] Coverage Gate emitido? (tabela gap→AC→task, TODOS os gaps cobertos)');
-      contextParts.push('- [ ] Priority Consistency? (gap P0 nunca em slice P2)');
-      contextParts.push('- [ ] /kiro:validate-spec rodado? (12 eixos de conteudo, alem do Spec Gate de formato)');
-      contextParts.push('');
-      contextParts.push('Se qualquer item acima NAO foi cumprido, complete antes de finalizar.');
-      contextParts.push('Ref: memory/spec-from-audit-checklist.md');
-    }
-
-    // v3.0: Pipeline phase enforcement (always inject — approach B)
-    contextParts.push('');
-    contextParts.push('### Pipeline Orchestrator — Fases Obrigatorias');
-    contextParts.push('Se /pipeline-orchestrator-for-codex:pipeline foi invocado nesta sessao, TODAS as fases devem ter sido executadas:');
-    contextParts.push('- [ ] Phase 0: task-orchestrator spawnado (CLASSIFICATION emitida)?');
-    contextParts.push('- [ ] Phase 0: information-gate spawnado (INFORMATION_GATE emitida)?');
-    contextParts.push('- [ ] Phase 1: PIPELINE PROPOSAL apresentado e usuario confirmou?');
-    contextParts.push('- [ ] Phase 2: executor-controller spawnado com batch execution?');
-    contextParts.push('- [ ] Phase 2: checkpoint-validator rodou (build + test)?');
-    contextParts.push('- [ ] Phase 3: sanity-checker spawnado com evidencia de comando + output?');
-    contextParts.push('- [ ] Phase 3: final-validator (Pa de Cal) emitiu GO/CONDITIONAL/NO-GO?');
-    contextParts.push('- [ ] Phase 3: finishing-branch apresentou opcoes de closeout?');
-    contextParts.push('- [ ] Gate decisions logadas em gate-decisions.jsonl?');
-    contextParts.push('- [ ] Artefato final estruturado emitido com pipeline_requested, pipeline_valid, gates, hooks, agents, manual_fallback e final_verdict?');
-    contextParts.push('- [ ] CAPABILITY_GATE e FINAL_VERDICT_GATE presentes antes de qualquer PASS?');
-    contextParts.push('- [ ] Phase transition summaries emitidos entre cada fase?');
-    contextParts.push('');
-    contextParts.push('Se /pipeline-orchestrator-for-codex:pipeline NAO foi invocado, ignore esta secao.');
-    contextParts.push('Se alguma fase foi pulada, PARE e complete antes de finalizar.');
-
-    contextParts.push('');
-    contextParts.push('Se algum item nao foi cumprido, considere completar antes de finalizar.');
-    contextParts.push('Se build falhou 2x: PARAR e analisar causa raiz (Stop Rule).');
-
     recordHookEvent({
       hook: 'completion-checklist',
       event: 'Stop',
-      decision: 'inject_completion_checklist',
-      reason: 'stop hook checklist emitted',
+      decision: 'allow_stop',
+      reason: 'stop hook emitted Codex Stop-compatible success JSON',
     });
 
-    console.log(JSON.stringify({
-      continue: true,
-      additionalContext: contextParts.join('\n')
-    }));
+    console.log(JSON.stringify({ continue: true }));
 
   } catch (e) {
     console.log(JSON.stringify({
