@@ -351,10 +351,14 @@ function missingWorkflowObligationIssues(stateDir) {
 }
 
 function stateLooksLikePipelineObligation(state) {
-  return !!(
-    state
-    && typeof state === 'object'
-  );
+  if (!state || typeof state !== 'object') return false;
+  if (
+    state.plugin === 'pipeline-orchestrator-for-codex'
+    && stateObjectExpired(state)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function stateObjectExpired(state) {

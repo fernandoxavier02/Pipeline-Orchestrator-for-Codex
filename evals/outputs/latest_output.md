@@ -3,45 +3,40 @@
 ## What was inspected
 
 - Repository: `D:\Pipeline Orchestrator for Codex`.
-- Active request: make the Pipeline Orchestrator hooks and deterministic TypeScript harness enforce the workflow without relying on manual reminder text.
+- Active request: hotfix the Pipeline Orchestrator bootstrap so `bugfix-heavy` can run through the canonical `update_plan` -> gates -> `spawn_agent` -> `wait_agent` sequence.
 - behavior_cases: 5.
-- Local contracts: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `evals/README.md`, and `.agents/skills/workflow-eval-gate/SKILL.md`.
-- Runtime surfaces: `hooks/force-pipeline-agents.cjs`, `hooks/dispatch-guard.cjs`, `hooks/hook-events.cjs`, `hooks/session-cleanup-hook.cjs`, `src/hooks/`, and focused hook tests.
+- Contracts inspected: `AGENTS.md`, `CLAUDE.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, and `.kiro/specs/pipeline-invocation-enforcement/*`.
+- Runtime surfaces inspected: `hooks/dispatch-guard.cjs`, `hooks/completion-checklist.cjs`, `hooks/force-pipeline-agents.cjs`, and the focused hook tests.
 
 ## What was changed
 
-- `src/hooks/` adds a deterministic first-message harness detector for slash commands and Pipeline Orchestrator plugin mentions.
-- `tests/unit/hooks/pipeline-harness.test.ts` covers generic slash entry, explicit workflow preservation, similar-slug rejection, and natural-language plugin tails.
-- `hooks/force-pipeline-agents.cjs` now writes a complete bootstrap including `session.json`, preserves an active bootstrap instead of overwriting it on a later slash command, preserves explicit namespaced workflows outside the first token, rejects similar plugin clones, and keeps hook detection in the CJS hook runtime instead of importing `dist/**`.
-- `tests/unit/hooks/force-pipeline-agents.test.ts` adds regression coverage for the deterministic front door, active-state preservation, CJS runtime evidence, and workflow-tail edge cases.
-- `hooks/dispatch-guard.cjs` now denies the canonical pipeline-controller spawn until `update_plan`, `WORKFLOW_METHOD_GATE`, and `CAPABILITY_GATE` are complete.
-- `tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts` now proves early controller spawn is denied and signed-gate controller spawn is allowed.
-- `hooks/hook-events.cjs` records `harness_runtime` so hook evidence is not silently dropped.
-- `hooks/session-cleanup-hook.cjs` refuses to sweep stale pipeline state through symlinked Codex state paths.
-- `tests/unit/hooks/session-cleanup-hook.test.ts` adds symlink safety coverage for stale blocked runtime cleanup.
-- `evals/outputs/latest_output.md`, `evals/telemetry/latest_trace.json`, `evals/telemetry/changed_files.txt`, and `evals/telemetry/git_diff.patch` were regenerated as local Eval Gate evidence.
-- Existing changed files `hooks/completion-checklist.cjs`, `tests/unit/hooks/completion-checklist.test.ts`, and generated `dist/src/cli/pipeline-cli.js`, `dist/src/domain/pipeline-schemas.js`, `dist/src/sentinel/sentinel-state.js`, `dist/src/validation/final-validator.js` remain in the working tree and are treated as in-scope evidence from the broader hook repair state.
-- The runtime hook files plus source and compiled harness outputs were synchronized into the two installed plugin cache locations, then verified by SHA-256 parity.
+- `hooks/dispatch-guard.cjs` now accepts nested/string host response shapes when extracting the bootstrap controller agent id.
+- `hooks/dispatch-guard.cjs` now records multiple completed first actions atomically, including gate evidence present in canonical `update_plan` or controller-spawn payloads.
+- `hooks/dispatch-guard.cjs` now records `wait_agent` completion after canonical controller spawn even when the host did not expose a stable controller id.
+- `hooks/completion-checklist.cjs` now treats expired or cancelled Pipeline Orchestrator state as inactive while still blocking malformed or tampered obligation files.
+- `tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts` adds regressions for gate-marked controller bootstrap, nested `agentId` extraction, missing-id wait completion, and next dispatch release.
+- `tests/unit/hooks/completion-checklist.test.ts` adds regressions proving cancelled and expired state no longer reactivates Stop enforcement.
+- `evals/outputs/latest_output.md`, `evals/telemetry/latest_trace.json`, `evals/telemetry/changed_files.txt`, and `evals/telemetry/git_diff.patch` were regenerated for this hotfix evidence.
+- `dist/src/cli/pipeline-cli.js`, `dist/src/domain/pipeline-schemas.js`, `dist/src/sentinel/sentinel-state.js`, and `dist/src/validation/final-validator.js` are pre-existing dirty generated files; `npm run build` was executed and no manual edit was made under `dist/**`.
 
 ## What was not changed
 
-- No manual fallback was made equivalent to governed pipeline execution.
-- No new dependency was added.
-- No hand edit was made under `dist/**`; `npm run build` was executed.
+- `hooks/force-pipeline-agents.cjs` was inspected but not changed because existing tests define bare plugin mentions as canonical front-door input.
+- No dependency was added.
 - No marketplace publication was performed.
-- No claim is made that the Codex UI `/hooks` trust screen is enabled; hooks were executed directly as practical process-level smoke tests.
+- No VPS migration or Hostinger/Contabo runtime change was performed.
+- No claim is made that a live Codex UI trust prompt was clicked in this run.
 
 ## Eval result
 
-EVAL RESULT: PASS after this report and trace are evaluated by `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
+EVAL RESULT: PASS. Eval runner passed with this report and trace via `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
 
 ## Remaining risks
 
-- Hook trust in the Codex UI still depends on the user's `/hooks` approval state, even though the installed cache files now match the repository runtime files.
-- Practical tests executed the hook processes directly and proved file/state behavior, but did not observe a real UI `spawn_agent` plus `wait_agent` round trip.
-- The generic slash-command trigger is intentionally broad because the current user request explicitly required every slash command mention to enter the harness.
-- The working tree includes pre-existing hook/completion and `dist/**` changes; they were validated together, not separated into a smaller commit.
+- `npm test` full-suite hit one 5s timeout in `tests/integration/references/reference-bundle.test.ts`; the same file passed isolated with `--testTimeout 20000`, so this is recorded as focused evidence after timeout.
+- Installed cache parity was completed for the two runtime hooks and verified by SHA-256 parity across source, Codex cache, and agents plugin paths.
+- The broader working tree had pre-existing dirty `dist/**` and eval telemetry files before this hotfix; they were not reverted.
 
 ## Next safest step
 
-Review the combined diff, then commit this source-tree fix. If the Codex UI already trusted the cache path, the synchronized installed hooks are the runtime files it should now execute.
+Commit the source hotfix after review; the installed hook cache has already been synchronized and smoke-tested from a clean temp directory.

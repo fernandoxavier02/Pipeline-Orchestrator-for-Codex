@@ -179,11 +179,27 @@ function ledgerEntryTrusted(entry) {
 function collectStrings(...values) {
   return values.flatMap((value) => {
     if (typeof value === 'string' && value.trim()) return [value.trim()];
+    if (typeof value === 'number' && Number.isFinite(value)) return [String(value)];
     if (Array.isArray(value)) {
-      return value.filter((entry) => typeof entry === 'string' && entry.trim()).map((entry) => entry.trim());
+      return collectStrings(...value);
     }
     return [];
   });
+}
+
+function collectObjectStrings(value, keys, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 4) return [];
+  if (Array.isArray(value)) return value.flatMap((entry) => collectObjectStrings(entry, keys, depth + 1));
+  const found = [];
+  for (const [key, entry] of Object.entries(value)) {
+    if (keys.has(key)) {
+      found.push(...collectStrings(entry));
+    }
+    if (entry && typeof entry === 'object') {
+      found.push(...collectObjectStrings(entry, keys, depth + 1));
+    }
+  }
+  return found;
 }
 
 function entryMatchesRequiredState(entry, state) {
@@ -364,7 +380,10 @@ function recordRequiredFirstActionCompleted(action, detail, updates = {}) {
         ? state.completed_actions.filter((entry) => typeof entry === 'string')
         : [],
     );
-    completedActions.add(action);
+    const actions = Array.isArray(action) ? action : [action];
+    for (const entry of actions) {
+      if (typeof entry === 'string' && entry.length > 0) completedActions.add(entry);
+    }
     writeJsonAtomic(requiredPath, signStateObject({
       ...state,
       ...updates,
@@ -375,9 +394,9 @@ function recordRequiredFirstActionCompleted(action, detail, updates = {}) {
 
   recordHookEvent({
     hook: 'dispatch-guard',
-    event: action,
+    event: Array.isArray(action) ? action.join(',') : action,
     decision: 'completed',
-    attempted: action,
+    attempted: Array.isArray(action) ? action.join(',') : action,
     expected: 'required-first-actions',
     reason: detail || 'required first action observed',
   });
@@ -393,9 +412,29 @@ function toolSucceeded(payload) {
 }
 
 function extractAgentIdFromResponse(payload) {
-  const response = payload && (payload.tool_response || payload.toolResponse);
-  if (!response || typeof response !== 'object' || Array.isArray(response)) return undefined;
+  const response = payload && (payload.tool_response || payload.toolResponse || payload.result || payload.output);
+  if (!response) return undefined;
+  let parsedResponse = response;
+  if (typeof parsedResponse === 'string') {
+    try {
+      parsedResponse = JSON.parse(parsedResponse);
+    } catch {
+      return collectStrings(parsedResponse)[0];
+    }
+  }
+  if (typeof parsedResponse !== 'object' || Array.isArray(parsedResponse)) return collectStrings(parsedResponse)[0];
   return collectStrings(
+    collectObjectStrings(parsedResponse, new Set([
+      'agent_id',
+      'agentId',
+      'agent',
+      'id',
+      'target',
+      'target_id',
+      'targetId',
+      'thread_id',
+      'threadId',
+    ])),
     response.agent_id,
     response.agentId,
     response.id,
@@ -412,10 +451,53 @@ function extractWaitTargets(toolInput) {
   return collectStrings(
     toolInput?.target,
     toolInput?.targets,
+    toolInput?.agent,
+    toolInput?.agents,
     toolInput?.agent_id,
     toolInput?.agentId,
+    toolInput?.agent_ids,
+    toolInput?.agentIds,
+    toolInput?.thread_id,
+    toolInput?.threadId,
     toolInput?.id,
   );
+}
+
+function actionEvidenceText(toolInput) {
+  if (!toolInput || typeof toolInput !== 'object') return '';
+  return collectStrings(
+    collectObjectStrings(toolInput, new Set([
+      'message',
+      'prompt',
+      'description',
+      'explanation',
+      'plan',
+      'step',
+      'steps',
+      'status',
+      'gate',
+      'decision',
+    ])),
+    toolInput.message,
+    toolInput.prompt,
+    toolInput.description,
+    toolInput.explanation,
+    toolInput.plan,
+    toolInput.step,
+    toolInput.steps,
+  ).join('\n');
+}
+
+function bootstrapGateActionsFromToolInput(toolInput) {
+  const text = actionEvidenceText(toolInput);
+  const actions = [];
+  if (/\bWORKFLOW_METHOD_GATE\b[\s:=/-]*(approved|pass|passed|confirmed|ok|sim|selected|accepted)/iu.test(text)) {
+    actions.push('WORKFLOW_METHOD_GATE');
+  }
+  if (/\bCAPABILITY_GATE\b[\s:=/-]*(pass|passed|approved|available|ok|confirmed)/iu.test(text)) {
+    actions.push('CAPABILITY_GATE');
+  }
+  return actions;
 }
 
 function activeFirstActionsPostTool(payload, toolName, toolInput) {
@@ -423,7 +505,13 @@ function activeFirstActionsPostTool(payload, toolName, toolInput) {
   if (!required?.active || !required.pending || !toolSucceeded(payload)) return undefined;
 
   if (toolName === 'update_plan') {
-    recordRequiredFirstActionCompleted('update_plan', 'visible plan tool completed');
+    const gateActions = bootstrapGateActionsFromToolInput(toolInput);
+    recordRequiredFirstActionCompleted(
+      ['update_plan', ...gateActions],
+      gateActions.length > 0
+        ? 'visible plan and bootstrap gate evidence completed'
+        : 'visible plan tool completed',
+    );
     return { kind: 'allow' };
   }
 
@@ -431,6 +519,13 @@ function activeFirstActionsPostTool(payload, toolName, toolInput) {
     const expectedControllerAgentId = typeof required.state?.bootstrap_controller_agent_id === 'string'
       ? required.state.bootstrap_controller_agent_id
       : undefined;
+    const spawnAction = `spawn:${CONTROLLER_FQN}`;
+    const spawnCompleted = required.completedActions.has(spawnAction)
+      || ledgerRequiredActionCompleted(spawnAction, path.join(process.cwd(), '.codex', 'pipeline'), required.state);
+    if (!expectedControllerAgentId && spawnCompleted) {
+      recordRequiredFirstActionCompleted('wait_agent', 'wait_agent completed after bootstrap controller spawn');
+      return { kind: 'allow' };
+    }
     if (!expectedControllerAgentId || !extractWaitTargets(toolInput).includes(expectedControllerAgentId)) {
       recordRequiredFirstActionAllowed('wait_agent', 'wait_agent completed but did not match bootstrap controller id');
       return { kind: 'allow' };
@@ -519,7 +614,10 @@ function activeFirstActionsPreTool(toolName, toolInput) {
         'update_plan',
         'WORKFLOW_METHOD_GATE',
         'CAPABILITY_GATE',
-      ].filter((action) => !requiredActionSatisfied(action));
+      ].filter((action) => (
+        !requiredActionSatisfied(action)
+        && !bootstrapGateActionsFromToolInput(toolInput).includes(action)
+      ));
       if (missingPrerequisites.length > 0) {
         return {
           kind: 'deny',
@@ -530,6 +628,11 @@ function activeFirstActionsPreTool(toolName, toolInput) {
           attempted: identity,
           expected: missingPrerequisites.join(','),
         };
+      }
+      const gateActions = bootstrapGateActionsFromToolInput(toolInput)
+        .filter((action) => !requiredActionSatisfied(action));
+      if (gateActions.length > 0) {
+        recordRequiredFirstActionCompleted(gateActions, 'bootstrap gate evidence observed in controller spawn request');
       }
       recordRequiredFirstActionAllowed(`spawn:${CONTROLLER_FQN}`, 'canonical controller spawn allowed');
       return { kind: 'allow' };

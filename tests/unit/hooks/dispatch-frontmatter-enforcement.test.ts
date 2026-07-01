@@ -593,6 +593,114 @@ describe("dispatch-guard frontmatter enforcement", () => {
     }
   });
 
+  it("TDD: completes canonical bootstrap from gate-marked controller spawn and nested agent response", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-bootstrap-"));
+    try {
+      writeRequiredFirstActions(cwd, {
+        completed_actions: ["update_plan"],
+      });
+
+      const controllerMessage = [
+        "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller",
+        "WORKFLOW_METHOD_GATE: approved",
+        "CAPABILITY_GATE: PASS",
+        "Bootstrap the pipeline.",
+      ].join("\n");
+
+      const spawnAllowed = runHook(cwd, {
+        tool_name: "spawn_agent",
+        tool_input: {
+          agent_type: "worker",
+          message: controllerMessage,
+        },
+      });
+      expect(spawnAllowed.status).toBe(0);
+      expect(spawnAllowed.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+      let state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
+      expect(state.completed_actions).toEqual(expect.arrayContaining([
+        "update_plan",
+        "WORKFLOW_METHOD_GATE",
+        "CAPABILITY_GATE",
+      ]));
+
+      const spawnCompleted = runHook(cwd, {
+        hook_event_name: "PostToolUse",
+        tool_name: "spawn_agent",
+        tool_input: {
+          agent_type: "worker",
+          message: controllerMessage,
+        },
+        tool_response: {
+          status: "success",
+          output: {
+            agents: [{ agentId: "agent-controller-1" }],
+          },
+        },
+      });
+      expect(spawnCompleted.status).toBe(0);
+      state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
+      expect(state.completed_actions).toContain("spawn:pipeline-orchestrator-for-codex:core:pipeline-controller");
+      expect(state.bootstrap_controller_agent_id).toBe("agent-controller-1");
+
+      const waitCompleted = runHook(cwd, {
+        hook_event_name: "PostToolUse",
+        tool_name: "wait_agent",
+        tool_input: { targets: ["agent-controller-1"] },
+        tool_response: { status: "success" },
+      });
+      expect(waitCompleted.status).toBe(0);
+      state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
+      expect(state.completed_actions).toEqual(expect.arrayContaining([
+        "WORKFLOW_METHOD_GATE",
+        "CAPABILITY_GATE",
+        "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+        "wait_agent",
+      ]));
+
+      const nextDispatch = runHook(cwd, {
+        tool_name: "spawn_agent",
+        tool_input: {
+          agent_type: "worker",
+          message: [
+            "PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:information-gate",
+            "Continue phase 0.",
+          ].join("\n"),
+        },
+      });
+      expect(nextDispatch.status).toBe(0);
+      expect(nextDispatch.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("TDD: records wait_agent after controller spawn even when host did not return a controller id", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-wait-no-id-"));
+    try {
+      writeRequiredFirstActions(cwd, {
+        completed_actions: [
+          "update_plan",
+          "WORKFLOW_METHOD_GATE",
+          "CAPABILITY_GATE",
+          "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
+        ],
+      });
+
+      const result = runHook(cwd, {
+        hook_event_name: "PostToolUse",
+        tool_name: "wait_agent",
+        tool_input: { targets: ["opaque-host-agent-id"] },
+        tool_response: { status: "success" },
+      });
+
+      expect(result.status).toBe(0);
+      const state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
+      expect(state.completed_actions).toContain("wait_agent");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("TDD: denies generic spawn_agent when signed first-actions state was tampered", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-hmac-"));
     const key = "unit-test-hmac-key";

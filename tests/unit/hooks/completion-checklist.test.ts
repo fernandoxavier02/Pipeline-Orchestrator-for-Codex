@@ -578,6 +578,63 @@ describe("completion-checklist Stop enforcement", () => {
     expect(output.systemMessage).toContain("pipeline-orchestrator-for-codex:core:pipeline-controller");
   });
 
+  it("TDD: allows quiet stop when required-first-actions state is cancelled", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-required-first-cancelled-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, "required-first-actions.json"),
+      JSON.stringify(signStateObject({
+        schema_version: 1,
+        status: "cancelled",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        expires_at: 0,
+        required_actions: ["update_plan", "WORKFLOW_METHOD_GATE"],
+        completed_actions: [],
+      }, "pipeline-required-first-actions")),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "Summary: cancelled state should not enforce.",
+      },
+    });
+
+    expect(output.continue).toBe(true);
+  });
+
+  it("TDD: allows quiet stop when workflow-intent state is expired", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-workflow-intent-expired-"));
+    const stateDir = join(cwd, ".codex", "pipeline");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, "workflow-intent.json"),
+      JSON.stringify(signStateObject({
+        schema_version: 1,
+        status: "active",
+        plugin: "pipeline-orchestrator-for-codex",
+        workflow: "bugfix-heavy",
+        expires_at: Math.floor(Date.now() / 1000) - 1,
+        deterministic_enforcement: {
+          stop_requires_governance_artifact: true,
+        },
+      }, "pipeline-workflow-intent")),
+      "utf8",
+    );
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "Summary: expired state should not enforce.",
+      },
+    });
+
+    expect(output.continue).toBe(true);
+  });
+
   it("TDD: blocks quiet stop when malformed workflow intent is the only pipeline signal", () => {
     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-malformed-intent-only-"));
     const stateDir = join(cwd, ".codex", "pipeline");

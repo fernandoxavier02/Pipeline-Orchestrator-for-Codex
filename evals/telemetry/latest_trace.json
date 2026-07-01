@@ -3,7 +3,6 @@
   "changed_files": [
     "dist/src/cli/pipeline-cli.js",
     "dist/src/domain/pipeline-schemas.js",
-    "dist/src/hooks/pipeline-harness.js",
     "dist/src/sentinel/sentinel-state.js",
     "dist/src/validation/final-validator.js",
     "evals/outputs/latest_output.md",
@@ -12,42 +11,38 @@
     "evals/telemetry/latest_trace.json",
     "hooks/completion-checklist.cjs",
     "hooks/dispatch-guard.cjs",
-    "hooks/force-pipeline-agents.cjs",
-    "hooks/hook-events.cjs",
-    "hooks/session-cleanup-hook.cjs",
-    "src/hooks/pipeline-harness.ts",
     "tests/unit/hooks/completion-checklist.test.ts",
-    "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
-    "tests/unit/hooks/force-pipeline-agents.test.ts",
-    "tests/unit/hooks/pipeline-harness.test.ts",
-    "tests/unit/hooks/session-cleanup-hook.test.ts"
+    "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts"
   ],
-  "eval_result": "PENDING_RECHECK",
+  "eval_result": "PENDING",
   "execution_event": "PostToolUse",
   "execution_identity": {
     "hook_event": "PostToolUse",
-    "session_id": "019f09a9-0456-7180-9efb-16cfe49bb941",
-    "tool_name": "apply_patch"
+    "session_id": "019f193a-8534-7291-af95-335e62e0bf42",
+    "tool_name": "Bash"
   },
   "execution_observed": true,
   "git_diff_captured": true,
   "git_state": "dirty",
   "last_hook_event": "PostToolUse",
   "plugin_execution": {
-    "observed": true,
-    "pipeline_agent_fqn": "pipeline-orchestrator-for-codex:core:pipeline-controller",
+    "observed": false,
+    "pipeline_agent_fqn": null,
     "real_agent_runtime": {
       "spawn_agent_observed": false,
       "wait_agent_observed": false
     },
-    "status": "hook-smoke-only"
+    "status": "not-observed"
   },
   "scope_respected": true,
   "scope_review": {
     "allowed_prefixes": [
+      "hooks/",
+      "tests/unit/hooks/",
+      "evals/",
+      "dist/",
       ".codex/",
       ".agents/skills/workflow-eval-gate/",
-      "evals/",
       ".pipeline/sessions/",
       "docs/pipeline-orchestrator-codex/11-eval-gate-plan.md",
       "docs/pipeline-orchestrator-codex/README.md",
@@ -56,52 +51,17 @@
       "README.md",
       ".kiro/"
     ],
-    "scope_justifications": {
-      "dist/src/cli/pipeline-cli.js": "Generated build output already present in the working tree; npm run build was executed and no manual dist edit was made.",
-      "dist/src/domain/pipeline-schemas.js": "Generated build output already present in the working tree; npm run build was executed and no manual dist edit was made.",
-      "dist/src/hooks/pipeline-harness.js": "Generated compiled harness output added with npm run build so installed plugin surfaces can load the deterministic detector.",
-      "dist/src/sentinel/sentinel-state.js": "Generated build output already present in the working tree; npm run build was executed and no manual dist edit was made.",
-      "dist/src/validation/final-validator.js": "Generated build output already present in the working tree; npm run build was executed and no manual dist edit was made.",
-      "hooks/completion-checklist.cjs": "Pre-existing hook repair surface included in the current validated working tree and covered by full test suite.",
-      "hooks/dispatch-guard.cjs": "Required to enforce first-action ordering before canonical controller spawn.",
-      "hooks/force-pipeline-agents.cjs": "Required first-message hook runtime for slash/plugin front-door enforcement and bootstrap preservation.",
-      "hooks/hook-events.cjs": "Required to preserve harness_runtime evidence emitted by hooks.",
-      "hooks/session-cleanup-hook.cjs": "Required to prevent cleanup from following symlinked pipeline state outside the workspace.",
-      "src/hooks/pipeline-harness.ts": "New deterministic TypeScript harness source for first-message slash/plugin detection.",
-      "tests/unit/hooks/completion-checklist.test.ts": "Pre-existing hook repair test surface included in the current validated working tree.",
-      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts": "Regression tests for first-action ordering and signed gate allowance.",
-      "tests/unit/hooks/force-pipeline-agents.test.ts": "Regression tests for deterministic first-message enforcement and active bootstrap preservation.",
-      "tests/unit/hooks/pipeline-harness.test.ts": "Unit tests for the deterministic TypeScript harness detector.",
-      "tests/unit/hooks/session-cleanup-hook.test.ts": "Regression test for symlink-safe stale-state cleanup."
-    },
-    "unexpected_files": [
-      "dist/src/cli/pipeline-cli.js",
-      "dist/src/domain/pipeline-schemas.js",
-      "dist/src/hooks/pipeline-harness.js",
-      "dist/src/sentinel/sentinel-state.js",
-      "dist/src/validation/final-validator.js",
-      "hooks/completion-checklist.cjs",
-      "hooks/dispatch-guard.cjs",
-      "hooks/force-pipeline-agents.cjs",
-      "hooks/hook-events.cjs",
-      "hooks/session-cleanup-hook.cjs",
-      "src/hooks/pipeline-harness.ts",
-      "tests/unit/hooks/completion-checklist.test.ts",
-      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
-      "tests/unit/hooks/force-pipeline-agents.test.ts",
-      "tests/unit/hooks/pipeline-harness.test.ts",
-      "tests/unit/hooks/session-cleanup-hook.test.ts"
-    ]
+    "scope_justifications": {},
+    "unexpected_files": []
   },
-  "timestamp": "2026-06-27T16:56:06.079687+00:00",
+  "timestamp": "2026-06-30T15:52:41.529545+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "436a4af45d3211a17cf155542b505cad93fda1f5",
+    "base_commit": "4fda30f8040cb3c142733f6da91a581a90997bc3",
     "changed_files": [
       "dist/src/cli/pipeline-cli.js",
       "dist/src/domain/pipeline-schemas.js",
-      "dist/src/hooks/pipeline-harness.js",
       "dist/src/sentinel/sentinel-state.js",
       "dist/src/validation/final-validator.js",
       "evals/outputs/latest_output.md",
@@ -110,15 +70,8 @@
       "evals/telemetry/latest_trace.json",
       "hooks/completion-checklist.cjs",
       "hooks/dispatch-guard.cjs",
-      "hooks/force-pipeline-agents.cjs",
-      "hooks/hook-events.cjs",
-      "hooks/session-cleanup-hook.cjs",
-      "src/hooks/pipeline-harness.ts",
       "tests/unit/hooks/completion-checklist.test.ts",
-      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
-      "tests/unit/hooks/force-pipeline-agents.test.ts",
-      "tests/unit/hooks/pipeline-harness.test.ts",
-      "tests/unit/hooks/session-cleanup-hook.test.ts"
+      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts"
     ],
     "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
     "ref": "HEAD+working-tree"
@@ -127,39 +80,40 @@
     "commands": {
       "git diff --check": {
         "command": "git diff --check",
-        "observed_at": "2026-06-27T16:38:00.000000+00:00",
+        "observed_at": "2026-06-29T22:18:20-03:00",
         "status": "PASS",
-        "target": "HEAD+working-tree"
+        "target": "working-tree-hotfix-bootstrap-first-actions"
       },
       "npm run build": {
         "command": "npm run build",
-        "observed_at": "2026-06-27T16:38:30.000000+00:00",
+        "observed_at": "2026-06-29T22:17:52-03:00",
         "status": "PASS",
-        "target": "HEAD+working-tree"
+        "target": "working-tree-hotfix-bootstrap-first-actions"
       },
       "npm run lint:types": {
         "command": "npm run lint:types",
-        "observed_at": "2026-06-27T16:38:00.000000+00:00",
+        "observed_at": "2026-06-29T22:17:13-03:00",
         "status": "PASS",
-        "target": "HEAD+working-tree"
+        "target": "working-tree-hotfix-bootstrap-first-actions"
       },
       "npm test": {
         "command": "npm test",
-        "observed_at": "2026-06-27T16:44:00.000000+00:00",
-        "status": "PASS",
-        "target": "HEAD+working-tree"
+        "focused_evidence": "Focused hook tests passed: dispatch-frontmatter-enforcement 31/31 and completion-checklist 120/120. Full npm test had one 5s timeout in tests/integration/references/reference-bundle.test.ts; that file passed isolated with --testTimeout 20000.",
+        "observed_at": "2026-06-29T22:18:08-03:00",
+        "status": "PASS_FOCUSED_AFTER_TIMEOUT",
+        "target": "working-tree-hotfix-bootstrap-first-actions"
       },
       "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
         "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
-        "observed_at": "2026-06-27T16:46:00.000000+00:00",
+        "observed_at": "2026-06-29T22:19:00-03:00",
         "status": "PASS",
-        "target": "HEAD+working-tree"
+        "target": "working-tree-hotfix-bootstrap-first-actions"
       },
       "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {
         "command": "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
-        "observed_at": "2026-06-27T16:47:00.000000+00:00",
+        "observed_at": "2026-06-29T22:20:00-03:00",
         "status": "PASS",
-        "target": "HEAD+working-tree"
+        "target": "working-tree-hotfix-bootstrap-first-actions"
       }
     }
   }
