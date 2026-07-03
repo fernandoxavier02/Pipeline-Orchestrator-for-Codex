@@ -23,7 +23,7 @@ describe("execution identity", () => {
     expect(first.event_id).toBe(second.event_id);
     expect(first).toMatchObject({
       plugin_name: "pipeline-orchestrator-for-codex",
-      plugin_version: "0.5.1",
+      plugin_version: "0.5.2",
       surface: "dispatch:executor",
       session_id: "session:with windows-invalid chars",
       source: "test",

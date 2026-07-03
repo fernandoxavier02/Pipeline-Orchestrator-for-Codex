@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-07-03
+
+### Codex hook-channel bugfix (bugfix-heavy)
+
+Fixes the three root causes behind "the Codex agent does not obey the pipeline",
+plus a deterministic recovery route from a governed-run deadlock.
+
+- **completion-checklist.cjs (Stop):** short-circuit to `{continue:true}` when
+  `stop_hook_active === true` (anti-loop, per the Codex Stop contract); blocking Stop
+  output now also carries the Codex-native `{decision:"block", reason}` so the redirect
+  instruction reaches the model instead of dying in a UI-only field.
+- **force-pipeline-agents.cjs (UserPromptSubmit):** pipeline-worthy prompts are now
+  advisory (`continue:true` + `hookSpecificOutput.additionalContext`) instead of a hard
+  turn-kill; bootstrap state is armed only for an explicit
+  `/pipeline-orchestrator-for-codex:` invocation.
+- **edit-guard-hook.cjs:** single stateful POSIX-aware command scanner (NONE/SINGLE/DOUBLE
+  + ANSI-C `$'…'` + backslash) replacing the backslash-blind regexes; read/write split
+  (read-only Bash touching `.codex/pipeline` allowed, only writes to protected state denied);
+  shared anti-chaining tokenizer; exact realpath+lstat allowlist for the escape scripts.
+- **scripts/pipeline-reset.cjs (new):** deterministic escape route — removes exactly the
+  five run-state files + `sessions/*.exec-window` under `.codex/pipeline`, never the ledgers;
+  anti-symlink + path-traversal guards; emits the `pipeline_reset` audit event.
+- **hooks/path-safety.cjs (new):** shared realpath-of-existing-ancestor helper.
+- **src/hooks/pipeline-harness.ts:** removed the generic-slash-command branch (SSOT alignment
+  with the CJS D4 behavior).
+- **scripts/sync-codex-plugin-surfaces.ps1:** derives the cache version dir from the plugin
+  manifest instead of a hard-coded path, so a version bump no longer desyncs the cache target.
+
 ## [0.5.1] — 2026-06-18
 
 ### Governance integrity release

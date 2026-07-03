@@ -209,9 +209,18 @@ $pluginManifestPath = Join-Path $projectRootFull ".codex-plugin/plugin.json"
 if (!(Test-Path -LiteralPath $pluginManifestPath)) {
   Fail "plugin manifest not found: $pluginManifestPath"
 }
-$pipelineVersion = (Get-Content -LiteralPath $pluginManifestPath -Raw | ConvertFrom-Json).version
+try {
+  $pipelineVersion = (Get-Content -LiteralPath $pluginManifestPath -Raw | ConvertFrom-Json).version
+} catch {
+  Fail "plugin manifest is not valid JSON: $pluginManifestPath ($($_.Exception.Message))"
+}
 if ([string]::IsNullOrWhiteSpace($pipelineVersion)) {
   Fail "plugin manifest has no version: $pluginManifestPath"
+}
+# The version becomes a filesystem path segment; reject anything that isn't a clean
+# semver so a stray separator / traversal can't redirect the cache dir.
+if ($pipelineVersion -notmatch '^\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$') {
+  Fail "plugin manifest version has an unexpected shape: '$pipelineVersion'"
 }
 Write-Host "Pipeline plugin version (from manifest): $pipelineVersion"
 
