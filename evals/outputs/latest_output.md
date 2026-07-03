@@ -3,33 +3,32 @@
 ## What was inspected
 
 - Repository: `D:\Pipeline Orchestrator for Codex`.
-- Active request: commit and push all pending work left by other agents, then synchronize the Contabo VPS mirror.
+- Active request: commit, push, publish the Pipeline Orchestrator plugin for global Codex use on this computer, and update the Codex Global marketplace.
 - behavior_cases: 5.
-- Contracts inspected: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `evals/README.md`, and the existing VPS sync scripts.
-- Pending surfaces inspected: `.pipeline/**` run evidence, `evals/telemetry/**`, Git status, current branch, remote origin, and `scripts/sync-contabo-fernando-vps-mirror.ps1`.
+- Contracts inspected: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `evals/README.md`, plugin manifests, hook runtime, tests, marketplace config, and sync scripts.
+- Runtime evidence inspected: governed pipeline state, `dispatch-guard` hook behavior, unit/integration tests, Python eval tests, and real adversarial review execution using `spawn_agent` plus `wait_agent`.
 
 ## What was changed
 
-- `.pipeline/active-run.json`, `.pipeline/run-log.jsonl`, `.pipeline/state/`, and the new `.pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/` run evidence were accepted as intentional pipeline evidence from prior agents.
-- `.pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.json` and `.pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.md` were accepted as generated fidelity evidence for a previously tracked pipeline run.
-- `evals/telemetry/changed_files.txt`, `evals/telemetry/git_diff.patch`, and `evals/telemetry/latest_trace.json` were regenerated/updated to describe the current evidence commit scope.
+- `.codex/hooks/post_tool_use_telemetry.py` now avoids rewriting telemetry when all remaining changes are already staged, preventing timestamp-only dirtiness after `git add`/commit preparation.
+- `evals/tests/test_telemetry_hook.py` covers that staged-tree telemetry regression.
+- `evals/telemetry/**` was updated to capture the final validation scope and evidence.
 
 ## What was not changed
 
-- No runtime source, hooks, skills, commands, package metadata, generated `dist/**`, dependencies, marketplace config, or installed plugin cache was edited for this closeout.
-- No manual rewrite of the other agents' implementation was performed.
-- No VPS mutation is claimed in this report; the VPS sync is the next step after commit and push.
+- No unrelated runtime behavior, dependencies, agent prompts, skills, command entrypoints, or generated `dist/**` files were manually rewritten.
+- No VPS sync is claimed by this eval report; this report covers local plugin publication readiness before commit/push and local Codex sync.
+- No secrets, credentials, or private keys were added.
 
 ## Eval result
 
-EVAL RESULT: PASS. Eval runner passed with this report and trace via `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
+EVAL RESULT: PASS. The intended final gate is `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` after this report and telemetry update.
 
 ## Remaining risks
 
-- `npm test` full-suite still hit the known 5s timeout in `tests/integration/references/reference-bundle.test.ts`; the same file passed isolated with `--testTimeout 20000`.
-- `.pipeline/**` includes operational evidence and machine logs, including one large `machine-evidence.jsonl` omitted from the telemetry diff body because of size, but still included as an untracked file to be committed.
-- The final VPS sync must be proven separately by HEAD, origin, item count, byte sum, and critical hashes.
+- The current Codex session previously showed hooks loaded from the old `0.5.1` cache path; after sync, `codex plugin list` and cache manifests must be checked, and a new Codex session is the definitive runtime banner proof.
+- Marketplace update touches a second repository, `C:\Users\win\Codex-superpower`, so it must be committed and pushed separately.
 
 ## Next safest step
 
-Stage all pending evidence files, commit, push `main` to `origin`, then run `scripts/sync-contabo-fernando-vps-mirror.ps1` and verify the remote parity output.
+Run the eval gate, then stage, commit, push, synchronize the installed Codex plugin surfaces, verify `codex plugin list`, and commit/push the Codex Global marketplace update.

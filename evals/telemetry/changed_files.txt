@@ -1,4 +1,5 @@
 .codex/hooks/post_tool_use_telemetry.py
+evals/outputs/latest_output.md
 evals/telemetry/changed_files.txt
 evals/telemetry/git_diff.patch
 evals/telemetry/latest_trace.json

@@ -1,6 +1,6 @@
 {
   "name": "pipeline-orchestrator-for-codex",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Prompt-driven Codex pipeline orchestrator with 4 phases, 45 agent prompts, HMAC-backed sentinel and ledger integrity, v5.2 protocol events, TRACE.md validation, TDD gates, Spec lifecycle gates, adversarial review, and execution identity tracing.",
   "author": {
     "name": "Fernando Xavier - FX Studio AI",

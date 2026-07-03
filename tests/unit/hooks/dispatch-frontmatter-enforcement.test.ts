@@ -512,6 +512,74 @@ describe("dispatch-guard frontmatter enforcement", () => {
     }
   });
 
+  it("TDD: records only update_plan during PreToolUse even when text mentions bootstrap gates", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-update-plan-"));
+    try {
+      writePendingRequiredFirstActions(cwd);
+
+      const result = runHook(cwd, {
+        tool_name: "update_plan",
+        tool_input: {
+          explanation: [
+            "WORKFLOW_METHOD_GATE approved for review-only.",
+            "CAPABILITY_GATE passed with spawn_agent and wait_agent available.",
+          ].join("\n"),
+          plan: [
+            { step: "Open visible plan", status: "completed" },
+            { step: "Bootstrap controller", status: "in_progress" },
+          ],
+        },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+      const state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
+      expect(state.completed_actions).toEqual(["update_plan"]);
+      expect(readLastHookEvent(cwd)).toMatchObject({
+        hook: "dispatch-guard",
+        event: "update_plan",
+        decision: "completed",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("TDD: records only update_plan during PostToolUse even when text mentions bootstrap gates", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-update-plan-post-"));
+    try {
+      writePendingRequiredFirstActions(cwd);
+
+      const result = runHook(cwd, {
+        hook_event_name: "PostToolUse",
+        tool_name: "update_plan",
+        tool_input: {
+          explanation: [
+            "WORKFLOW_METHOD_GATE approved for review-only.",
+            "CAPABILITY_GATE passed with spawn_agent and wait_agent available.",
+          ].join("\n"),
+          plan: [
+            { step: "Open visible plan", status: "completed" },
+            { step: "Bootstrap controller", status: "in_progress" },
+          ],
+        },
+        tool_response: { status: "success" },
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.output.hookSpecificOutput?.permissionDecision).toBeUndefined();
+      const state = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "required-first-actions.json"), "utf8"));
+      expect(state.completed_actions).toEqual(["update_plan"]);
+      expect(readLastHookEvent(cwd)).toMatchObject({
+        hook: "dispatch-guard",
+        event: "update_plan",
+        decision: "completed",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("TDD: allows controller spawn after visible plan and mandatory gates complete", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-frontmatter-first-actions-"));
     const key = "unit-test-hmac-key";

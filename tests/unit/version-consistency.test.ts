@@ -17,8 +17,8 @@ describe("version consistency across manifests", () => {
   const changelog = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
   const readme = readFileSync(join(ROOT, "README.md"), "utf8");
 
-  it("plugin.json version is 0.5.2", () => {
-    expect(pluginJson.version).toBe("0.5.2");
+  it("plugin.json version is 0.5.3", () => {
+    expect(pluginJson.version).toBe("0.5.3");
   });
 
   it("package.json version matches plugin.json", () => {
@@ -42,8 +42,8 @@ describe("version consistency across manifests", () => {
     expect(readme).toContain(`## ${agentCount} Agent Prompts`);
   });
 
-  it("SessionStart banner mentions v0.5.2", () => {
-    expect(sessionStartContext).toContain("v0.5.2");
+  it("SessionStart banner mentions v0.5.3", () => {
+    expect(sessionStartContext).toContain("v0.5.3");
   });
 
   it("registers PreToolUse guards for Codex spawn_agent, not only legacy Agent", () => {

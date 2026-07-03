@@ -144,6 +144,15 @@ def changed_files(repo_root: Path) -> list[str]:
     return files
 
 
+def unstaged_or_untracked_files(repo_root: Path, untracked: list[str]) -> list[str]:
+    unstaged = [
+        line.strip().replace("\\", "/")
+        for line in run_git(repo_root, ["diff", "--name-only"]).splitlines()
+        if line.strip()
+    ]
+    return [*unstaged, *untracked]
+
+
 def git_ref(repo_root: Path, *args: str) -> str | None:
     value = run_git(repo_root, list(args)).strip()
     return value or None
@@ -295,8 +304,11 @@ def main() -> int:
 
     files = changed_files(repo_root)
     untracked = untracked_files(repo_root)
+    working_tree_files = unstaged_or_untracked_files(repo_root, untracked)
     has_git_changes = bool(files or untracked)
 
+    if not working_tree_files:
+        return 0
     if (not has_git_changes or has_only_self_generated_telemetry(files, untracked)) and not (
         env_flag("EVAL_GATE_READ_ONLY") or is_read_only_payload(payload)
     ):

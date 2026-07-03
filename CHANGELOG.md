@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-07-03
+
+### Codex Global publication and gate-spoof hardening
+
+- Hardened `dispatch-guard.cjs` so `update_plan` satisfies only the required
+  `update_plan` bootstrap action; workflow method and capability gates still
+  require canonical controller/runtime evidence instead of frontmatter text.
+- Added regression coverage for PreToolUse and PostToolUse required-first-action
+  handling.
+- Bumped plugin/package manifests and SessionStart banner to `0.5.3` for global
+  Codex installation.
+
 ## [0.5.2] — 2026-07-03
 
 ### Codex hook-channel bugfix (bugfix-heavy)

@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Codex_CLI-Plugin-14532D?style=for-the-badge&logo=openai&logoColor=white" alt="Codex Plugin" />
   <img src="https://img.shields.io/badge/Kimi_CLI-Skill-0066FF?style=for-the-badge" alt="Kimi Skill" />
-  <img src="https://img.shields.io/badge/version-0.5.2-blue?style=for-the-badge" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.5.3-blue?style=for-the-badge" alt="Version" />
   <img src="https://img.shields.io/badge/agents-45-orange?style=for-the-badge" alt="Agents" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License" />
 </p>
@@ -57,12 +57,12 @@ codex install fx-studio-ai/pipeline-orchestrator-for-codex
 git clone https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git
 
 # Install into Codex plugins cache
-mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.2
-cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.2/
+mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.3
+cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.3/
 
 # Optional: Install Node.js dependencies (only needed for TypeScript development/testing)
 # The plugin works WITHOUT npm install — hooks use only Node.js builtins (fs, path)
-# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.2
+# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.3
 # npm install --production
 ```
 
@@ -75,7 +75,7 @@ npm install
 
 # Create a symlink in the plugins cache
 mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex
-ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.2
+ln -sf "$(pwd)" ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.3
 ```
 
 #### Verify Installation
@@ -336,7 +336,7 @@ Layer 3: SKILL.md bottom (self-check + anti-patterns)
 ```
 pipeline-orchestrator-for-codex/
 ├── .codex-plugin/
-│   └── plugin.json              # Plugin manifest (v0.5.2)
+│   └── plugin.json              # Plugin manifest (v0.5.3)
 ├── .kimi/                       # Kimi Code CLI skill tree
 │   └── skills/                  #   Skills for Kimi (pipeline, bugfix, feature, audit, review, spec)
 │       ├── pipeline/

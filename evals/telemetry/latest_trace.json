@@ -2,6 +2,7 @@
   "added_unrequested_features": false,
   "changed_files": [
     ".codex/hooks/post_tool_use_telemetry.py",
+    "evals/outputs/latest_output.md",
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
     "evals/telemetry/latest_trace.json",
@@ -19,13 +20,13 @@
   "git_state": "dirty",
   "last_hook_event": "PostToolUse",
   "plugin_execution": {
-    "observed": false,
-    "pipeline_agent_fqn": null,
+    "observed": true,
+    "pipeline_agent_fqn": "pipeline-orchestrator-for-codex:core:pipeline-controller",
     "real_agent_runtime": {
-      "spawn_agent_observed": false,
-      "wait_agent_observed": false
+      "spawn_agent_observed": true,
+      "wait_agent_observed": true
     },
-    "status": "not-observed"
+    "status": "success"
   },
   "scope_respected": true,
   "scope_review": {
@@ -46,22 +47,23 @@
       ".kiro/"
     ],
     "scope_justifications": {
-      ".pipeline/active-run.json": "Requested closeout commits all pending pipeline evidence left by other agents.",
-      ".pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.json": "Generated fidelity evidence for an existing tracked pipeline run; included because user requested all agent-produced work.",
-      ".pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.md": "Generated fidelity evidence for an existing tracked pipeline run; included because user requested all agent-produced work.",
-      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/": "Run evidence for the hook-channel bugfix produced by other agents and explicitly requested for commit.",
-      ".pipeline/run-log.jsonl": "Pipeline run ledger evidence produced by other agents and required for parity with the local source tree.",
-      ".pipeline/state/": "Pipeline corrective state evidence produced by other agents and included in the requested all-pending commit."
+      ".codex-plugin/plugin.json": "Requested global Codex publication requires the plugin manifest version to match the installed cache version.",
+      "CHANGELOG.md": "Requested publication requires documenting the 0.5.3 release and hook hardening shipped in this commit.",
+      "package-lock.json": "Version bump must keep npm lock metadata aligned with package.json for reproducible validation.",
+      "package.json": "Requested publication requires package metadata to match the plugin manifest version.",
+      "tests/unit/observability/execution-identity.test.ts": "Versioned observability identity test must match the published plugin version.",
+      "tests/unit/version-consistency.test.ts": "Version consistency test must match the published manifest and SessionStart banner."
     },
     "unexpected_files": []
   },
-  "timestamp": "2026-07-03T16:57:51.479078+00:00",
+  "timestamp": "2026-07-03T17:49:35.719817+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "6a164cd65a7ffa556dae974b2798d2792e6f303b",
+    "base_commit": "e0ebc0dfc7e4f358558830fe66ac19cb3a5b87ec",
     "changed_files": [
       ".codex/hooks/post_tool_use_telemetry.py",
+      "evals/outputs/latest_output.md",
       "evals/telemetry/changed_files.txt",
       "evals/telemetry/git_diff.patch",
       "evals/telemetry/latest_trace.json",
@@ -74,38 +76,37 @@
     "commands": {
       "git diff --check": {
         "command": "git diff --check",
-        "observed_at": "2026-07-03T13:39:00-03:00",
+        "observed_at": "2026-07-03T14:49:00-03:00",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "npm run build": {
         "command": "npm run build",
-        "observed_at": "2026-07-03T13:42:00-03:00",
+        "observed_at": "2026-07-03T14:47:00-03:00",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "npm run lint:types": {
         "command": "npm run lint:types",
-        "observed_at": "2026-07-03T13:41:00-03:00",
+        "observed_at": "2026-07-03T14:46:00-03:00",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "npm test": {
-        "command": "npm test",
-        "focused_evidence": "Full npm test hit two 5s timeouts in tests/integration/references/reference-bundle.test.ts; the same file passed isolated with npx vitest run tests/integration/references/reference-bundle.test.ts --testTimeout 20000 (10/10).",
-        "observed_at": "2026-07-03T13:43:00-03:00",
-        "status": "PASS_FOCUSED_AFTER_TIMEOUT",
+        "command": "npm test -- --testTimeout 30000",
+        "observed_at": "2026-07-03T14:48:00-03:00",
+        "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
         "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
-        "observed_at": "2026-07-03T13:44:00-03:00",
+        "observed_at": "2026-07-03T14:49:00-03:00",
         "status": "PASS",
         "target": "HEAD+working-tree"
       },
       "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {
         "command": "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
-        "observed_at": "2026-07-03T13:45:00-03:00",
+        "observed_at": "2026-07-03T14:55:00-03:00",
         "status": "PASS",
         "target": "HEAD+working-tree"
       }

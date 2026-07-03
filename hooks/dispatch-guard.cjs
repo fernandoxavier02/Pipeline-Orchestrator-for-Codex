@@ -505,13 +505,7 @@ function activeFirstActionsPostTool(payload, toolName, toolInput) {
   if (!required?.active || !required.pending || !toolSucceeded(payload)) return undefined;
 
   if (toolName === 'update_plan') {
-    const gateActions = bootstrapGateActionsFromToolInput(toolInput);
-    recordRequiredFirstActionCompleted(
-      ['update_plan', ...gateActions],
-      gateActions.length > 0
-        ? 'visible plan and bootstrap gate evidence completed'
-        : 'visible plan tool completed',
-    );
+    recordRequiredFirstActionCompleted('update_plan', 'visible plan tool completed');
     return { kind: 'allow' };
   }
 
@@ -571,7 +565,7 @@ function activeFirstActionsPreTool(toolName, toolInput) {
   );
 
   if (toolName === 'update_plan') {
-    recordRequiredFirstActionAllowed('update_plan', 'visible plan tool allowed');
+    recordRequiredFirstActionCompleted('update_plan', 'visible plan tool observed');
     return { kind: 'allow' };
   }
 

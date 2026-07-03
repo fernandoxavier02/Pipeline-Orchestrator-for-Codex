@@ -223,6 +223,22 @@ class TelemetryHookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual({path: path.read_text(encoding="utf-8") for path in telemetry_files}, before)
 
+    def test_fully_staged_tree_does_not_overwrite_telemetry_files(self) -> None:
+        self.commit_all()
+        (self.root / "changed.txt").write_text("changed", encoding="utf-8")
+        subprocess.run(["git", "add", "changed.txt"], cwd=self.root, check=True)
+        telemetry_files = [
+            self.root / "evals" / "telemetry" / "changed_files.txt",
+            self.root / "evals" / "telemetry" / "git_diff.patch",
+            self.root / "evals" / "telemetry" / "latest_trace.json",
+        ]
+        before = {path: path.read_text(encoding="utf-8") for path in telemetry_files}
+
+        result = self.run_telemetry_hook()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual({path: path.read_text(encoding="utf-8") for path in telemetry_files}, before)
+
     def test_read_only_telemetry_does_not_overwrite_files(self) -> None:
         self.commit_all()
         (self.root / "changed.txt").write_text("changed", encoding="utf-8")
