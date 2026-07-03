@@ -1412,6 +1412,18 @@ process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
   try {
     const payload = parsePayload(input);
+    // Codex/Claude retry Stop with stop_hook_active=true; short-circuit before any
+    // governance evaluation so a still-incomplete pipeline cannot trap the stop in a loop.
+    if (payload && payload.stop_hook_active === true) {
+      recordHookEvent({
+        hook: 'completion-checklist',
+        event: 'Stop',
+        decision: 'allow_stop_hook_active_retry',
+        reason: 'stop_hook_active retry; governance may still be incomplete; allowing stop to prevent loop',
+      });
+      console.log(JSON.stringify({ continue: true }));
+      return;
+    }
     const stopEnforcement = evaluateStopEnforcement(payload, input);
     if (!stopEnforcement.ok) {
       const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
@@ -1426,19 +1438,22 @@ process.stdin.on('end', () => {
         reason: 'explicit pipeline completion attempted without validated governance artifact',
       });
 
+      const systemMessage = hasRequiredFirstActionGap
+        ? [
+            'PIPELINE STOP ENFORCEMENT: required first actions are incomplete.',
+            'Do not stop or switch to manual fallback. Redirect immediately to the canonical sequence: update_plan, WORKFLOW_METHOD_GATE, CAPABILITY_GATE, spawn_agent with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller, then wait_agent.',
+            'Emit BLOCKED only if the real runtime capability is unavailable after attempting the canonical recovery path.',
+          ].join('\n')
+        : [
+            'PIPELINE STOP ENFORCEMENT: explicit pipeline completion requires a validated PipelineGovernanceArtifact.',
+            'Emit BLOCKED with pipeline_valid=false, or complete the missing gates/hooks/agent artifacts before finalizing.',
+          ].join('\n');
       console.log(JSON.stringify({
         continue: false,
+        decision: 'block',
+        reason: systemMessage,
         stopReason: `Pipeline completion blocked: missing governance evidence: ${stopEnforcement.missing.join(', ')}`,
-        systemMessage: hasRequiredFirstActionGap
-          ? [
-              'PIPELINE STOP ENFORCEMENT: required first actions are incomplete.',
-              'Do not stop or switch to manual fallback. Redirect immediately to the canonical sequence: update_plan, WORKFLOW_METHOD_GATE, CAPABILITY_GATE, spawn_agent with PIPELINE_AGENT_FQN: pipeline-orchestrator-for-codex:core:pipeline-controller, then wait_agent.',
-              'Emit BLOCKED only if the real runtime capability is unavailable after attempting the canonical recovery path.',
-            ].join('\n')
-          : [
-              'PIPELINE STOP ENFORCEMENT: explicit pipeline completion requires a validated PipelineGovernanceArtifact.',
-              'Emit BLOCKED with pipeline_valid=false, or complete the missing gates/hooks/agent artifacts before finalizing.',
-            ].join('\n'),
+        systemMessage,
       }));
       return;
     }
@@ -1453,10 +1468,13 @@ process.stdin.on('end', () => {
     console.log(JSON.stringify({ continue: true }));
 
   } catch (e) {
+    const systemMessage = 'completion-checklist hook failed internally; inline completion is blocked because pipeline stop enforcement could not be proven.';
     console.log(JSON.stringify({
       continue: false,
+      decision: 'block',
+      reason: systemMessage,
       stopReason: 'pipeline-stop-hook-error',
-      systemMessage: 'completion-checklist hook failed internally; inline completion is blocked because pipeline stop enforcement could not be proven.',
+      systemMessage,
     }));
   }
 });

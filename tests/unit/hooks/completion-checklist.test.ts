@@ -501,6 +501,45 @@ describe("completion-checklist Stop enforcement", () => {
     expect(output.stopReason).toContain("agent:primary_reviewer");
   });
 
+  it("TDD: short-circuits stop enforcement when stop_hook_active is true to prevent stop loops", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-stop-hook-active-"));
+    writeActiveSentinel(cwd);
+
+    const output = runHook(cwd, {
+      cwd,
+      stop_hook_active: true,
+      output: {
+        text: "PIPELINE COMPLETE",
+      },
+    });
+
+    expect(output).toEqual({ continue: true });
+
+    const events = readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { decision?: string });
+    expect(events[events.length - 1]?.decision).toBe("allow_stop_hook_active_retry");
+  });
+
+  it("TDD: block output carries additive decision:block with reason mirroring systemMessage", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-block-decision-"));
+    writeActiveSentinel(cwd);
+
+    const output = runHook(cwd, {
+      cwd,
+      output: {
+        text: "PIPELINE COMPLETE",
+      },
+    });
+
+    expect(output.continue).toBe(false);
+    expect(output.stopReason).toContain("PipelineGovernanceArtifact");
+    expect(output.decision).toBe("block");
+    expect(output.reason).toBe(output.systemMessage);
+  });
+
   it("TDD: blocks quiet stop after explicit pipeline front door even when state files were erased", () => {
     const cwd = mkdtempSync(join(tmpdir(), "completion-checklist-frontdoor-state-erased-"));
 

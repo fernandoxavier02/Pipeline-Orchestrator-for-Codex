@@ -57,16 +57,16 @@ function expectValidHmacSigned(value: Record<string, unknown>, key: string, scop
 }
 
 describe("force pipeline agents hook", () => {
-  it("BDD: blocks pipeline-worthy prompts outside the canonical front door", () => {
+  it("BDD: advises pipeline for pipeline-worthy prompts outside the canonical front door", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-"));
 
     const result = runHook(cwd, "analise este plugin e implemente os gates");
 
     expect(result.status).toBe(0);
     const output = parseOutput(result);
-    expect(output.continue).toBe(false);
-    expect(output.stopReason).toBe("pipeline-required");
-    expect(output.hook_enforcement_mode).toBe("blocking");
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).toBeUndefined();
+    expect(output.hook_enforcement_mode).toBe("advisory");
     expect(output.pipeline_valid).toBe(false);
     expect(output.systemMessage).toContain("autorização explícita para delegação por subagentes");
     expect(output.systemMessage).toContain("/pipeline-orchestrator-for-codex:pipeline");
@@ -74,14 +74,33 @@ describe("force pipeline agents hook", () => {
     expect(output.systemMessage).toContain("blocked-no-agent-runtime");
     expect(output.systemMessage).toContain("execução inline");
     expect(output.systemMessage).not.toContain("task-orchestrator");
+    expect(output.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
+    expect(output.hookSpecificOutput.additionalContext).toBe(output.systemMessage);
+    expect(output.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
     const eventsPath = join(cwd, ".codex", "pipeline", "hook-events.jsonl");
     expect(existsSync(eventsPath)).toBe(true);
     const event = JSON.parse(readFileSync(eventsPath, "utf8").trim());
     expect(event).toMatchObject({
       hook: "force-pipeline-agents",
       event: "UserPromptSubmit",
-      decision: "block_pipeline_required",
+      decision: "advise_pipeline_recommended",
     });
+  });
+
+  it("TDD: advisory and enforced-workflow builders mirror systemMessage into additionalContext", () => {
+    // Advisory path: a skill command routes through advisoryOutput.
+    const skillCwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-builder-advisory-"));
+    const skillOutput = parseOutput(runHook(skillCwd, "/context mostra o estado"));
+    expect(skillOutput.hook_enforcement_mode).toBe("advisory");
+    expect(skillOutput.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
+    expect(skillOutput.hookSpecificOutput.additionalContext).toBe(skillOutput.systemMessage);
+
+    // Enforced-workflow path: an explicit plugin slash routes through enforcedWorkflowOutput.
+    const wfCwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-builder-enforced-"));
+    const wfOutput = parseOutput(runHook(wfCwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo"));
+    expect(wfOutput.hook_enforcement_mode).toBe("blocking");
+    expect(wfOutput.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
+    expect(wfOutput.hookSpecificOutput.additionalContext).toBe(wfOutput.systemMessage);
   });
 
   it("TDD: malformed non-string prompt payload fails closed", () => {
@@ -164,8 +183,9 @@ describe("force pipeline agents hook", () => {
     const result = runHook(cwd, "Fix the Pipeline Orchestrator hooks and make them work perfectly");
     const output = parseOutput(result);
 
-    expect(output.continue).toBe(false);
-    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).toBeUndefined();
+    expect(output.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
   });
 
   it("RED: blocks mixed informational and audit prompts as pipeline-required", () => {
@@ -174,8 +194,9 @@ describe("force pipeline agents hook", () => {
     const result = runHook(cwd, "Explique o que e pipeline em CI/CD e audite meu workflow atual");
     const output = parseOutput(result);
 
-    expect(output.continue).toBe(false);
-    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).toBeUndefined();
+    expect(output.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
   });
 
   it("RED: blocks operational audit hidden behind an informational prompt field", () => {
@@ -187,8 +208,9 @@ describe("force pipeline agents hook", () => {
     });
     const output = parseOutput(result);
 
-    expect(output.continue).toBe(false);
-    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).toBeUndefined();
+    expect(output.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
   });
 
   it.each([
@@ -214,8 +236,9 @@ describe("force pipeline agents hook", () => {
     const result = runHookPayload(cwd, payload);
     const output = parseOutput(result);
 
-    expect(output.continue).toBe(false);
-    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).toBeUndefined();
+    expect(output.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
   });
 
   it("TDD: JSON object payloads with no recognized prompt text fail closed", () => {
@@ -266,8 +289,9 @@ describe("force pipeline agents hook", () => {
     const result = runHook(cwd, prompt);
     const output = parseOutput(result);
 
-    expect(output.continue).toBe(false);
-    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).toBeUndefined();
+    expect(output.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
   });
 
   it.each([
@@ -319,8 +343,9 @@ describe("force pipeline agents hook", () => {
     const result = runHook(cwd, prompt);
     const output = parseOutput(result);
 
-    expect(output.continue).toBe(false);
-    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).toBeUndefined();
+    expect(output.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
   });
 
   it("BDD: still blocks operational CI/CD pipeline work", () => {
@@ -329,8 +354,9 @@ describe("force pipeline agents hook", () => {
     const result = runHook(cwd, "Implemente o pipeline de CI/CD para rodar lint e testes");
     const output = parseOutput(result);
 
-    expect(output.continue).toBe(false);
-    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).toBeUndefined();
+    expect(output.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
     expect(output.systemMessage).toContain("/pipeline-orchestrator-for-codex:pipeline");
   });
 
@@ -343,8 +369,9 @@ describe("force pipeline agents hook", () => {
     });
     const output = parseOutput(result);
 
-    expect(output.continue).toBe(false);
-    expect(output.stopReason).toBe("pipeline-required");
+    expect(output.continue).toBe(true);
+    expect(output.stopReason).toBeUndefined();
+    expect(output.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
   });
 
   it("preserves explicit brainstorm requests made through the plugin mention", () => {
@@ -547,44 +574,48 @@ describe("force pipeline agents hook", () => {
     });
   });
 
-  it("ATDD: any slash command arms the first-message pipeline harness", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-generic-slash-"));
+  it("TDD: generic slash from another plugin does not arm the pipeline harness", () => {
+    const stateFiles = ["workflow-intent.json", "session-lock.json"];
 
-    const result = runHook(cwd, "/help quero entender o estado atual");
+    // Not pipeline-worthy: no bootstrap, no block, plain advisory.
+    const idleCwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-generic-slash-idle-"));
+    const idleOutput = parseOutput(runHook(idleCwd, "/algum-outro-plugin:cmd mostra o estado"));
+    expect(idleOutput.continue).toBe(true);
+    for (const file of stateFiles) {
+      expect(existsSync(join(idleCwd, ".codex", "pipeline", file))).toBe(false);
+    }
+    const idleEvent = JSON.parse(readFileSync(join(idleCwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
+    expect(idleEvent.decision).not.toBe("enforce_pipeline_skill_message");
+
+    // Pipeline-worthy text behind a foreign slash: advisory (continue true), still no bootstrap.
+    const worthyCwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-generic-slash-worthy-"));
+    const worthyOutput = parseOutput(runHook(worthyCwd, "/algum-outro-plugin:cmd corrige o bug do fluxo"));
+    expect(worthyOutput.continue).toBe(true);
+    expect(worthyOutput.hookSpecificOutput.additionalContext).toContain("PIPELINE DE AGENTES OBRIGATÓRIO");
+    for (const file of stateFiles) {
+      expect(existsSync(join(worthyCwd, ".codex", "pipeline", file))).toBe(false);
+    }
+  });
+
+  it("TDD: explicit plugin slash still bootstraps the pipeline harness", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-explicit-bootstrap-"));
+
+    const result = runHook(cwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo");
     const output = parseOutput(result);
 
     expect(output.hook_enforcement_mode).toBe("blocking");
     expect(output.enforcement_stage).toBe("stop-and-pretool");
     expect(output.systemMessage).toContain("MANDATORY SUBAGENT EXECUTION");
-    expect(output.systemMessage).toContain("plugin front door");
 
     const stateDir = join(cwd, ".codex", "pipeline");
-    const intent = JSON.parse(readFileSync(join(stateDir, "workflow-intent.json"), "utf8"));
-    expect(intent).toMatchObject({
-      status: "active",
-      plugin: "pipeline-orchestrator-for-codex",
-      workflow: "pipeline",
-      source: "generic-slash-command",
-      deterministic_enforcement: {
-        stop_requires_governance_artifact: true,
-        pretool_requires_canonical_dispatch: true,
-      },
-    });
-
-    const requiredFirstActions = JSON.parse(readFileSync(join(stateDir, "required-first-actions.json"), "utf8"));
-    expect(requiredFirstActions.required_actions).toEqual([
-      "update_plan",
-      "WORKFLOW_METHOD_GATE",
-      "CAPABILITY_GATE",
-      "spawn:pipeline-orchestrator-for-codex:core:pipeline-controller",
-      "wait_agent",
-    ]);
+    expect(existsSync(join(stateDir, "workflow-intent.json"))).toBe(true);
+    expect(existsSync(join(stateDir, "session-lock.json"))).toBe(true);
 
     const event = JSON.parse(readFileSync(join(stateDir, "hook-events.jsonl"), "utf8").trim());
     expect(event).toMatchObject({
       decision: "enforce_pipeline_skill_message",
       attempted: "pipeline",
-      reason: "explicit generic-slash-command workflow intent persisted",
+      reason: "explicit slash-command workflow intent persisted",
       harness_runtime: "cjs",
     });
   });
@@ -592,27 +623,27 @@ describe("force pipeline agents hook", () => {
   it("TDD: CJS hook is the normal first-message runtime", () => {
     const cwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-cjs-harness-"));
 
-    const result = runHook(cwd, "/help quero entender o estado atual");
+    const result = runHook(cwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo");
     parseOutput(result);
 
     const event = JSON.parse(readFileSync(join(cwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
     expect(event).toMatchObject({
       decision: "enforce_pipeline_skill_message",
       attempted: "pipeline",
-      reason: "explicit generic-slash-command workflow intent persisted",
+      reason: "explicit slash-command workflow intent persisted",
       harness_runtime: "cjs",
     });
   });
 
   it("TDD: CJS harness enforces slash and plugin mentions without dist runtime dependency", () => {
     const slashCwd = mkdtempSync(join(tmpdir(), "pipeline-force-hook-cjs-slash-"));
-    const slashResult = runHook(slashCwd, "/help quero entender o estado atual");
+    const slashResult = runHook(slashCwd, "/pipeline-orchestrator-for-codex:pipeline corrigir fluxo");
     parseOutput(slashResult);
     const slashEvent = JSON.parse(readFileSync(join(slashCwd, ".codex", "pipeline", "hook-events.jsonl"), "utf8").trim());
     expect(slashEvent).toMatchObject({
       decision: "enforce_pipeline_skill_message",
       attempted: "pipeline",
-      reason: "explicit generic-slash-command workflow intent persisted",
+      reason: "explicit slash-command workflow intent persisted",
       harness_runtime: "cjs",
     });
     expect(existsSync(join(slashCwd, ".codex", "pipeline", "session.json"))).toBe(true);
@@ -648,7 +679,7 @@ describe("force pipeline agents hook", () => {
     const stateDir = join(cwd, ".codex", "pipeline");
     const firstIntent = JSON.parse(readFileSync(join(stateDir, "workflow-intent.json"), "utf8"));
 
-    const result = runHook(cwd, "ok, agora /help sem reiniciar a run");
+    const result = runHook(cwd, "/pipeline-orchestrator-for-codex:pipeline sem reiniciar a run");
     parseOutput(result);
 
     const secondIntent = JSON.parse(readFileSync(join(stateDir, "workflow-intent.json"), "utf8"));

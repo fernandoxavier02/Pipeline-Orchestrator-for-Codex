@@ -238,16 +238,6 @@ function detectFirstMessageHarness(prompt) {
     };
   }
 
-  const slash = detectGenericSlashCommand(prompt);
-  if (slash) {
-    return {
-      workflow: 'pipeline',
-      source: 'generic-slash-command',
-      trigger: slash,
-      harness_runtime: 'cjs',
-    };
-  }
-
   return undefined;
 }
 
@@ -395,6 +385,10 @@ function advisoryOutput(systemMessage) {
     hook_enforcement_mode: 'advisory',
     pipeline_valid: false,
     systemMessage,
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: systemMessage,
+    },
   };
 }
 
@@ -405,6 +399,10 @@ function enforcedWorkflowOutput(systemMessage) {
     enforcement_stage: 'stop-and-pretool',
     pipeline_valid: false,
     systemMessage,
+    hookSpecificOutput: {
+      hookEventName: 'UserPromptSubmit',
+      additionalContext: systemMessage,
+    },
   };
 }
 
@@ -861,11 +859,10 @@ process.stdin.on('end', async () => {
       recordHookEvent({
         hook: 'force-pipeline-agents',
         event: 'UserPromptSubmit',
-        decision: 'block_pipeline_required',
+        decision: 'advise_pipeline_recommended',
         reason: 'pipeline-worthy prompt',
       });
-      console.log(JSON.stringify(blockingOutput(
-        'pipeline-required',
+      console.log(JSON.stringify(advisoryOutput(
         [
           ENFORCEMENT_MESSAGE,
           '',
