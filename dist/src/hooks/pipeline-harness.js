@@ -77,14 +77,10 @@ export function decideFirstMessageHarness(input) {
             trigger: "pipeline-plugin-mention",
         };
     }
-    const slash = detectSlashCommand(prompt);
-    if (slash) {
-        return {
-            triggered: true,
-            workflow: PIPELINE_WORKFLOW,
-            source: "generic-slash-command",
-            trigger: slash,
-        };
-    }
+    // D4 (Batch 2, force-pipeline-agents.cjs): a generic slash command from another
+    // plugin must NOT arm the pipeline harness — only an explicit
+    // /pipeline-orchestrator-for-codex: invocation or a plugin mention does. The
+    // former generic-slash-command branch was the source of the 1h phantom-bootstrap
+    // deadlock; this mirrors the CJS hook so the TS SSOT does not diverge.
     return undefined;
 }

@@ -202,8 +202,21 @@ function Assert-PluginEnabled($selector) {
 $projectRootFull = Resolve-ExistingPath $ProjectRoot
 $pipelineCommit = (Run-Git $projectRootFull @("rev-parse", "HEAD")).Trim()
 
+# Derive the cache version from the plugin manifest (SSOT) instead of hard-coding it.
+# The Codex cache is namespaced by version dir; pinning a literal here silently
+# desynced the sync from a version bump (the 0.5.1->0.5.2 lesson). Read it live.
+$pluginManifestPath = Join-Path $projectRootFull ".codex-plugin/plugin.json"
+if (!(Test-Path -LiteralPath $pluginManifestPath)) {
+  Fail "plugin manifest not found: $pluginManifestPath"
+}
+$pipelineVersion = (Get-Content -LiteralPath $pluginManifestPath -Raw | ConvertFrom-Json).version
+if ([string]::IsNullOrWhiteSpace($pipelineVersion)) {
+  Fail "plugin manifest has no version: $pluginManifestPath"
+}
+Write-Host "Pipeline plugin version (from manifest): $pipelineVersion"
+
 $marketplacePipelinePath = "C:\Users\win\plugins\pipeline-orchestrator-for-codex"
-$pipelineCodexCache = "C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.1"
+$pipelineCodexCache = "C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\$pipelineVersion"
 $pipelineAgentsPlugin = "C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex"
 
 $globalSource = "C:\Users\win\Codex-superpower"

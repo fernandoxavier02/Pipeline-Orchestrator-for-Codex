@@ -15,18 +15,16 @@ const GOVERNED = [
 ];
 
 describe("pipeline harness first-message detector", () => {
-  it("triggers on any slash command, not only pipeline slash commands", () => {
+  it("does NOT trigger on a generic slash command from another plugin (D4)", () => {
+    // D4 (Batch 2): a generic slash like /help must not arm the pipeline harness —
+    // only an explicit /pipeline-orchestrator-for-codex: invocation or a plugin
+    // mention does. Mirrors force-pipeline-agents.cjs; prevents the phantom bootstrap.
     const decision = decideFirstMessageHarness({
       prompt: "/help me lembrar o estado do workflow",
       governedWorkflows: GOVERNED,
     });
 
-    expect(decision).toMatchObject({
-      triggered: true,
-      workflow: "pipeline",
-      source: "generic-slash-command",
-      trigger: "/help",
-    });
+    expect(decision).toBeUndefined();
   });
 
   it("preserves explicit Pipeline Orchestrator workflows", () => {
