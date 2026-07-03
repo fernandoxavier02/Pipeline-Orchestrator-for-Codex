@@ -1,0 +1,119 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "2026-05-19-adversarial-review-codex-plugin-builder",
+  "pipeline_doc_path": "D:\\Pipeline Orchestrator for Codex\\.pipeline\\docs\\Pre-Medium-action\\2026-05-19-adversarial-review-codex-plugin-builder",
+  "type": "Audit",
+  "complexity": "MEDIA",
+  "variant": "review-only",
+  "mandatory_triggered": 0,
+  "mandatory_expected": 13,
+  "fidelity_score": 0,
+  "global_fidelity_pct": 0,
+  "mandatory_gates": [
+    {
+      "gate": "STATE_FILE_INIT_FAIL",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "INFO_GATE_BLOCKED",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "TDD_APPROVAL",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "CHECKPOINT_FAIL",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "COMPLEXITY_GATE",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "CLOSEOUT_CONFIRM",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "PLAN_REJECTED",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "ADVERSARIAL_GATE",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "ADVERSARIAL_BLOCK",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "FIX_LOOP_EXHAUSTED",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "ADVERSARIAL_LOOP_BREAKER",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "MICRO_GATE_GAP",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "STOP_RULE",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    }
+  ],
+  "other_gates": [
+    {
+      "gate": "FINAL_ADVERSARIAL_GATE",
+      "hardness": "SOFT",
+      "decision": "(invalid)",
+      "detail": "3 scanners ran serially (security/architecture/quality); 27 findings, no Critical, 6 High consolidated as 5 actionable recs"
+    }
+  ],
+  "warnings": [
+    "decision \"PROCEEDED\" not in canonical set for gate FINAL_ADVERSARIAL_GATE — normalized to (invalid)",
+    "decision \"COMPLETED\" not in canonical set for gate FINAL_ADVERSARIAL_GATE — normalized to (invalid)",
+    "brainstorm evidence missing: no STEP_1_7_ROUTING entry for MEDIA/Audit run"
+  ],
+  "generated_at": "2026-07-02T20:16:09.791Z"
+}

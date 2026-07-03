@@ -1,28 +1,42 @@
 {
   "added_unrequested_features": false,
   "changed_files": [
-    "dist/src/cli/pipeline-cli.js",
-    "dist/src/domain/pipeline-schemas.js",
-    "dist/src/sentinel/sentinel-state.js",
-    "dist/src/validation/final-validator.js",
+    ".pipeline/active-run.json",
+    ".pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.json",
+    ".pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/01-task-orchestrator.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/02-information-gate.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/03-design-interrogation.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/04-implementation-plan.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/04-review-batch-3.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/05-batch3-implementer.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/06-final.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/CONTINUE-HERE.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/fidelity-report.json",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/fidelity-report.md",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/gate-decisions.jsonl",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/machine-evidence.jsonl",
+    ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/sentinel-state.json",
+    ".pipeline/run-log.jsonl",
+    ".pipeline/state/corrective-dispatch.jsonl",
+    ".pipeline/state/corrective-ledger.json",
+    ".pipeline/state/corrective-redispatch.jsonl",
+    ".pipeline/state/corrective-triggers.consumed.json",
+    ".pipeline/state/corrective-triggers.jsonl",
     "evals/outputs/latest_output.md",
     "evals/telemetry/changed_files.txt",
     "evals/telemetry/git_diff.patch",
-    "evals/telemetry/latest_trace.json",
-    "hooks/completion-checklist.cjs",
-    "hooks/dispatch-guard.cjs",
-    "tests/unit/hooks/completion-checklist.test.ts",
-    "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts"
+    "evals/telemetry/latest_trace.json"
   ],
-  "eval_result": "PENDING",
+  "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
     "hook_event": "PostToolUse",
-    "session_id": "019f193a-8534-7291-af95-335e62e0bf42",
+    "session_id": "019f28c9-9003-7823-87d1-0ff731f3cd0d",
     "tool_name": "Bash"
   },
   "execution_observed": true,
-  "git_diff_captured": true,
+  "git_diff_captured": false,
   "git_state": "dirty",
   "last_hook_event": "PostToolUse",
   "plugin_execution": {
@@ -40,6 +54,7 @@
       "hooks/",
       "tests/unit/hooks/",
       "evals/",
+      ".pipeline/",
       "dist/",
       ".codex/",
       ".agents/skills/workflow-eval-gate/",
@@ -51,27 +66,48 @@
       "README.md",
       ".kiro/"
     ],
-    "scope_justifications": {},
+    "scope_justifications": {
+      ".pipeline/active-run.json": "Requested closeout commits all pending pipeline evidence left by other agents.",
+      ".pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.json": "Generated fidelity evidence for an existing tracked pipeline run; included because user requested all agent-produced work.",
+      ".pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.md": "Generated fidelity evidence for an existing tracked pipeline run; included because user requested all agent-produced work.",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/": "Run evidence for the hook-channel bugfix produced by other agents and explicitly requested for commit.",
+      ".pipeline/run-log.jsonl": "Pipeline run ledger evidence produced by other agents and required for parity with the local source tree.",
+      ".pipeline/state/": "Pipeline corrective state evidence produced by other agents and included in the requested all-pending commit."
+    },
     "unexpected_files": []
   },
-  "timestamp": "2026-06-30T15:52:41.529545+00:00",
+  "timestamp": "2026-07-03T16:47:10.650583+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "4fda30f8040cb3c142733f6da91a581a90997bc3",
+    "base_commit": "fde6cf6cc1913fa4d66401b7f992c7a9c2749f6a",
     "changed_files": [
-      "dist/src/cli/pipeline-cli.js",
-      "dist/src/domain/pipeline-schemas.js",
-      "dist/src/sentinel/sentinel-state.js",
-      "dist/src/validation/final-validator.js",
+      ".pipeline/active-run.json",
+      ".pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.json",
+      ".pipeline/docs/Pre-Medium-action/2026-05-19-adversarial-review-codex-plugin-builder/fidelity-report.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/01-task-orchestrator.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/02-information-gate.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/03-design-interrogation.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/04-implementation-plan.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/04-review-batch-3.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/05-batch3-implementer.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/06-final.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/CONTINUE-HERE.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/fidelity-report.json",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/fidelity-report.md",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/gate-decisions.jsonl",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/machine-evidence.jsonl",
+      ".pipeline/docs/Pre-Medium-action/2026-07-02-codex-hook-channel-bugfix/sentinel-state.json",
+      ".pipeline/run-log.jsonl",
+      ".pipeline/state/corrective-dispatch.jsonl",
+      ".pipeline/state/corrective-ledger.json",
+      ".pipeline/state/corrective-redispatch.jsonl",
+      ".pipeline/state/corrective-triggers.consumed.json",
+      ".pipeline/state/corrective-triggers.jsonl",
       "evals/outputs/latest_output.md",
       "evals/telemetry/changed_files.txt",
       "evals/telemetry/git_diff.patch",
-      "evals/telemetry/latest_trace.json",
-      "hooks/completion-checklist.cjs",
-      "hooks/dispatch-guard.cjs",
-      "tests/unit/hooks/completion-checklist.test.ts",
-      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts"
+      "evals/telemetry/latest_trace.json"
     ],
     "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
     "ref": "HEAD+working-tree"
@@ -80,40 +116,40 @@
     "commands": {
       "git diff --check": {
         "command": "git diff --check",
-        "observed_at": "2026-06-29T22:18:20-03:00",
+        "observed_at": "2026-07-03T13:39:00-03:00",
         "status": "PASS",
-        "target": "working-tree-hotfix-bootstrap-first-actions"
+        "target": "HEAD+working-tree"
       },
       "npm run build": {
         "command": "npm run build",
-        "observed_at": "2026-06-29T22:17:52-03:00",
+        "observed_at": "2026-07-03T13:42:00-03:00",
         "status": "PASS",
-        "target": "working-tree-hotfix-bootstrap-first-actions"
+        "target": "HEAD+working-tree"
       },
       "npm run lint:types": {
         "command": "npm run lint:types",
-        "observed_at": "2026-06-29T22:17:13-03:00",
+        "observed_at": "2026-07-03T13:41:00-03:00",
         "status": "PASS",
-        "target": "working-tree-hotfix-bootstrap-first-actions"
+        "target": "HEAD+working-tree"
       },
       "npm test": {
         "command": "npm test",
-        "focused_evidence": "Focused hook tests passed: dispatch-frontmatter-enforcement 31/31 and completion-checklist 120/120. Full npm test had one 5s timeout in tests/integration/references/reference-bundle.test.ts; that file passed isolated with --testTimeout 20000.",
-        "observed_at": "2026-06-29T22:18:08-03:00",
+        "focused_evidence": "Full npm test hit two 5s timeouts in tests/integration/references/reference-bundle.test.ts; the same file passed isolated with npx vitest run tests/integration/references/reference-bundle.test.ts --testTimeout 20000 (10/10).",
+        "observed_at": "2026-07-03T13:43:00-03:00",
         "status": "PASS_FOCUSED_AFTER_TIMEOUT",
-        "target": "working-tree-hotfix-bootstrap-first-actions"
+        "target": "HEAD+working-tree"
       },
       "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
         "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
-        "observed_at": "2026-06-29T22:19:00-03:00",
+        "observed_at": "2026-07-03T13:44:00-03:00",
         "status": "PASS",
-        "target": "working-tree-hotfix-bootstrap-first-actions"
+        "target": "HEAD+working-tree"
       },
       "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {
         "command": "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
-        "observed_at": "2026-06-29T22:20:00-03:00",
+        "observed_at": "2026-07-03T13:45:00-03:00",
         "status": "PASS",
-        "target": "working-tree-hotfix-bootstrap-first-actions"
+        "target": "HEAD+working-tree"
       }
     }
   }

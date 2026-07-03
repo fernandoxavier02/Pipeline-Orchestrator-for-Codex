@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "pipeline_active": false,
+  "pipeline_id": "2026-07-02T20:30:00Z_bugfix-heavy",
+  "run_id": "2026-07-02-codex-hook-channel-bugfix",
+  "pipeline_doc_path": "D:\\Pipeline Orchestrator for Codex\\.pipeline\\docs\\Pre-Medium-action\\2026-07-02-codex-hook-channel-bugfix",
+  "created_at": "2026-07-02T20:30:00Z",
+  "variant": "bugfix-heavy",
+  "last_updated": "2026-07-03T12:00:00Z",
+  "sequence_counter": 9,
+  "orchestrator_decision": {
+    "type": "Bug Fix",
+    "complexity": "COMPLEXA",
+    "severity": "Critical",
+    "pipeline_variant": "bugfix-heavy",
+    "persona": "Codex harness engineer",
+    "affected_files": [
+      "hooks/completion-checklist.cjs",
+      "hooks/force-pipeline-agents.cjs",
+      "hooks/edit-guard-hook.cjs",
+      "scripts/pipeline-reset.cjs (new)",
+      "tests/unit/hooks/**",
+      ".codex-plugin/plugin.json (version bump)"
+    ],
+    "ssot_status": "OK",
+    "report": "01-task-orchestrator.md"
+  },
+  "current_phase": "2-execution-batch-3-redo",
+  "current_agent": "pipeline-orchestrator:executor:executor-implementer-task",
+  "expected_next": "executor-implementer-task",
+  "pending_checkpoint": null,
+  "completed_phases": [
+    "0a",
+    "sentinel-checkpoint-1",
+    "0b",
+    "0c",
+    "phase-1-proposal",
+    "1.5"
+  ],
+  "gate_summary": {
+    "mandatory_completed": [],
+    "hard_completed": [
+      "SENTINEL_CHECKPOINT:ORCHESTRATOR_VALIDATION",
+      "PLAN_REJECTED:pass",
+      "TDD_APPROVAL:pass"
+    ],
+    "soft_skipped": [],
+    "soft_completed": [
+      "INFO_GATE_OK",
+      "DESIGN_INTERROGATION:partial",
+      "HUMAN_GATE:phase-1-proposal-confirmed"
+    ]
+  },
+  "batch_state": {
+    "current_batch": 3,
+    "total_batches_estimated": 3,
+    "consecutive_failures": 0,
+    "batch_3_redo": true
+  },
+  "consecutive_corrections": 1,
+  "confidence_score": 0.85,
+  "sentinel_log": [
+    "2026-07-02T20:50:00Z controller recovery: state re-created after signature invalidated by manual Edit before Sentinel Checkpoint #1; orchestrator_decision preserved from 01-task-orchestrator.md",
+    "2026-07-02T20:55:00Z SENTINEL_VERDICT mode=ORCHESTRATOR_VALIDATION trigger=post_orchestrator status=PASS checks=6/6 (agent ab18a14c43549bd57): routing Bug Fix x COMPLEXA -> bugfix-heavy OK, elevation rules OK, SSOT CLEAR, recommendation expected_next=information-gate. Warnings: doc-path folder Pre-Medium-action vs classificacao COMPLEXA (drift cosmetico); consecutive_corrections=1 veio de recovery de estado, nao de verdict CORRECTED.",
+    "2026-07-02T21:00:00Z SENTINEL_VERDICT mode=SEQUENCE_VALIDATION trigger=hook_deny status=BLOCKED (agent ace1ac7720b6d6d37): checkpoint #1 PASS nao estava persistido no state file; required_action = persistir o resultado do checkpoint e so entao despachar information-gate. Este Write e a persistencia requerida, feita pelo controller conforme references/sentinel-integration.md Update Pattern (controller e o filesystem writer documentado).",
+    "2026-07-02T21:20:00Z controller: INFORMATION_GATE=RESOLVED (agent ab95aaf4c12648963, 3/3 gaps resolvidos, 0 blockers) persistido em 02-information-gate.md; avancando para Phase 0c design-interrogator (automatico para COMPLEXA).",
+    "2026-07-03T02:20:00Z controller: DESIGN_INTERROGATION=PARTIAL persistido em 03-design-interrogation.md (agent a47d96eb27a59af0f via PLAN_MODE_REQUEST/RESULTS). Phase 1 proposal apresentada; AskUserQuestion sem resposta em 60s (usuario AFK); prosseguindo sob autorizacao explicita previa do usuario (comando original: 'faca o bug fix... commit e push'); HUMAN_GATE CONFIRMED logado pelo harness em gate-decisions.jsonl. Dispatches concluidos marcados completed. Avancando para Phase 1.5 plan-architect (obrigatorio COMPLEXA).",
+    "2026-07-03T02:40:00Z controller: IMPLEMENTATION_PLAN DRAFT recebido do plan-architect (agent a8ed6ac034c2705da via PLAN_MODE_REQUEST/RESULTS) e persistido em 04-implementation-plan.md; PLAN_REJECTED=pass e TDD_APPROVAL=pass logados (autorizacao previa, usuario AFK). Entrando Phase 2 Batch 1 (T1 completion-checklist.cjs), TDD RED-first, CHANGE_CONTRACT vigente.",
+    "2026-07-03T03:05:00Z controller: Batch 1 implementer COMPLETE (T1). Checkpoint manual do controller PASS (lint clean, 122/122) mas guard CHECKPOINT_RED exige checkpoint-validator; atualizando expected_next=checkpoint-validator e re-despachando.",
+    "2026-07-03T03:15:00Z controller: checkpoint-validator batch 1 PASS; expected_next=review-orchestrator (adversarial obrigatorio, dominio seguranca).",
+    "2026-07-03T03:45:00Z controller: Batch 1 fechado (checkpoint pass + review PASS_WITH_WARNINGS action=NONE). Entrando Batch 2 (T2 force-pipeline-agents.cjs).",
+    "2026-07-03T04:05:00Z controller: Batch 2 implementer COMPLETE (T2), checkpoint PASS (240/240 c/ regressao batch 1, lint clean); expected_next=review-orchestrator.",
+    "2026-07-03T04:30:00Z controller: Batch 2 fechado (review PASS action=NONE; follow-up src/hooks/pipeline-harness.ts anotado). Entrando Batch 3 (T3 edit-guard + pipeline-reset).",
+    "2026-07-03T05:10:00Z controller: Batch 3 implementer COMPLETE (T3), checkpoint PASS (463/463 hooks+security, lint clean); expected_next=review-orchestrator.",
+    "2026-07-03T05:20:00Z controller: Batch 3 review FIX_NEEDED (agent aae6b6ad7018571dd): C1 tee-standalone, C2 prefix-evasion touch/mkdir/cp/mv, I1 reset symlinked-dir escape. Dispatching executor-fix (attempt 1/3).",
+    "2026-07-03T05:35:00Z controller: executor-fix attempt 1 FIXED C1/C2/I1+M1/M2 (agent a8b0f2b1026d33b42); re-checkpoint PASS (482/482 hooks+security, lint clean); expected_next=review-orchestrator (full re-review).",
+    "2026-07-03T05:50:00Z controller: re-review REJECT (agent a52592e50cd1fe9df): 4 CRITICAL (F1 single-& chaining, F2 quoted-verb, F3 flag-wrapper env -i/sudo -u, F4 bash -c/sh -c) + 3 IMPORTANT (F5 var=>file regex, F6 reset intermediate-symlink, F7 allowlist ignora redirect). Fix over-corrigiu C1/C2. executor-fix attempt 2/3.",
+    "2026-07-03T05:55:00Z controller: FIX_LOOP_EXHAUSTED (circuit breaker) no Batch 3. Loop automatico PARADO conforme a trava. Batches 1 (Stop channel) e 2 (prompt advisory) verdes e revisados; Batch 3 (edit-guard verb-resolver + pipeline-reset) tem 4 CRITICAL/3 IMPORTANT residuais (F1-F7). NADA commitado/pushado. Escalado ao usuario para decisao de abordagem.",
+    "2026-07-03T06:05:00Z controller: usuario escolheu commitar 1+2 e refazer o 3. Batch 3 WIP preservado em scratchpad e revertido da arvore. Sanity 1+2 PASS (278/278, lint clean). Entrando Phase 3 closure escopo 1+2; expected_next=final-validator.",
+    "2026-07-03T06:20:00Z controller: Batches 1+2 COMMITADOS (41d0286) e PUSHADOS para origin/main; cache Codex 0.5.1 sincronizado (2 hooks). Pa de Cal CONDITIONAL (so anomalias de ledger, sem defeito de codigo). Batch 3 (edit-guard + pipeline-reset) PENDENTE de redo com nova abordagem (WIP em scratchpad/batch3-wip, findings F1-F7 documentados). Usuario pediu para pausar e continuar amanha. pipeline_active=false; run recuperavel.",
+    "2026-07-03T12:00:00Z controller: CONTINUE re-arm. pipeline_active=true. Batch 3 REDO autorizado pelo usuario com NOVA abordagem (nao reusar verb-resolver). fix_loop_attempts resetado 3->0 (redo do zero, decisao explicita do usuario). STALE_CONTEXT nao dispara (<24h, mesmo dia). Base = HEAD limpo do edit-guard-hook.cjs (sem allowlist/anti-chaining ainda). expected_next=executor-implementer-task; despachando T3 redo via DISPATCH_REQUEST (TDD RED-first: negacao F1-F7). Parent deve abrir exec-window (implementer edita fora de .pipeline/)."
+  ],
+  "step_ledger": [
+    "classify",
+    "sentinel-checkpoint-1",
+    "info-gate",
+    "design-interrogation",
+    "phase-1-proposal-confirmed",
+    "plan",
+    "tdd",
+    "execute",
+    "adversarial",
+    "sanity",
+    "final"
+  ],
+  "state_version": 56,
+  "updated_at": "2026-07-03T12:00:00Z",
+  "continuity_attempts": 2,
+  "last_checkpoint_verdict": "pass",
+  "consecutive_checkpoint_failures": 0,
+  "batch_checkpoints_done": 5,
+  "batch_reviews_done": 5,
+  "fix_loop_attempts": 0,
+  "pending_blocks": [],
+  "pending_dispatches": {
+    "toolu_01JWf1uiUqR1ba55wLh9XzJr": {
+      "dispatch_id": "toolu_01JWf1uiUqR1ba55wLh9XzJr",
+      "run_id": "2026-07-02-codex-hook-channel-bugfix",
+      "subagent_type": "pipeline-orchestrator:executor:executor-implementer-task",
+      "target_agent_type": "pipeline-orchestrator:executor:executor-implementer-task",
+      "agent_type": "pipeline-orchestrator:executor:executor-implementer-task",
+      "status": "pending",
+      "correction_attempts": 0,
+      "created_at": "2026-07-03T10:04:17.228Z"
+    },
+    "toolu_01DUvTCcSWxTkLPnWWm3deTC": {
+      "dispatch_id": "toolu_01DUvTCcSWxTkLPnWWm3deTC",
+      "run_id": "2026-07-02-codex-hook-channel-bugfix",
+      "subagent_type": "pipeline-orchestrator:core:pipeline-controller",
+      "target_agent_type": "pipeline-orchestrator:core:pipeline-controller",
+      "agent_type": "pipeline-orchestrator:core:pipeline-controller",
+      "status": "pending",
+      "correction_attempts": 0,
+      "created_at": "2026-07-03T10:06:24.005Z"
+    },
+    "toolu_01TCHKMp57kkjfqjKRRCW18T": {
+      "dispatch_id": "toolu_01TCHKMp57kkjfqjKRRCW18T",
+      "run_id": "2026-07-02-codex-hook-channel-bugfix",
+      "subagent_type": "pipeline-orchestrator:core:sentinel",
+      "target_agent_type": "pipeline-orchestrator:core:sentinel",
+      "agent_type": "pipeline-orchestrator:core:sentinel",
+      "status": "pending",
+      "correction_attempts": 0,
+      "created_at": "2026-07-03T10:07:00.358Z"
+    },
+    "toolu_01EFm5oYcL8hhXNDjKArtYH9": {
+      "dispatch_id": "toolu_01EFm5oYcL8hhXNDjKArtYH9",
+      "run_id": "2026-07-02-codex-hook-channel-bugfix",
+      "subagent_type": "pipeline-orchestrator:executor:executor-implementer-task",
+      "target_agent_type": "pipeline-orchestrator:executor:executor-implementer-task",
+      "agent_type": "pipeline-orchestrator:executor:executor-implementer-task",
+      "status": "pending",
+      "correction_attempts": 0,
+      "created_at": "2026-07-03T10:12:28.631Z"
+    }
+  },
+  "__signature": {
+    "algorithm": "sha256",
+    "value": "ba0d76dbef614e3e71a08cfdac9292634e69c66a35de795b7a9b60e9acb07e53",
+    "schema_version": 1
+  }
+}

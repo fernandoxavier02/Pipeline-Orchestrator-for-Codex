@@ -1,0 +1,189 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "2026-07-02-codex-hook-channel-bugfix",
+  "pipeline_doc_path": "D:\\Pipeline Orchestrator for Codex\\.pipeline\\docs\\Pre-Medium-action\\2026-07-02-codex-hook-channel-bugfix",
+  "type": "Bug Fix",
+  "complexity": "COMPLEXA",
+  "variant": "bugfix-heavy",
+  "mandatory_triggered": 8,
+  "mandatory_expected": 18,
+  "fidelity_score": 0.4444,
+  "global_fidelity_pct": 20.83,
+  "mandatory_gates": [
+    {
+      "gate": "STATE_FILE_INIT_FAIL",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "INFO_GATE_BLOCKED",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "TDD_APPROVAL",
+      "hardness": "HARD",
+      "expected": true,
+      "triggered": true,
+      "decision": "(invalid)"
+    },
+    {
+      "gate": "CHECKPOINT_FAIL",
+      "hardness": "HARD",
+      "expected": true,
+      "triggered": true,
+      "decision": "(invalid)"
+    },
+    {
+      "gate": "COMPLEXITY_GATE",
+      "hardness": "SOFT",
+      "expected": true,
+      "triggered": true,
+      "decision": "(invalid)"
+    },
+    {
+      "gate": "CLOSEOUT_CONFIRM",
+      "hardness": "SOFT",
+      "expected": true,
+      "triggered": true,
+      "decision": "(invalid)"
+    },
+    {
+      "gate": "PLAN_REJECTED",
+      "hardness": "HARD",
+      "expected": true,
+      "triggered": true,
+      "decision": "(invalid)"
+    },
+    {
+      "gate": "ADVERSARIAL_GATE",
+      "hardness": "SOFT",
+      "expected": true,
+      "triggered": true,
+      "decision": "(invalid)"
+    },
+    {
+      "gate": "ADVERSARIAL_BLOCK",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "MICRO_GATE_GAP",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "STOP_RULE",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "ADVERSARIAL_LOOP_BREAKER",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "FINAL_ADVERSARIAL_GATE",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "FINAL_ADVERSARIAL_REWORK",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "FIX_LOOP_EXHAUSTED",
+      "hardness": "CIRCUIT_BREAKER",
+      "expected": true,
+      "triggered": true,
+      "decision": "(invalid)"
+    },
+    {
+      "gate": "ADVERSARIAL_GATE_MANDATORY",
+      "hardness": "MANDATORY",
+      "expected": true,
+      "triggered": true,
+      "decision": "(invalid)"
+    },
+    {
+      "gate": "SSOT_CONFLICT",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    },
+    {
+      "gate": "STALE_CONTEXT",
+      "hardness": null,
+      "expected": true,
+      "triggered": false,
+      "decision": null
+    }
+  ],
+  "other_gates": [
+    {
+      "gate": "STEP_1_7_ROUTING",
+      "hardness": "HARD",
+      "decision": "SKIPPED",
+      "detail": "branch=\"no-prep-override\"; prep_run_id=null"
+    },
+    {
+      "gate": "SENTINEL_CHECKPOINT",
+      "hardness": "HARD",
+      "decision": "(invalid)",
+      "detail": "ORCHESTRATOR_VALIDATION PASS 6/6 checks (agent ab18a14c43549bd57) after one state-recovery correction."
+    },
+    {
+      "gate": "INFO_GATE_OK",
+      "hardness": "SOFT",
+      "decision": "(invalid)",
+      "detail": "INFORMATION_GATE RESOLVED: 3/3 gaps resolved from repo evidence, 0 blockers (02-information-gate.md)."
+    },
+    {
+      "gate": "DESIGN_INTERROGATION",
+      "hardness": "SOFT",
+      "decision": "(invalid)",
+      "detail": "9 decisions: 2 self-answered, 7 recommended pending Phase 1 confirmation (03-design-interrogation.md). Non-blocking."
+    },
+    {
+      "gate": "HUMAN_GATE",
+      "hardness": "AUDIT",
+      "decision": "CONFIRMED",
+      "detail": "tool_use_id=toolu_013srohNfs8HgSsLHFCKVEQq answer={\"questions\":[{\"question\":\"O dev-harness (plugin 8.20.0 que governa ESTA sessão) entrou em deadlock no modo CONTINUE: nenhuma ferramenta de escrita..."
+    }
+  ],
+  "warnings": [
+    "decision \"pass\" not in canonical set for gate COMPLEXITY_GATE — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate SENTINEL_CHECKPOINT — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate INFO_GATE_OK — normalized to (invalid)",
+    "decision \"partial\" not in canonical set for gate DESIGN_INTERROGATION — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate PLAN_REJECTED — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate TDD_APPROVAL — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate CHECKPOINT_FAIL — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate ADVERSARIAL_GATE_MANDATORY — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate ADVERSARIAL_GATE — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate ADVERSARIAL_GATE_MANDATORY — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate ADVERSARIAL_GATE — normalized to (invalid)",
+    "decision \"block\" not in canonical set for gate FIX_LOOP_EXHAUSTED — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate ADVERSARIAL_GATE — normalized to (invalid)",
+    "decision \"pass\" not in canonical set for gate CLOSEOUT_CONFIRM — normalized to (invalid)"
+  ],
+  "generated_at": "2026-07-03T16:39:29.661Z"
+}
