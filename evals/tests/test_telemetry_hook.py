@@ -183,25 +183,45 @@ class TelemetryHookTests(unittest.TestCase):
         self.assertIn("changed.txt", trace["changed_files"])
         self.assertIn("changed.txt", trace["untracked_files_included"])
 
-    def test_telemetry_records_clean_execution_without_git_changes(self) -> None:
+    def test_clean_tree_does_not_overwrite_telemetry_files(self) -> None:
         self.commit_all()
+        telemetry_files = [
+            self.root / "evals" / "telemetry" / "changed_files.txt",
+            self.root / "evals" / "telemetry" / "git_diff.patch",
+            self.root / "evals" / "telemetry" / "latest_trace.json",
+        ]
+        before = {path: path.read_text(encoding="utf-8") for path in telemetry_files}
 
         result = self.run_telemetry_hook()
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        changed_files = (self.root / "evals" / "telemetry" / "changed_files.txt").read_text(encoding="utf-8")
-        patch_text = (self.root / "evals" / "telemetry" / "git_diff.patch").read_text(encoding="utf-8")
-        trace = json.loads((self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8"))
-        self.assertEqual(changed_files, "")
-        self.assertEqual(patch_text, "")
-        self.assertEqual(trace["execution_observed"], True)
-        self.assertEqual(trace["execution_event"], "PostToolUse")
-        self.assertEqual(trace["execution_identity"]["hook_event"], "PostToolUse")
-        self.assertEqual(trace["plugin_execution"]["observed"], False)
-        self.assertEqual(trace["git_state"], "clean")
-        self.assertEqual(trace["changed_files"], [])
-        self.assertEqual(trace["untracked_files_included"], [])
-        self.assertEqual(trace["git_diff_captured"], False)
+        self.assertEqual({path: path.read_text(encoding="utf-8") for path in telemetry_files}, before)
+
+    def test_telemetry_only_dirty_tree_does_not_overwrite_files(self) -> None:
+        self.commit_all()
+        telemetry_files = [
+            self.root / "evals" / "telemetry" / "changed_files.txt",
+            self.root / "evals" / "telemetry" / "git_diff.patch",
+            self.root / "evals" / "telemetry" / "latest_trace.json",
+        ]
+        (self.root / "evals" / "telemetry" / "changed_files.txt").write_text(
+            "evals/telemetry/latest_trace.json\n",
+            encoding="utf-8",
+        )
+        (self.root / "evals" / "telemetry" / "git_diff.patch").write_text(
+            "previous telemetry diff\n",
+            encoding="utf-8",
+        )
+        (self.root / "evals" / "telemetry" / "latest_trace.json").write_text(
+            json.dumps({"manual_note": "telemetry-only dirty"}) + "\n",
+            encoding="utf-8",
+        )
+        before = {path: path.read_text(encoding="utf-8") for path in telemetry_files}
+
+        result = self.run_telemetry_hook()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual({path: path.read_text(encoding="utf-8") for path in telemetry_files}, before)
 
     def test_read_only_telemetry_does_not_overwrite_files(self) -> None:
         self.commit_all()

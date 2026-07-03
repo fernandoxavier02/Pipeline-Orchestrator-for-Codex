@@ -19,6 +19,11 @@ MAX_UNTRACKED_DIFF_BYTES = 200_000
 OMITTED_UNTRACKED_PATHS = {
     "evals/telemetry/git_diff.patch",
 }
+SELF_GENERATED_TELEMETRY_PATHS = {
+    "evals/telemetry/changed_files.txt",
+    "evals/telemetry/git_diff.patch",
+    "evals/telemetry/latest_trace.json",
+}
 SENSITIVE_NAME_MARKERS = (
     ".env",
     "credential",
@@ -150,6 +155,11 @@ def untracked_files(repo_root: Path) -> list[str]:
         for line in run_git(repo_root, ["ls-files", "--others", "--exclude-standard"]).splitlines()
         if line.strip()
     ]
+
+
+def has_only_self_generated_telemetry(files: list[str], untracked: list[str]) -> bool:
+    observed_paths = [*files, *untracked]
+    return bool(observed_paths) and all(path in SELF_GENERATED_TELEMETRY_PATHS for path in observed_paths)
 
 
 def path_matches_prefix(path: str, prefixes: list[str]) -> bool:
@@ -286,6 +296,11 @@ def main() -> int:
     files = changed_files(repo_root)
     untracked = untracked_files(repo_root)
     has_git_changes = bool(files or untracked)
+
+    if (not has_git_changes or has_only_self_generated_telemetry(files, untracked)) and not (
+        env_flag("EVAL_GATE_READ_ONLY") or is_read_only_payload(payload)
+    ):
+        return 0
 
     diff_text = ""
     omitted_untracked: list[dict[str, str]] = []

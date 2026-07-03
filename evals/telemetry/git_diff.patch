@@ -1,0 +1,90 @@
+diff --git a/.codex/hooks/post_tool_use_telemetry.py b/.codex/hooks/post_tool_use_telemetry.py
+index 7d87013..039a627 100644
+--- a/.codex/hooks/post_tool_use_telemetry.py
++++ b/.codex/hooks/post_tool_use_telemetry.py
+@@ -297,7 +297,7 @@ def main() -> int:
+     untracked = untracked_files(repo_root)
+     has_git_changes = bool(files or untracked)
+
+-    if has_only_self_generated_telemetry(files, untracked) and not (
++    if (not has_git_changes or has_only_self_generated_telemetry(files, untracked)) and not (
+         env_flag("EVAL_GATE_READ_ONLY") or is_read_only_payload(payload)
+     ):
+         return 0
+diff --git a/evals/telemetry/changed_files.txt b/evals/telemetry/changed_files.txt
+index 50f5042..e098fb9 100644
+--- a/evals/telemetry/changed_files.txt
++++ b/evals/telemetry/changed_files.txt
+@@ -1,5 +1,4 @@
+ .codex/hooks/post_tool_use_telemetry.py
+-evals/telemetry/changed_files.txt
+ evals/telemetry/git_diff.patch
+ evals/telemetry/latest_trace.json
+ evals/tests/test_telemetry_hook.py
+diff --git a/evals/telemetry/latest_trace.json b/evals/telemetry/latest_trace.json
+index 47766ad..e858f9f 100644
+--- a/evals/telemetry/latest_trace.json
++++ b/evals/telemetry/latest_trace.json
+@@ -2,7 +2,6 @@
+   "added_unrequested_features": false,
+   "changed_files": [
+     ".codex/hooks/post_tool_use_telemetry.py",
+-    "evals/telemetry/changed_files.txt",
+     "evals/telemetry/git_diff.patch",
+     "evals/telemetry/latest_trace.json",
+     "evals/tests/test_telemetry_hook.py"
+@@ -55,14 +54,13 @@
+     },
+     "unexpected_files": []
+   },
+-  "timestamp": "2026-07-03T16:55:46.253691+00:00",
++  "timestamp": "2026-07-03T16:57:30.459534+00:00",
+   "untracked_files_included": [],
+   "untracked_files_omitted_from_diff": [],
+   "validated_target": {
+-    "base_commit": "684f0590646447ad6d7b8af8d24e34a0ed0b5c14",
++    "base_commit": "6a164cd65a7ffa556dae974b2798d2792e6f303b",
+     "changed_files": [
+       ".codex/hooks/post_tool_use_telemetry.py",
+-      "evals/telemetry/changed_files.txt",
+       "evals/telemetry/git_diff.patch",
+       "evals/telemetry/latest_trace.json",
+       "evals/tests/test_telemetry_hook.py"
+diff --git a/evals/tests/test_telemetry_hook.py b/evals/tests/test_telemetry_hook.py
+index f9dee2a..97ad6f2 100644
+--- a/evals/tests/test_telemetry_hook.py
++++ b/evals/tests/test_telemetry_hook.py
+@@ -183,25 +183,19 @@ class TelemetryHookTests(unittest.TestCase):
+         self.assertIn("changed.txt", trace["changed_files"])
+         self.assertIn("changed.txt", trace["untracked_files_included"])
+
+-    def test_telemetry_records_clean_execution_without_git_changes(self) -> None:
++    def test_clean_tree_does_not_overwrite_telemetry_files(self) -> None:
+         self.commit_all()
++        telemetry_files = [
++            self.root / "evals" / "telemetry" / "changed_files.txt",
++            self.root / "evals" / "telemetry" / "git_diff.patch",
++            self.root / "evals" / "telemetry" / "latest_trace.json",
++        ]
++        before = {path: path.read_text(encoding="utf-8") for path in telemetry_files}
+
+         result = self.run_telemetry_hook()
+
+         self.assertEqual(result.returncode, 0, result.stderr)
+-        changed_files = (self.root / "evals" / "telemetry" / "changed_files.txt").read_text(encoding="utf-8")
+-        patch_text = (self.root / "evals" / "telemetry" / "git_diff.patch").read_text(encoding="utf-8")
+-        trace = json.loads((self.root / "evals" / "telemetry" / "latest_trace.json").read_text(encoding="utf-8"))
+-        self.assertEqual(changed_files, "")
+-        self.assertEqual(patch_text, "")
+-        self.assertEqual(trace["execution_observed"], True)
+-        self.assertEqual(trace["execution_event"], "PostToolUse")
+-        self.assertEqual(trace["execution_identity"]["hook_event"], "PostToolUse")
+-        self.assertEqual(trace["plugin_execution"]["observed"], False)
+-        self.assertEqual(trace["git_state"], "clean")
+-        self.assertEqual(trace["changed_files"], [])
+-        self.assertEqual(trace["untracked_files_included"], [])
+-        self.assertEqual(trace["git_diff_captured"], False)
++        self.assertEqual({path: path.read_text(encoding="utf-8") for path in telemetry_files}, before)
+
+     def test_telemetry_only_dirty_tree_does_not_overwrite_files(self) -> None:
+         self.commit_all()

@@ -1,6 +1,12 @@
 {
   "added_unrequested_features": false,
-  "changed_files": [],
+  "changed_files": [
+    ".codex/hooks/post_tool_use_telemetry.py",
+    "evals/telemetry/changed_files.txt",
+    "evals/telemetry/git_diff.patch",
+    "evals/telemetry/latest_trace.json",
+    "evals/tests/test_telemetry_hook.py"
+  ],
   "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
@@ -9,8 +15,8 @@
     "tool_name": "Bash"
   },
   "execution_observed": true,
-  "git_diff_captured": false,
-  "git_state": "clean",
+  "git_diff_captured": true,
+  "git_state": "dirty",
   "last_hook_event": "PostToolUse",
   "plugin_execution": {
     "observed": false,
@@ -49,14 +55,20 @@
     },
     "unexpected_files": []
   },
-  "timestamp": "2026-07-03T16:48:19.672188+00:00",
+  "timestamp": "2026-07-03T16:57:51.479078+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "35e6a12f2fc1de7f0f094c6009f368f42dece313",
-    "changed_files": [],
+    "base_commit": "6a164cd65a7ffa556dae974b2798d2792e6f303b",
+    "changed_files": [
+      ".codex/hooks/post_tool_use_telemetry.py",
+      "evals/telemetry/changed_files.txt",
+      "evals/telemetry/git_diff.patch",
+      "evals/telemetry/latest_trace.json",
+      "evals/tests/test_telemetry_hook.py"
+    ],
     "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
-    "ref": "HEAD"
+    "ref": "HEAD+working-tree"
   },
   "validation_evidence": {
     "commands": {
