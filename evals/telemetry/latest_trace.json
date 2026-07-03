@@ -1,8 +1,6 @@
 {
   "added_unrequested_features": false,
-  "changed_files": [
-    "evals/telemetry/latest_trace.json"
-  ],
+  "changed_files": [],
   "eval_result": "PASS",
   "execution_event": "PostToolUse",
   "execution_identity": {
@@ -11,8 +9,8 @@
     "tool_name": "Bash"
   },
   "execution_observed": true,
-  "git_diff_captured": true,
-  "git_state": "dirty",
+  "git_diff_captured": false,
+  "git_state": "clean",
   "last_hook_event": "PostToolUse",
   "plugin_execution": {
     "observed": false,
@@ -51,16 +49,14 @@
     },
     "unexpected_files": []
   },
-  "timestamp": "2026-07-03T16:47:35.535289+00:00",
+  "timestamp": "2026-07-03T16:48:19.672188+00:00",
   "untracked_files_included": [],
   "untracked_files_omitted_from_diff": [],
   "validated_target": {
-    "base_commit": "b40cff58f2dbb8335ebb185c21d8ec0d67253749",
-    "changed_files": [
-      "evals/telemetry/latest_trace.json"
-    ],
+    "base_commit": "35e6a12f2fc1de7f0f094c6009f368f42dece313",
+    "changed_files": [],
     "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
-    "ref": "HEAD+working-tree"
+    "ref": "HEAD"
   },
   "validation_evidence": {
     "commands": {
