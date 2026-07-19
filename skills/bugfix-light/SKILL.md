@@ -1,6 +1,6 @@
 ---
 name: bugfix-light
-description: Prescriptive 8-step bug fix workflow for SIMPLES/MEDIA bugs (max 2 files, ~50 lines diff). Imported from Pulsar bugfix workflow per spec §21. Use when complexity classification is light. Steps 1-4 inline (analysis + point fix), steps 5-6 subagent (validation + persistence check), 7-8 inline gates (complexity gate + Pa de Cal). Closes 3 audit gaps Light 3 (invariants BEFORE), Light 5 (RED→regression promotion), Light 6 (persistence quick check). Manual-only invocation via /pipeline-orchestrator-for-codex:bugfix-light or via /pipeline-orchestrator-for-codex:bugfix --light.
+description: "Light governed bug fix workflow for small bugs with focused diff and validation gates."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: [bug description with repro details]

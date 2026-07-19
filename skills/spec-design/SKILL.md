@@ -1,6 +1,6 @@
 ---
 name: spec-design
-description: Generate comprehensive technical design translating requirements (WHAT) into architecture (HOW) with discovery process. Use when creating architecture from requirements.
+description: "Generate or review technical design from requirements and steering context."
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: <feature-name> [-y]
 metadata:

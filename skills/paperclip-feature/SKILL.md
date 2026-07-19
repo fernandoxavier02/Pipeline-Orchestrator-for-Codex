@@ -1,6 +1,6 @@
 ---
 name: paperclip-feature
-description: "Public Codex skill that dispatches a governed Paperclip Feature task tree after dry-run preview and explicit confirmation."
+description: "Dispatch a governed Paperclip Feature task tree after dry-run preview and confirmation."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "<feature description> [--simples|--media|--complexa]"

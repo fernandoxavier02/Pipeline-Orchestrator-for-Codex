@@ -1,6 +1,6 @@
 ---
 name: codex-kb-lookup
-description: "Look up Codex and OpenAI platform knowledge from the local KB. Use for questions about plugin manifests, skills, hooks, rules, AGENTS.md, agents/subagents, MCP/connectors, API platform, official source URLs, or before changing files governed by references/openai-codex-kb articles. Read-only: answers from the KB and never edits files."
+description: "Look up local Codex/OpenAI KB guidance for plugins, skills, hooks, MCP, and runtime claims."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "<topic, question, or file path>"

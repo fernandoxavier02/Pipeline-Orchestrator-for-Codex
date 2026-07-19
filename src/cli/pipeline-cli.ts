@@ -51,6 +51,24 @@ type PendingGateResolution =
 
 const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
 const SENTINEL_STALE_THRESHOLD_MS = 300_000;
+const DISABLE_AUTO_AGENT_RUNTIME_VALUES = new Set(["1", "true", "yes"]);
+
+export function resolveCliAgentRuntimeAdapter(explicitAdapter?: string) {
+  if (explicitAdapter) {
+    return explicitAdapter;
+  }
+
+  if (process.env.CODEX_AGENT_RUNTIME_ADAPTER) {
+    return process.env.CODEX_AGENT_RUNTIME_ADAPTER;
+  }
+
+  const disabled = process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME;
+  if (disabled && DISABLE_AUTO_AGENT_RUNTIME_VALUES.has(disabled.toLowerCase())) {
+    return undefined;
+  }
+
+  return "codex-cli-process";
+}
 
 function parseArgs(argv: string[]) {
   const args = argv.slice(2);
@@ -77,6 +95,7 @@ function parseArgs(argv: string[]) {
     }
   }
 
+  options.agentRuntimeAdapter = resolveCliAgentRuntimeAdapter(options.agentRuntimeAdapter);
   options.task = taskParts.join(" ").trim() || undefined;
   return options;
 }

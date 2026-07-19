@@ -1,6 +1,6 @@
 ---
 name: paperclip-review
-description: "Public Codex skill that dispatches a governed Paperclip Review-Only task tree after dry-run preview and explicit confirmation."
+description: "Dispatch a governed Paperclip Review task tree after dry-run preview and confirmation."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[review title or scope]"

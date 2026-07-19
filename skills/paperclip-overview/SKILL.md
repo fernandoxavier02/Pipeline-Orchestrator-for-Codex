@@ -1,6 +1,6 @@
 ---
 name: paperclip-overview
-description: "Public Codex skill that lists the governed Paperclip dispatch skills and their intended use."
+description: "List governed Paperclip dispatch skills and intended use."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[optional Paperclip workflow question]"

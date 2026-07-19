@@ -1,6 +1,6 @@
 ---
 name: spec-audit-only
-description: Prescriptive 5-step workflow for re-auditing an already-implemented spec without implementation steps. Runs format gate, content review, adversarial audit loop, confidence dashboard, and closure with locked sequence, mandatory gates, and congruence-only corrections.
+description: "Audit an already implemented spec without implementation, using review gates and closure evidence."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"

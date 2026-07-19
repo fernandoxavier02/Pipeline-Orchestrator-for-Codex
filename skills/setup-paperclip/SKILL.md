@@ -1,6 +1,6 @@
 ---
 name: setup-paperclip
-description: "Public Codex skill that configures the Paperclip integration for Pipeline Orchestrator agents and skills."
+description: "Configure the Paperclip integration for Pipeline Orchestrator agents and skills."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[optional setup notes]"

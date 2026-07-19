@@ -1,16 +1,6 @@
 ---
 name: feature-light
-description: |
-  Prescriptive 13-step workflow for implementing a new feature in LIGHT mode (small-to-medium
-  scope, controlled risk, prefer speed with discipline). Imported from Pulsar
-  Implement_new_feature/Ligth/ — every step file mirrors the canonical Pulsar prompt 1:1
-  while declaring an execution contract (execution_mode, agent_type, expected_*, gate_required)
-  via frontmatter. Sequence is locked (1→13, no skip, no reorder). 4 mandatory GATE_REQUEST
-  gates at steps 3 (acceptance-matrix-approval), 7 (architecture-choice), 9 (plan-approval),
-  10 (tdd-tests-approval). 5 reused executor agents: feature-vertical-slice-planner (3 spawns
-  at 3, 7, 9), pre-tester (10), feature-implementer (11), feature-integration-validator (12).
-  Manual-only invocation via /pipeline-orchestrator-for-codex:feature-light or via
-  /pipeline-orchestrator-for-codex:feature --light.
+description: "Light governed feature workflow for small or medium changes with tests and validation."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[feature description with user story + DoD]"

@@ -1,6 +1,6 @@
 ---
 name: codex-kb-refresh
-description: "Refresh the local Codex/OpenAI knowledge base from official source URLs. Use when asked to refresh/update/sync the KB, when docs may be stale, or when codex-kb-drift-check flags stale articles. Writes only to references/openai-codex-kb/**."
+description: "Refresh the local Codex/OpenAI KB from official source URLs."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[scope: 'all' | article-name | 'stale-only']"

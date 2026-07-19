@@ -1,6 +1,6 @@
 ---
 name: verify-completion
-description: Verify completion and success claims with fresh evidence. Use before claiming a task is complete, a fix works, tests pass, or a feature is ready for GO.
+description: "Verify completion claims with fresh evidence before declaring success."
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: <claim-type> <claim>
 disable-model-invocation: true

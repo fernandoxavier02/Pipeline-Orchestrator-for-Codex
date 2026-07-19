@@ -1,176 +1,1587 @@
-diff --git a/.codex/hooks/post_tool_use_telemetry.py b/.codex/hooks/post_tool_use_telemetry.py
-index 039a627..4359154 100644
---- a/.codex/hooks/post_tool_use_telemetry.py
-+++ b/.codex/hooks/post_tool_use_telemetry.py
-@@ -144,6 +144,15 @@ def changed_files(repo_root: Path) -> list[str]:
-     return files
-
-
-+def unstaged_or_untracked_files(repo_root: Path, untracked: list[str]) -> list[str]:
-+    unstaged = [
-+        line.strip().replace("\\", "/")
-+        for line in run_git(repo_root, ["diff", "--name-only"]).splitlines()
-+        if line.strip()
-+    ]
-+    return [*unstaged, *untracked]
-+
-+
- def git_ref(repo_root: Path, *args: str) -> str | None:
-     value = run_git(repo_root, list(args)).strip()
-     return value or None
-@@ -295,8 +304,11 @@ def main() -> int:
-
-     files = changed_files(repo_root)
-     untracked = untracked_files(repo_root)
-+    working_tree_files = unstaged_or_untracked_files(repo_root, untracked)
-     has_git_changes = bool(files or untracked)
-
-+    if not working_tree_files:
-+        return 0
-     if (not has_git_changes or has_only_self_generated_telemetry(files, untracked)) and not (
-         env_flag("EVAL_GATE_READ_ONLY") or is_read_only_payload(payload)
-     ):
+diff --git a/dist/src/cli/pipeline-cli.js b/dist/src/cli/pipeline-cli.js
+index c865852..24c4bf5 100755
+--- a/dist/src/cli/pipeline-cli.js
++++ b/dist/src/cli/pipeline-cli.js
+@@ -30,6 +30,20 @@ export function resolveCliExitCode(result) {
+ }
+ const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
+ const SENTINEL_STALE_THRESHOLD_MS = 300_000;
++const DISABLE_AUTO_AGENT_RUNTIME_VALUES = new Set(["1", "true", "yes"]);
++export function resolveCliAgentRuntimeAdapter(explicitAdapter) {
++    if (explicitAdapter) {
++        return explicitAdapter;
++    }
++    if (process.env.CODEX_AGENT_RUNTIME_ADAPTER) {
++        return process.env.CODEX_AGENT_RUNTIME_ADAPTER;
++    }
++    const disabled = process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME;
++    if (disabled && DISABLE_AUTO_AGENT_RUNTIME_VALUES.has(disabled.toLowerCase())) {
++        return undefined;
++    }
++    return "codex-cli-process";
++}
+ function parseArgs(argv) {
+     const args = argv.slice(2);
+     const options = {
+@@ -57,6 +71,7 @@ function parseArgs(argv) {
+             taskParts.push(arg);
+         }
+     }
++    options.agentRuntimeAdapter = resolveCliAgentRuntimeAdapter(options.agentRuntimeAdapter);
+     options.task = taskParts.join(" ").trim() || undefined;
+     return options;
+ }
 diff --git a/evals/outputs/latest_output.md b/evals/outputs/latest_output.md
-index f35aa72..18507d8 100644
+index 18507d8..ed525c8 100644
 --- a/evals/outputs/latest_output.md
 +++ b/evals/outputs/latest_output.md
-@@ -10,9 +10,8 @@
+@@ -2,33 +2,49 @@
+
+ ## What was inspected
+
+-- Repository: `D:\Pipeline Orchestrator for Codex`.
+-- Active request: commit, push, publish the Pipeline Orchestrator plugin for global Codex use on this computer, and update the Codex Global marketplace.
+-- behavior_cases: 5.
+-- Contracts inspected: `AGENTS.md`, `.kiro/CONSTITUTION.md`, `.kiro/steering/product.md`, `.kiro/steering/tech.md`, `.kiro/steering/structure.md`, `evals/README.md`, plugin manifests, hook runtime, tests, marketplace config, and sync scripts.
+-- Runtime evidence inspected: governed pipeline state, `dispatch-guard` hook behavior, unit/integration tests, Python eval tests, and real adversarial review execution using `spawn_agent` plus `wait_agent`.
++- Repositório: `D:\Pipeline Orchestrator for Codex`.
++- Bloqueio observado no fluxo real `pipeline-orchestrator-for-codex:brainstorm`: `spec-init` referenciava seis modelos em `references/spec-templates/`, mas o diretório não existia no pacote Codex.
++- Referência canônica: os seis modelos publicados pelo projeto de origem em `D:\pipeline-orchestrator-claude\claude-code\Pipeline-Orchestrator`, tag `v8.24.0`, com adaptação do único comando legado para o namespace Codex.
++- Superfícies verificadas: source tree, conteúdo do pacote produzido por `npm pack --dry-run --json`, cache ativo do Codex e cópia compatível em `.agents`.
++- Alterações anteriores já presentes no working tree foram mantidas e revalidadas, sem reversão ou normalização oportunista.
++- `behavior_cases: 5` cenários do contrato local foram considerados pelo gate.
 
  ## What was changed
 
--- `hooks/dispatch-guard.cjs` was hardened so `update_plan` can satisfy only the `update_plan` first action; it no longer completes `WORKFLOW_METHOD_GATE` or `CAPABILITY_GATE` from spoofable text.
--- `tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts` now covers the PreToolUse and PostToolUse anti-spoof regression.
--- Plugin/package manifests, README references, SessionStart banner, changelog, and version-consistency tests were bumped to `0.5.3` for the requested global publication.
-+- `.codex/hooks/post_tool_use_telemetry.py` now avoids rewriting telemetry when all remaining changes are already staged, preventing timestamp-only dirtiness after `git add`/commit preparation.
-+- `evals/tests/test_telemetry_hook.py` covers that staged-tree telemetry regression.
- - `evals/telemetry/**` was updated to capture the final validation scope and evidence.
+-- `.codex/hooks/post_tool_use_telemetry.py` now avoids rewriting telemetry when all remaining changes are already staged, preventing timestamp-only dirtiness after `git add`/commit preparation.
+-- `evals/tests/test_telemetry_hook.py` covers that staged-tree telemetry regression.
+-- `evals/telemetry/**` was updated to capture the final validation scope and evidence.
++- Adicionados os seis modelos canônicos em `references/spec-templates/`: `init.json`, `requirements-init.md`, `requirements.md`, `design.md`, `research.md` e `tasks.md`.
++- Adicionado um teste de regressão em `tests/integration/plugin/package-surface.test.ts` que descobre referências de modelos nos quatro skills do ciclo de especificação e exige que todos sejam incluídos no pacote NPM.
++- O mesmo teste agora rejeita comandos legados `/kiro-spec-` dentro desses modelos; o ciclo RED/GREEN confirmou e corrigiu a referência de `requirements-init.md` para `/pipeline-orchestrator-for-codex:spec-requirements`.
++- Sincronizadas manualmente, fora do repositório, as mesmas seis fontes no cache ativo `C:\Users\win\.codex\plugins\cache\fx-studio-ai\pipeline-orchestrator-for-codex\0.5.3` e na cópia `C:\Users\win\.agents\plugins\pipeline-orchestrator-for-codex`.
++- Atualizados o relatório e a telemetria obrigatórios do Eval Gate para registrar este reparo.
 
  ## What was not changed
+
+-- No unrelated runtime behavior, dependencies, agent prompts, skills, command entrypoints, or generated `dist/**` files were manually rewritten.
+-- No VPS sync is claimed by this eval report; this report covers local plugin publication readiness before commit/push and local Codex sync.
+-- No secrets, credentials, or private keys were added.
++- Nenhum corpo de skill, contrato de agente, fonte TypeScript, hook, dependência, versão ou manifesto foi alterado por este reparo.
++- Nenhum arquivo previamente modificado por outro trabalho foi revertido.
++- Nenhum commit, push, publicação ou migração remota foi realizado.
+
+ ## Eval result
+
+-EVAL RESULT: PASS. The intended final gate is `python .agents/skills/workflow-eval-gate/scripts/run_eval.py` after this report and telemetry update.
++EVAL RESULT: PASS. O runner local confirmou este resultado em `python .agents/skills/workflow-eval-gate/scripts/run_eval.py`.
++
++## Validation evidence
++
++- `npx vitest run tests/integration/plugin/codex-workflow-surface.test.ts tests/integration/plugin/package-surface.test.ts --testTimeout 30000 --reporter=dot`: PASS, 10/10 testes.
++- `npm run lint:types`: PASS.
++- `npm run build`: PASS.
++- `npm test -- --testTimeout 30000`: PASS, execução completa com exit code 0.
++- `python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs`: PASS, 65/65 testes.
++- `git diff --check`: PASS.
++- Comparação normalizada entre source, cache Codex e cópia `.agents`: PASS, 12/12 arquivos equivalentes.
++- `codex doctor --json`: plugin funcional; permanece apenas o aviso preexistente de linhas antigas no banco de tarefas.
++- Revisão independente após a correção: APPROVED, sem achados funcionais bloqueantes.
+
+ ## Remaining risks
+
+-- The current Codex session previously showed hooks loaded from the old `0.5.1` cache path; after sync, `codex plugin list` and cache manifests must be checked, and a new Codex session is the definitive runtime banner proof.
+-- Marketplace update touches a second repository, `C:\Users\win\Codex-superpower`, so it must be committed and pushed separately.
++- Os seis modelos novos ainda estão sem rastreamento no Git. O script de sincronização usa `git ls-files`, portanto uma sincronização futura não os copiará até que entrem em um commit; as superfícies ativas foram corrigidas manualmente nesta execução.
++- A sessão que encontrou a falha já tinha carregado o contexto antigo do skill. A retomada deve usar um agente novo, lendo os modelos agora presentes.
++- O aviso de paridade do banco reportado por `codex doctor` é anterior e não está ligado a este bloqueio.
+
+ ## Next safest step
+
+-Run the eval gate, then stage, commit, push, synchronize the installed Codex plugin surfaces, verify `codex plugin list`, and commit/push the Codex Global marketplace update.
++Manter o risco de rastreamento explícito até os seis modelos integrarem um commit e prosseguir com o ciclo de especificação já retomado em `D:\fxstudioai-cowork\pipeline-runs\001-marca-portfolio-areas-atuacao`.
 diff --git a/evals/telemetry/changed_files.txt b/evals/telemetry/changed_files.txt
-index 2958634..bc436b6 100644
+index bc436b6..f3b66e0 100644
 --- a/evals/telemetry/changed_files.txt
 +++ b/evals/telemetry/changed_files.txt
-@@ -1,14 +1,6 @@
--.codex-plugin/plugin.json
--CHANGELOG.md
--README.md
-+.codex/hooks/post_tool_use_telemetry.py
+@@ -1,6 +1,47 @@
+-.codex/hooks/post_tool_use_telemetry.py
++dist/src/cli/pipeline-cli.js
  evals/outputs/latest_output.md
  evals/telemetry/changed_files.txt
  evals/telemetry/git_diff.patch
  evals/telemetry/latest_trace.json
--hooks/dispatch-guard.cjs
--hooks/session-start-context.cjs
--package-lock.json
--package.json
--tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts
--tests/unit/observability/execution-identity.test.ts
--tests/unit/version-consistency.test.ts
-+evals/tests/test_telemetry_hook.py
+-evals/tests/test_telemetry_hook.py
++skills/audit-heavy/SKILL.md
++skills/audit-light/SKILL.md
++skills/audit/SKILL.md
++skills/brainstorm/SKILL.md
++skills/bugfix-heavy/SKILL.md
++skills/bugfix-light/SKILL.md
++skills/bugfix/SKILL.md
++skills/codex-kb-drift-check/SKILL.md
++skills/codex-kb-lookup/SKILL.md
++skills/codex-kb-refresh/SKILL.md
++skills/feature-heavy/SKILL.md
++skills/feature-light/SKILL.md
++skills/feature/SKILL.md
++skills/help/SKILL.md
++skills/measure-paperclip-fidelity/SKILL.md
++skills/paperclip-audit/SKILL.md
++skills/paperclip-bugfix/SKILL.md
++skills/paperclip-feature/SKILL.md
++skills/paperclip-hotfix/SKILL.md
++skills/paperclip-overview/SKILL.md
++skills/paperclip-review/SKILL.md
++skills/paperclip-spec/SKILL.md
++skills/paperclip-user-story/SKILL.md
++skills/paperclip-ux/SKILL.md
++skills/pipeline/SKILL.md
++skills/review/SKILL.md
++skills/setup-paperclip/SKILL.md
++skills/spec-audit-only/SKILL.md
++skills/spec-design/SKILL.md
++skills/spec-heavy/SKILL.md
++skills/spec-init/SKILL.md
++skills/spec-light/SKILL.md
++skills/spec-requirements/SKILL.md
++skills/spec-tasks/SKILL.md
++skills/spec/SKILL.md
++skills/validate-design/SKILL.md
++skills/validate-gap/SKILL.md
++skills/verify-completion/SKILL.md
++src/cli/pipeline-cli.ts
++tests/integration/plugin/package-surface.test.ts
++tests/unit/cli/pipeline-cli.test.ts
++references/spec-templates/
 diff --git a/evals/telemetry/latest_trace.json b/evals/telemetry/latest_trace.json
-index 9c79726..8b26700 100644
+index 399fb88..264522e 100644
 --- a/evals/telemetry/latest_trace.json
 +++ b/evals/telemetry/latest_trace.json
-@@ -1,30 +1,22 @@
+@@ -1,19 +1,60 @@
  {
    "added_unrequested_features": false,
    "changed_files": [
--    ".codex-plugin/plugin.json",
--    "CHANGELOG.md",
--    "README.md",
-+    ".codex/hooks/post_tool_use_telemetry.py",
+-    ".codex/hooks/post_tool_use_telemetry.py",
++    "dist/src/cli/pipeline-cli.js",
      "evals/outputs/latest_output.md",
      "evals/telemetry/changed_files.txt",
      "evals/telemetry/git_diff.patch",
      "evals/telemetry/latest_trace.json",
--    "hooks/dispatch-guard.cjs",
--    "hooks/session-start-context.cjs",
--    "package-lock.json",
--    "package.json",
--    "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
--    "tests/unit/observability/execution-identity.test.ts",
--    "tests/unit/version-consistency.test.ts"
-+    "evals/tests/test_telemetry_hook.py"
+-    "evals/tests/test_telemetry_hook.py"
++    "skills/audit-heavy/SKILL.md",
++    "skills/audit-light/SKILL.md",
++    "skills/audit/SKILL.md",
++    "skills/brainstorm/SKILL.md",
++    "skills/bugfix-heavy/SKILL.md",
++    "skills/bugfix-light/SKILL.md",
++    "skills/bugfix/SKILL.md",
++    "skills/codex-kb-drift-check/SKILL.md",
++    "skills/codex-kb-lookup/SKILL.md",
++    "skills/codex-kb-refresh/SKILL.md",
++    "skills/feature-heavy/SKILL.md",
++    "skills/feature-light/SKILL.md",
++    "skills/feature/SKILL.md",
++    "skills/help/SKILL.md",
++    "skills/measure-paperclip-fidelity/SKILL.md",
++    "skills/paperclip-audit/SKILL.md",
++    "skills/paperclip-bugfix/SKILL.md",
++    "skills/paperclip-feature/SKILL.md",
++    "skills/paperclip-hotfix/SKILL.md",
++    "skills/paperclip-overview/SKILL.md",
++    "skills/paperclip-review/SKILL.md",
++    "skills/paperclip-spec/SKILL.md",
++    "skills/paperclip-user-story/SKILL.md",
++    "skills/paperclip-ux/SKILL.md",
++    "skills/pipeline/SKILL.md",
++    "skills/review/SKILL.md",
++    "skills/setup-paperclip/SKILL.md",
++    "skills/spec-audit-only/SKILL.md",
++    "skills/spec-design/SKILL.md",
++    "skills/spec-heavy/SKILL.md",
++    "skills/spec-init/SKILL.md",
++    "skills/spec-light/SKILL.md",
++    "skills/spec-requirements/SKILL.md",
++    "skills/spec-tasks/SKILL.md",
++    "skills/spec/SKILL.md",
++    "skills/validate-design/SKILL.md",
++    "skills/validate-gap/SKILL.md",
++    "skills/verify-completion/SKILL.md",
++    "src/cli/pipeline-cli.ts",
++    "tests/integration/plugin/package-surface.test.ts",
++    "tests/unit/cli/pipeline-cli.test.ts",
++    "references/spec-templates/"
    ],
    "eval_result": "PASS",
    "execution_event": "PostToolUse",
    "execution_identity": {
      "hook_event": "PostToolUse",
-     "session_id": "019f28c9-9003-7823-87d1-0ff731f3cd0d",
+-    "session_id": "019f28c9-9003-7823-87d1-0ff731f3cd0d",
 -    "tool_name": "Bash"
-+    "tool_name": "apply_patch"
++    "session_id": null,
++    "tool_name": null
    },
    "execution_observed": true,
--  "git_diff_captured": false,
-+  "git_diff_captured": true,
-   "git_state": "dirty",
-   "last_hook_event": "PostToolUse",
-   "plugin_execution": {
-@@ -62,35 +54,20 @@
-       "tests/unit/observability/execution-identity.test.ts": "Versioned observability identity test must match the published plugin version.",
-       "tests/unit/version-consistency.test.ts": "Version consistency test must match the published manifest and SessionStart banner."
+   "git_diff_captured": true,
+@@ -26,16 +67,16 @@
+       "spawn_agent_observed": true,
+       "wait_agent_observed": true
      },
--    "unexpected_files": [
--      ".codex-plugin/plugin.json",
--      "CHANGELOG.md",
--      "package-lock.json",
--      "package.json",
--      "tests/unit/observability/execution-identity.test.ts",
--      "tests/unit/version-consistency.test.ts"
--    ]
-+    "unexpected_files": []
+-    "status": "success"
++    "status": "diagnostic-pass"
    },
--  "timestamp": "2026-07-03T17:46:11.097698+00:00",
-+  "timestamp": "2026-07-03T17:49:31.239617+00:00",
-   "untracked_files_included": [],
+   "scope_respected": true,
+   "scope_review": {
+     "allowed_prefixes": [
+-      "hooks/",
+-      "tests/unit/hooks/",
++      "skills/",
++      "src/cli/",
++      "dist/src/cli/",
++      "tests/unit/cli/",
+       "evals/",
+-      ".pipeline/",
+-      "dist/",
+       ".codex/",
+       ".agents/skills/workflow-eval-gate/",
+       ".pipeline/sessions/",
+@@ -44,30 +85,115 @@
+       "AGENTS.md",
+       "PROJECT_CONTEXT.md",
+       "README.md",
+-      ".kiro/"
++      ".kiro/",
++      "references/spec-templates/",
++      "tests/integration/plugin/"
+     ],
+     "scope_justifications": {
+-      ".codex-plugin/plugin.json": "Requested global Codex publication requires the plugin manifest version to match the installed cache version.",
+-      "CHANGELOG.md": "Requested publication requires documenting the 0.5.3 release and hook hardening shipped in this commit.",
+-      "package-lock.json": "Version bump must keep npm lock metadata aligned with package.json for reproducible validation.",
+-      "package.json": "Requested publication requires package metadata to match the plugin manifest version.",
+-      "tests/unit/observability/execution-identity.test.ts": "Versioned observability identity test must match the published plugin version.",
+-      "tests/unit/version-consistency.test.ts": "Version consistency test must match the published manifest and SessionStart banner."
++      "dist/src/cli/pipeline-cli.js": "Generated build output from npm run build for the CLI runtime source change.",
++      "skills/audit-heavy/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/audit-light/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/audit/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/brainstorm/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/bugfix-heavy/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/bugfix-light/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/bugfix/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/codex-kb-drift-check/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/codex-kb-lookup/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/codex-kb-refresh/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/feature-heavy/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/feature-light/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/feature/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/help/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/measure-paperclip-fidelity/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/paperclip-audit/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/paperclip-bugfix/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/paperclip-feature/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/paperclip-hotfix/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/paperclip-overview/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/paperclip-review/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/paperclip-spec/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/paperclip-user-story/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/paperclip-ux/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/pipeline/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/review/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/setup-paperclip/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/spec-audit-only/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/spec-design/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/spec-heavy/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/spec-init/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/spec-light/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/spec-requirements/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/spec-tasks/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/spec/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/validate-design/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/validate-gap/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "skills/verify-completion/SKILL.md": "In scope: the CLI startup failure was caused by oversized Pipeline skill frontmatter descriptions; only discovery descriptions were shortened, not skill bodies.",
++      "src/cli/pipeline-cli.ts": "In scope from the existing CLI runtime fix: direct Codex CLI launcher needs the real agent runtime adapter by default.",
++      "tests/unit/cli/pipeline-cli.test.ts": "Regression coverage for the existing CLI runtime adapter fix."
+     },
+     "unexpected_files": []
+   },
+-  "timestamp": "2026-07-03T17:49:35.719817+00:00",
+-  "untracked_files_included": [],
++  "timestamp": "2026-07-12T20:56:06.007915+00:00",
++  "untracked_files_included": [
++    "references/spec-templates/design.md",
++    "references/spec-templates/init.json",
++    "references/spec-templates/requirements-init.md",
++    "references/spec-templates/requirements.md",
++    "references/spec-templates/research.md",
++    "references/spec-templates/tasks.md"
++  ],
    "untracked_files_omitted_from_diff": [],
    "validated_target": {
--    "base_commit": "09ec1d8cd4487768d540054fb0321801fdebe4f2",
-+    "base_commit": "e0ebc0dfc7e4f358558830fe66ac19cb3a5b87ec",
+-    "base_commit": "e0ebc0dfc7e4f358558830fe66ac19cb3a5b87ec",
++    "base_commit": "e9855828e12f04c486d22f46876de11e2838b989",
      "changed_files": [
--      ".codex-plugin/plugin.json",
--      "CHANGELOG.md",
--      "README.md",
-+      ".codex/hooks/post_tool_use_telemetry.py",
+-      ".codex/hooks/post_tool_use_telemetry.py",
++      "dist/src/cli/pipeline-cli.js",
        "evals/outputs/latest_output.md",
        "evals/telemetry/changed_files.txt",
        "evals/telemetry/git_diff.patch",
        "evals/telemetry/latest_trace.json",
--      "hooks/dispatch-guard.cjs",
--      "hooks/session-start-context.cjs",
--      "package-lock.json",
--      "package.json",
--      "tests/unit/hooks/dispatch-frontmatter-enforcement.test.ts",
--      "tests/unit/observability/execution-identity.test.ts",
--      "tests/unit/version-consistency.test.ts"
-+      "evals/tests/test_telemetry_hook.py"
+-      "evals/tests/test_telemetry_hook.py"
++      "skills/audit-heavy/SKILL.md",
++      "skills/audit-light/SKILL.md",
++      "skills/audit/SKILL.md",
++      "skills/brainstorm/SKILL.md",
++      "skills/bugfix-heavy/SKILL.md",
++      "skills/bugfix-light/SKILL.md",
++      "skills/bugfix/SKILL.md",
++      "skills/codex-kb-drift-check/SKILL.md",
++      "skills/codex-kb-lookup/SKILL.md",
++      "skills/codex-kb-refresh/SKILL.md",
++      "skills/feature-heavy/SKILL.md",
++      "skills/feature-light/SKILL.md",
++      "skills/feature/SKILL.md",
++      "skills/help/SKILL.md",
++      "skills/measure-paperclip-fidelity/SKILL.md",
++      "skills/paperclip-audit/SKILL.md",
++      "skills/paperclip-bugfix/SKILL.md",
++      "skills/paperclip-feature/SKILL.md",
++      "skills/paperclip-hotfix/SKILL.md",
++      "skills/paperclip-overview/SKILL.md",
++      "skills/paperclip-review/SKILL.md",
++      "skills/paperclip-spec/SKILL.md",
++      "skills/paperclip-user-story/SKILL.md",
++      "skills/paperclip-ux/SKILL.md",
++      "skills/pipeline/SKILL.md",
++      "skills/review/SKILL.md",
++      "skills/setup-paperclip/SKILL.md",
++      "skills/spec-audit-only/SKILL.md",
++      "skills/spec-design/SKILL.md",
++      "skills/spec-heavy/SKILL.md",
++      "skills/spec-init/SKILL.md",
++      "skills/spec-light/SKILL.md",
++      "skills/spec-requirements/SKILL.md",
++      "skills/spec-tasks/SKILL.md",
++      "skills/spec/SKILL.md",
++      "skills/validate-design/SKILL.md",
++      "skills/validate-gap/SKILL.md",
++      "skills/verify-completion/SKILL.md",
++      "src/cli/pipeline-cli.ts",
++      "tests/integration/plugin/package-surface.test.ts",
++      "tests/unit/cli/pipeline-cli.test.ts",
++      "references/spec-templates/"
      ],
      "diff_command": "git diff --no-ext-diff --binary -- . :(exclude)evals/telemetry/git_diff.patch",
      "ref": "HEAD+working-tree"
-diff --git a/evals/tests/test_telemetry_hook.py b/evals/tests/test_telemetry_hook.py
-index 97ad6f2..cd07b59 100644
---- a/evals/tests/test_telemetry_hook.py
-+++ b/evals/tests/test_telemetry_hook.py
-@@ -223,6 +223,22 @@ class TelemetryHookTests(unittest.TestCase):
-         self.assertEqual(result.returncode, 0, result.stderr)
-         self.assertEqual({path: path.read_text(encoding="utf-8") for path in telemetry_files}, before)
+@@ -76,37 +202,44 @@
+     "commands": {
+       "git diff --check": {
+         "command": "git diff --check",
+-        "observed_at": "2026-07-03T14:49:00-03:00",
++        "observed_at": "2026-07-12T17:56:06-03:00",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+       },
+       "npm run build": {
+         "command": "npm run build",
+-        "observed_at": "2026-07-03T14:47:00-03:00",
++        "observed_at": "2026-07-12T17:56:06-03:00",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+       },
+       "npm run lint:types": {
+         "command": "npm run lint:types",
+-        "observed_at": "2026-07-03T14:46:00-03:00",
++        "observed_at": "2026-07-12T17:56:06-03:00",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+       },
+       "npm test": {
+-        "command": "npm test -- --testTimeout 30000",
+-        "observed_at": "2026-07-03T14:48:00-03:00",
++        "command": "npm test -- --testTimeout 30000 --reporter=dot",
++        "focused_evidence": "Full Vitest suite completed with exit code 0; focused plugin surface rerun passed 10/10 tests.",
++        "observed_at": "2026-07-12T17:56:06-03:00",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+       },
++      "npx vitest run tests/integration/plugin/codex-workflow-surface.test.ts tests/integration/plugin/package-surface.test.ts --testTimeout 30000 --reporter=dot": {
++        "command": "npx vitest run tests/integration/plugin/codex-workflow-surface.test.ts tests/integration/plugin/package-surface.test.ts --testTimeout 30000 --reporter=dot",
++        "observed_at": "2026-07-12T17:56:06-03:00",
++        "status": "PASS_10_OF_10",
++        "target": "HEAD+working-tree"
++      },
+       "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs": {
+         "command": "python -m unittest evals.tests.test_hooks_config evals.tests.test_policy_hook evals.tests.test_telemetry_hook evals.tests.test_eval_gate evals.tests.test_hook_trust_docs",
+-        "observed_at": "2026-07-03T14:49:00-03:00",
++        "observed_at": "2026-07-12T17:56:06-03:00",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+       },
+       "python .agents/skills/workflow-eval-gate/scripts/run_eval.py": {
+         "command": "python .agents/skills/workflow-eval-gate/scripts/run_eval.py",
+-        "observed_at": "2026-07-03T14:55:00-03:00",
++        "observed_at": "2026-07-12T17:56:06-03:00",
+         "status": "PASS",
+         "target": "HEAD+working-tree"
+       }
+diff --git a/skills/audit-heavy/SKILL.md b/skills/audit-heavy/SKILL.md
+index ae35f82..6190a4a 100644
+--- a/skills/audit-heavy/SKILL.md
++++ b/skills/audit-heavy/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: audit-heavy
+-description: Prescriptive 9-step audit workflow for COMPLEXA audits (full system, multi-axis, regulatory, security-sensitive). Imported from Pulsar audit workflow per spec §22. Use when audit complexity is heavy or when audit-light auto-escalates at its scope gate. REPORT-ONLY by Iron Law — no code modification under any circumstance. Steps 1 subagent gate (intake + spec + inventory — REQUIRES SCOPE APPROVAL), 2-4 subagent (architecture + domain/SSOT + contracts via audit-domain-analyzer), 5-8 subagent (data + frontend + backend + governance via audit-compliance-checker), 9 subagent gate (Pa de Cal + risk matrix via audit-risk-matrix-generator — REQUIRES GO/NO-GO). Each step produces a typed JSON output (AuditIntake, DependencyImpactAudit, DecisionSSOTAudit, ContractGovernanceAudit, DataGovernanceAudit, FrontendDeepAudit, BackendDeepAudit, DeliveryGovernanceAudit, AuditMasterSeal). Manual-only invocation via /pipeline-orchestrator-for-codex:audit-heavy or via /pipeline-orchestrator-for-codex:audit --heavy.
++description: "Heavy governed audit workflow for broad or risky audits with approval gates and risk matrix."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: [audit scope — modules, axes, baseline]
+diff --git a/skills/audit-light/SKILL.md b/skills/audit-light/SKILL.md
+index 6367252..60e5847 100644
+--- a/skills/audit-light/SKILL.md
++++ b/skills/audit-light/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: audit-light
+-description: Prescriptive 9-step audit workflow for SIMPLES/MEDIA audits (1 area, 1 depth level, single-axis or narrow scope). Imported from Pulsar audit workflow per spec §22. Use when audit complexity is light. REPORT-ONLY by Iron Law — no code modification under any circumstance. Same 9-step structure as audit-heavy (§7.2.2 — Light = Heavy em estrutura) but capped scope and collapsed ownership audit-domain-analyzer is SKIPPED in Light per references/pipelines/audit-light.md; domain analysis runs inline inside audit-compliance-checker's light_mode fallback. Steps 1 subagent gate (intake — REQUIRES SCOPE APPROVAL), 2-4 subagent (architecture + domain/SSOT + contracts via audit-compliance-checker light_mode), 5-8 subagent (data + frontend + backend + governance via audit-compliance-checker), 9 subagent gate (Pa de Cal via audit-risk-matrix-generator — REQUIRES GO/NO-GO). Manual-only invocation via /pipeline-orchestrator-for-codex:audit-light or via /pipeline-orchestrator-for-codex:audit --light.
++description: "Light governed audit workflow for narrow audits with approval gates and final risk matrix."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: [audit scope — narrow area, single depth level]
+diff --git a/skills/audit/SKILL.md b/skills/audit/SKILL.md
+index d7cba30..4d23e86 100644
+--- a/skills/audit/SKILL.md
++++ b/skills/audit/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: audit
+-description: Audit shortcut — skips task-orchestrator type-classification by pre-fixing task_type=Audit. Same pipeline machinery as /pipeline-orchestrator-for-codex:pipeline (information-gate, design-interrogator, plan-architect, executor-controller, sanity, Pa de Cal). Invoked manually via `/pipeline-orchestrator-for-codex:audit [scope]` — never auto-invoked because every audit run produces a structured report (AUDIT_REPORT) that the user must consciously trigger. Variant flags `--light` / `--heavy` route directly to skills/audit-light or skills/audit-heavy with their prescriptive 9-step procedures imported from Pulsar.
++description: "Shortcut for governed audit workflow; supports light or heavy report-only validation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: [audit scope description — modules, axes, baseline]
+diff --git a/skills/brainstorm/SKILL.md b/skills/brainstorm/SKILL.md
+index bf03fb0..a76952a 100644
+--- a/skills/brainstorm/SKILL.md
++++ b/skills/brainstorm/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: brainstorm
+-description: "Prepare a governed pipeline run before implementation. Allocates pipeline-runs/<NNN>-<slug>, captures intent, drives spec lifecycle skills, validates design/gap, then hands off to /pipeline-orchestrator-for-codex:pipeline."
++description: "Prepare a governed pipeline run, create run context, validate design/gaps, and hand off."
+ agent_type: worker
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ gates_at: [phase-0, phase-1, phase-1.5]
+diff --git a/skills/bugfix-heavy/SKILL.md b/skills/bugfix-heavy/SKILL.md
+index d5c44cc..135175e 100644
+--- a/skills/bugfix-heavy/SKILL.md
++++ b/skills/bugfix-heavy/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: bugfix-heavy
+-description: Prescriptive 11-step bug fix workflow for COMPLEXA bugs and production incidents (cross-cutting concerns, persistence, concurrency, multi-user impact, business rules). Imported from Pulsar bugfix workflow per spec §21. Use when complexity classification is heavy or when bugfix-light auto-escalates at its complexity gate. Steps 1-3 subagent (recon + root-cause + domain truth model), 4 inline gate (controlled change proposal — REQUIRES APPROVAL), 5-6 inline (TDD pre-impl + minimal diff), 7 subagent (sanity + regression), 8 parallel subagents gate (adversarial security+architecture+quality), 9 subagent (post-fix UX E2E), 10 inline gate (Pa de Cal GO/NO-GO), 11 subagent (final after-all sanity sweep). Closes 4 audit gaps Heavy 3 (domain truth model net-new), Heavy 8 (3-way adversarial), Heavy 9 (UX as post-fix E2E), Heavy 11 (after-all distinct from Pa de Cal). Manual-only invocation via /pipeline-orchestrator-for-codex:bugfix-heavy or via /pipeline-orchestrator-for-codex:bugfix --heavy.
++description: "Heavy governed bug fix workflow for complex or production bugs with reviews and gates."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: [bug description with repro details]
+diff --git a/skills/bugfix-light/SKILL.md b/skills/bugfix-light/SKILL.md
+index 31f6429..cf7d05a 100644
+--- a/skills/bugfix-light/SKILL.md
++++ b/skills/bugfix-light/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: bugfix-light
+-description: Prescriptive 8-step bug fix workflow for SIMPLES/MEDIA bugs (max 2 files, ~50 lines diff). Imported from Pulsar bugfix workflow per spec §21. Use when complexity classification is light. Steps 1-4 inline (analysis + point fix), steps 5-6 subagent (validation + persistence check), 7-8 inline gates (complexity gate + Pa de Cal). Closes 3 audit gaps Light 3 (invariants BEFORE), Light 5 (RED→regression promotion), Light 6 (persistence quick check). Manual-only invocation via /pipeline-orchestrator-for-codex:bugfix-light or via /pipeline-orchestrator-for-codex:bugfix --light.
++description: "Light governed bug fix workflow for small bugs with focused diff and validation gates."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: [bug description with repro details]
+diff --git a/skills/bugfix/SKILL.md b/skills/bugfix/SKILL.md
+index 071a0c5..fbe9b74 100644
+--- a/skills/bugfix/SKILL.md
++++ b/skills/bugfix/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: bugfix
+-description: Bug Fix shortcut — skips task-orchestrator type-classification by pre-fixing task_type=Bug Fix. Same pipeline machinery as /pipeline-orchestrator-for-codex:pipeline (information-gate, design-interrogator, plan-architect, executor-controller, adversarial review, sanity, Pa de Cal). Invoked manually via `/pipeline-orchestrator-for-codex:bugfix [task]` — never auto-invoked because every bug-fix run has side effects (TDD-RED tests created, code edited, commits proposed) that the user must consciously trigger.
++description: "Shortcut for governed bug fix workflow with TDD, review, sanity, and final gates."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: [bug description with repro details]
+diff --git a/skills/codex-kb-drift-check/SKILL.md b/skills/codex-kb-drift-check/SKILL.md
+index d86ecdb..13eb017 100644
+--- a/skills/codex-kb-drift-check/SKILL.md
++++ b/skills/codex-kb-drift-check/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: codex-kb-drift-check
+-description: "Check whether local repo files have drifted from contracts documented in the Codex KB. Use before PR/release, after bulk edits to hooks, skills, AGENTS.md, plugin.json, marketplace/cache docs, agents, or when asked to verify KB compliance. Read-only: produces a drift report and never edits files."
++description: "Check repo drift against the local Codex/OpenAI KB and report read-only findings."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[scope: 'all' | article-name | glob-pattern]"
+diff --git a/skills/codex-kb-lookup/SKILL.md b/skills/codex-kb-lookup/SKILL.md
+index 765545b..40f33ad 100644
+--- a/skills/codex-kb-lookup/SKILL.md
++++ b/skills/codex-kb-lookup/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: codex-kb-lookup
+-description: "Look up Codex and OpenAI platform knowledge from the local KB. Use for questions about plugin manifests, skills, hooks, rules, AGENTS.md, agents/subagents, MCP/connectors, API platform, official source URLs, or before changing files governed by references/openai-codex-kb articles. Read-only: answers from the KB and never edits files."
++description: "Look up local Codex/OpenAI KB guidance for plugins, skills, hooks, MCP, and runtime claims."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "<topic, question, or file path>"
+diff --git a/skills/codex-kb-refresh/SKILL.md b/skills/codex-kb-refresh/SKILL.md
+index 4ee661f..fffdd3d 100644
+--- a/skills/codex-kb-refresh/SKILL.md
++++ b/skills/codex-kb-refresh/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: codex-kb-refresh
+-description: "Refresh the local Codex/OpenAI knowledge base from official source URLs. Use when asked to refresh/update/sync the KB, when docs may be stale, or when codex-kb-drift-check flags stale articles. Writes only to references/openai-codex-kb/**."
++description: "Refresh the local Codex/OpenAI KB from official source URLs."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[scope: 'all' | article-name | 'stale-only']"
+diff --git a/skills/feature-heavy/SKILL.md b/skills/feature-heavy/SKILL.md
+index 437f965..9df0643 100644
+--- a/skills/feature-heavy/SKILL.md
++++ b/skills/feature-heavy/SKILL.md
+@@ -1,17 +1,6 @@
+ ---
+ name: feature-heavy
+-description: |
+-  Prescriptive 13-step workflow for implementing a new feature in HEAVY mode (relevant impact:
+-  domain, data, integrations, multiple flows, contracts, jobs, mobile; or maximum predictability
+-  desired before implementation). Imported from Pulsar Implement_new_feature/Heavy/ — every
+-  step file mirrors the canonical Pulsar prompt 1:1 while declaring an execution contract
+-  (execution_mode, agent_type, expected_*, gate_required) via frontmatter. Sequence is locked
+-  (1→13, no skip, no reorder). 4 mandatory GATE_REQUEST gates at steps 3
+-  (acceptance-matrix-approval), 7 (architecture-choice), 9 (plan-approval),
+-  10 (tdd-tests-approval). 5 reused executor agents: feature-vertical-slice-planner (3 spawns
+-  at 3, 7, 9), pre-tester (10), feature-implementer (11), feature-integration-validator (12).
+-  Manual-only invocation via /pipeline-orchestrator-for-codex:feature-heavy or via
+-  /pipeline-orchestrator-for-codex:feature --heavy.
++description: "Heavy governed feature workflow for complex changes with full planning and review gates."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[feature description with user story + DoD]"
+diff --git a/skills/feature-light/SKILL.md b/skills/feature-light/SKILL.md
+index 3ab1bce..1696c36 100644
+--- a/skills/feature-light/SKILL.md
++++ b/skills/feature-light/SKILL.md
+@@ -1,16 +1,6 @@
+ ---
+ name: feature-light
+-description: |
+-  Prescriptive 13-step workflow for implementing a new feature in LIGHT mode (small-to-medium
+-  scope, controlled risk, prefer speed with discipline). Imported from Pulsar
+-  Implement_new_feature/Ligth/ — every step file mirrors the canonical Pulsar prompt 1:1
+-  while declaring an execution contract (execution_mode, agent_type, expected_*, gate_required)
+-  via frontmatter. Sequence is locked (1→13, no skip, no reorder). 4 mandatory GATE_REQUEST
+-  gates at steps 3 (acceptance-matrix-approval), 7 (architecture-choice), 9 (plan-approval),
+-  10 (tdd-tests-approval). 5 reused executor agents: feature-vertical-slice-planner (3 spawns
+-  at 3, 7, 9), pre-tester (10), feature-implementer (11), feature-integration-validator (12).
+-  Manual-only invocation via /pipeline-orchestrator-for-codex:feature-light or via
+-  /pipeline-orchestrator-for-codex:feature --light.
++description: "Light governed feature workflow for small or medium changes with tests and validation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[feature description with user story + DoD]"
+diff --git a/skills/feature/SKILL.md b/skills/feature/SKILL.md
+index 66f7e72..09e8e89 100644
+--- a/skills/feature/SKILL.md
++++ b/skills/feature/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: feature
+-description: Feature shortcut — skips task-orchestrator type-classification by pre-fixing task_type=Feature. Same pipeline machinery as /pipeline-orchestrator-for-codex:pipeline (information-gate, design-interrogator, plan-architect, executor-controller, sanity, Pa de Cal). Invoked manually via `/pipeline-orchestrator-for-codex:feature [task]`. Variant flags `--light` / `--heavy` route directly to skills/feature-light or skills/feature-heavy with their prescriptive 13-step procedures imported from Pulsar.
++description: "Shortcut for governed feature workflow with planning, TDD, review, and validation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: [feature description with user story + DoD]
+diff --git a/skills/help/SKILL.md b/skills/help/SKILL.md
+index 29a5e4e..7849f20 100644
+--- a/skills/help/SKILL.md
++++ b/skills/help/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: help
+-description: "Help surface for Pipeline Orchestrator. Lists every public execution form and recommends the best command/flow when the user includes a task or instruction. Informational only: never executes the recommended workflow."
++description: "Show Pipeline Orchestrator commands and recommend the right workflow without executing it."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[optional task or instruction to classify and recommend]"
+diff --git a/skills/measure-paperclip-fidelity/SKILL.md b/skills/measure-paperclip-fidelity/SKILL.md
+index 38d4b08..edfdead 100644
+--- a/skills/measure-paperclip-fidelity/SKILL.md
++++ b/skills/measure-paperclip-fidelity/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: measure-paperclip-fidelity
+-description: "Public Codex skill that measures Paperclip execution fidelity from a company id and renders the bundled mirror-fidelity report."
++description: "Measure Paperclip execution fidelity and render the bundled mirror-fidelity report."
+ disable-model-invocation: true
+ allowed-tools: update_plan, Read, Bash
+ argument-hint: "<companyId>"
+diff --git a/skills/paperclip-audit/SKILL.md b/skills/paperclip-audit/SKILL.md
+index c1151a5..200e737 100644
+--- a/skills/paperclip-audit/SKILL.md
++++ b/skills/paperclip-audit/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paperclip-audit
+-description: "Public Codex skill that dispatches a governed Paperclip Audit task tree after dry-run preview and explicit confirmation."
++description: "Dispatch a governed Paperclip Audit task tree after dry-run preview and confirmation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "<audit scope> [--simples|--media|--complexa]"
+diff --git a/skills/paperclip-bugfix/SKILL.md b/skills/paperclip-bugfix/SKILL.md
+index 341a7cf..c9a65f1 100644
+--- a/skills/paperclip-bugfix/SKILL.md
++++ b/skills/paperclip-bugfix/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paperclip-bugfix
+-description: "Public Codex skill that dispatches a governed Paperclip Bug Fix task tree after dry-run preview and explicit confirmation."
++description: "Dispatch a governed Paperclip Bug Fix task tree after dry-run preview and confirmation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "<bug description> [--simples|--media|--complexa]"
+diff --git a/skills/paperclip-feature/SKILL.md b/skills/paperclip-feature/SKILL.md
+index 04e3421..261cd91 100644
+--- a/skills/paperclip-feature/SKILL.md
++++ b/skills/paperclip-feature/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paperclip-feature
+-description: "Public Codex skill that dispatches a governed Paperclip Feature task tree after dry-run preview and explicit confirmation."
++description: "Dispatch a governed Paperclip Feature task tree after dry-run preview and confirmation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "<feature description> [--simples|--media|--complexa]"
+diff --git a/skills/paperclip-hotfix/SKILL.md b/skills/paperclip-hotfix/SKILL.md
+index f13d87c..6aa46ab 100644
+--- a/skills/paperclip-hotfix/SKILL.md
++++ b/skills/paperclip-hotfix/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paperclip-hotfix
+-description: "Public Codex skill that dispatches a governed Paperclip Hotfix task tree after dry-run preview and explicit confirmation."
++description: "Dispatch a governed Paperclip Hotfix task tree after dry-run preview and confirmation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "<production incident description>"
+diff --git a/skills/paperclip-overview/SKILL.md b/skills/paperclip-overview/SKILL.md
+index 3e8ad52..941bd02 100644
+--- a/skills/paperclip-overview/SKILL.md
++++ b/skills/paperclip-overview/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paperclip-overview
+-description: "Public Codex skill that lists the governed Paperclip dispatch skills and their intended use."
++description: "List governed Paperclip dispatch skills and intended use."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[optional Paperclip workflow question]"
+diff --git a/skills/paperclip-review/SKILL.md b/skills/paperclip-review/SKILL.md
+index dff2f16..5f97ddc 100644
+--- a/skills/paperclip-review/SKILL.md
++++ b/skills/paperclip-review/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paperclip-review
+-description: "Public Codex skill that dispatches a governed Paperclip Review-Only task tree after dry-run preview and explicit confirmation."
++description: "Dispatch a governed Paperclip Review task tree after dry-run preview and confirmation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[review title or scope]"
+diff --git a/skills/paperclip-spec/SKILL.md b/skills/paperclip-spec/SKILL.md
+index 08aee5d..924a72b 100644
+--- a/skills/paperclip-spec/SKILL.md
++++ b/skills/paperclip-spec/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paperclip-spec
+-description: "Public Codex skill that dispatches a governed Paperclip Spec task tree after dry-run preview and explicit confirmation."
++description: "Dispatch a governed Paperclip Spec task tree after dry-run preview and confirmation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "<spec description> [--simples|--media|--complexa]"
+diff --git a/skills/paperclip-user-story/SKILL.md b/skills/paperclip-user-story/SKILL.md
+index 5208406..7aa2e69 100644
+--- a/skills/paperclip-user-story/SKILL.md
++++ b/skills/paperclip-user-story/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paperclip-user-story
+-description: "Public Codex skill that dispatches a governed Paperclip User Story task tree after dry-run preview and explicit confirmation."
++description: "Dispatch a governed Paperclip User Story task tree after dry-run preview and confirmation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "<user story narrative> [--simples|--media|--complexa]"
+diff --git a/skills/paperclip-ux/SKILL.md b/skills/paperclip-ux/SKILL.md
+index a50f393..c137dee 100644
+--- a/skills/paperclip-ux/SKILL.md
++++ b/skills/paperclip-ux/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: paperclip-ux
+-description: "Public Codex skill that dispatches a governed Paperclip UX Simulation task tree after dry-run preview and explicit confirmation."
++description: "Dispatch a governed Paperclip UX task tree after dry-run preview and confirmation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "<journey or screen description> [--simples|--media|--complexa]"
+diff --git a/skills/pipeline/SKILL.md b/skills/pipeline/SKILL.md
+index abb5e12..aca2841 100644
+--- a/skills/pipeline/SKILL.md
++++ b/skills/pipeline/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: pipeline
+-description: "Automated Codex pipeline orchestrator for any project. Requires complete real-agent runtime: spawn_agent, wait_agent, artifact collection, gate recording, hook/checkpoint recording, and structured final state. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. The public command /pipeline-orchestrator-for-codex:pipeline auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. If mandatory runtime capabilities are missing, it blocks with blocked-no-agent-runtime; manual fallback is not a valid pipeline execution."
++description: "Run the governed Pipeline Orchestrator with classification, gates, reviews, and validation."
+ agent_type: worker
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ gates_at: [phase-0, phase-1, phase-1.5, phase-2, phase-3]
+diff --git a/skills/review/SKILL.md b/skills/review/SKILL.md
+index fa078b8..51a49fa 100644
+--- a/skills/review/SKILL.md
++++ b/skills/review/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: review
+-description: Review a task implementation against approved specs, task boundaries, and verification evidence. Use after an implementer finishes a task, after remediation, or before accepting a task as complete.
++description: "Review an implementation against specs, task boundaries, and verification evidence."
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: <task-id>
+ disable-model-invocation: true
+diff --git a/skills/setup-paperclip/SKILL.md b/skills/setup-paperclip/SKILL.md
+index 78ae6a2..e2cbf15 100644
+--- a/skills/setup-paperclip/SKILL.md
++++ b/skills/setup-paperclip/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: setup-paperclip
+-description: "Public Codex skill that configures the Paperclip integration for Pipeline Orchestrator agents and skills."
++description: "Configure the Paperclip integration for Pipeline Orchestrator agents and skills."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[optional setup notes]"
+diff --git a/skills/spec-audit-only/SKILL.md b/skills/spec-audit-only/SKILL.md
+index 3f71cb3..9212d70 100644
+--- a/skills/spec-audit-only/SKILL.md
++++ b/skills/spec-audit-only/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: spec-audit-only
+-description: Prescriptive 5-step workflow for re-auditing an already-implemented spec without implementation steps. Runs format gate, content review, adversarial audit loop, confidence dashboard, and closure with locked sequence, mandatory gates, and congruence-only corrections.
++description: "Audit an already implemented spec without implementation, using review gates and closure evidence."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"
+diff --git a/skills/spec-design/SKILL.md b/skills/spec-design/SKILL.md
+index 78b3ab7..9798816 100644
+--- a/skills/spec-design/SKILL.md
++++ b/skills/spec-design/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: spec-design
+-description: Generate comprehensive technical design translating requirements (WHAT) into architecture (HOW) with discovery process. Use when creating architecture from requirements.
++description: "Generate or review technical design from requirements and steering context."
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: <feature-name> [-y]
+ metadata:
+diff --git a/skills/spec-heavy/SKILL.md b/skills/spec-heavy/SKILL.md
+index 1959322..9b7f2a1 100644
+--- a/skills/spec-heavy/SKILL.md
++++ b/skills/spec-heavy/SKILL.md
+@@ -1,17 +1,6 @@
+ ---
+ name: spec-heavy
+-description: |
+-  Prescriptive 9-step workflow for the Spec Lifecycle in Heavy mode (relevant impact: domain,
+-  data, integrations, multiple flows, contracts, jobs, mobile; or maximum predictability
+-  desired before implementation). Adds full content review (12 axes) and parallel adversarial
+-  audits (architecture-critic + security-scanner) on top of the Light pipeline. Sequence is
+-  locked (1→9, no skip, no reorder). 5 mandatory GATE_REQUEST gates at steps 1
+-  (format-gate-approval), 2 (content-review-approval), 3 (tdd-scenarios-approval),
+-  4 (adversarial-loop-checkpoint), 5 (post-impl-validation). 6 reused agents:
+-  spec-format-gate (1), spec-content-reviewer (2), spec-post-impl-validator (5),
+-  adversarial-architecture-critic (6), adversarial-security-scanner (7), spec-closer (9);
+-  steps 3, 4 and 8 inline. stop_rule_max_failures: 3 (longer workflow warrants more
+-  tolerance). Manual-only invocation via /pipeline-orchestrator-for-codex:spec-heavy.
++description: "Heavy governed spec lifecycle with requirements, design, tasks, checks, and audits."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"
+diff --git a/skills/spec-init/SKILL.md b/skills/spec-init/SKILL.md
+index 249f238..e2ac83a 100644
+--- a/skills/spec-init/SKILL.md
++++ b/skills/spec-init/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: spec-init
+-description: Initialize a new specification with detailed project description
++description: "Initialize a new governed specification from a project description."
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: <project-description>
+ disable-model-invocation: true
+diff --git a/skills/spec-light/SKILL.md b/skills/spec-light/SKILL.md
+index 9b6bcd0..b6725e9 100644
+--- a/skills/spec-light/SKILL.md
++++ b/skills/spec-light/SKILL.md
+@@ -1,15 +1,6 @@
+ ---
+ name: spec-light
+-description: |
+-  Prescriptive 6-step workflow for the Spec Lifecycle in Light mode (small-to-medium scope,
+-  controlled risk, prefer speed with discipline; trusts the spec content and skips the deep
+-  content-review phase, focusing instead on a 25-check Format Gate, ATDD seed, TDD
+-  implementation with adversarial loop, 6-axis post-impl congruence, simplified confidence
+-  dashboard, and formal closure). Sequence is locked (1→6, no skip, no reorder). 4 mandatory
+-  GATE_REQUEST gates at steps 1 (format-gate-approval), 2 (tdd-scenarios-approval),
+-  3 (adversarial-loop-checkpoint), 4 (post-impl-validation). 3 reused executor agents:
+-  spec-format-gate (1), spec-post-impl-validator (4), spec-closer (6); step 2 and 5 inline.
+-  Manual-only invocation via /pipeline-orchestrator-for-codex:spec-light.
++description: "Light governed spec lifecycle with requirements, design, tasks, and validation."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"
+diff --git a/skills/spec-requirements/SKILL.md b/skills/spec-requirements/SKILL.md
+index 4e26f2d..e854787 100644
+--- a/skills/spec-requirements/SKILL.md
++++ b/skills/spec-requirements/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: spec-requirements
+-description: Generate EARS-format requirements based on project description and steering context. Use when generating requirements from project description.
++description: "Generate EARS-style requirements from project description and steering context."
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ metadata:
+   shared-rules: "ears-format.md, requirements-review-gate.md"
+diff --git a/skills/spec-tasks/SKILL.md b/skills/spec-tasks/SKILL.md
+index 62cc209..b36639b 100644
+--- a/skills/spec-tasks/SKILL.md
++++ b/skills/spec-tasks/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: spec-tasks
+-description: Generate implementation tasks from requirements and design. Use when creating actionable task lists.
++description: "Generate implementation tasks from approved requirements and design."
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: <feature-name> [-y] [--sequential]
+ metadata:
+diff --git a/skills/spec/SKILL.md b/skills/spec/SKILL.md
+index 9154dc2..0b7a73f 100644
+--- a/skills/spec/SKILL.md
++++ b/skills/spec/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: spec
+-description: Spec Lifecycle shortcut — pre-classifies task_type=Spec to skip the type-detection round in task-orchestrator. Same Phase-0/Phase-3 wrapper as /pipeline-orchestrator-for-codex:pipeline (information-gate, sentinel checkpoints, sanity-checker, final-validator, finishing-branch). Variant flags `--light` / `--heavy` / `--audit-only` route directly to skills/spec-light, spec-heavy, or spec-audit-only with their prescriptive 6/9/5-step procedures (Wave 2). Without a flag, dispatches to pipeline-controller, which uses the Wave 3-spec 4-signal classifier (explicit path / --type=spec flag / prose regex / glob fallback under .kiro/specs/) to select the right variant. Manual-only invocation via `/pipeline-orchestrator-for-codex:spec`.
++description: "Shortcut for governed spec workflow, routing to light, heavy, or audit-only variants."
+ disable-model-invocation: true
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: "[--light | --heavy | --audit-only] [spec feature name or path to .kiro/specs/<feature>/]"
+diff --git a/skills/validate-design/SKILL.md b/skills/validate-design/SKILL.md
+index 9f26b8c..028c9e4 100644
+--- a/skills/validate-design/SKILL.md
++++ b/skills/validate-design/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: validate-design
+-description: Interactive technical design quality review and validation. Use when reviewing design before implementation.
++description: "Review technical design quality before implementation."
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: <feature-name>
+ metadata:
+diff --git a/skills/validate-gap/SKILL.md b/skills/validate-gap/SKILL.md
+index 16680e0..1910124 100644
+--- a/skills/validate-gap/SKILL.md
++++ b/skills/validate-gap/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: validate-gap
+-description: Analyze implementation gap between requirements and existing codebase. Use when planning integration with existing systems.
++description: "Analyze gaps between requirements, design, and existing implementation."
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: <feature-name>
+ metadata:
+diff --git a/skills/verify-completion/SKILL.md b/skills/verify-completion/SKILL.md
+index 332e3b6..70680c2 100644
+--- a/skills/verify-completion/SKILL.md
++++ b/skills/verify-completion/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: verify-completion
+-description: Verify completion and success claims with fresh evidence. Use before claiming a task is complete, a fix works, tests pass, or a feature is ready for GO.
++description: "Verify completion claims with fresh evidence before declaring success."
+ allowed-tools: update_plan, spawn_agent, wait_agent
+ argument-hint: <claim-type> <claim>
+ disable-model-invocation: true
+diff --git a/src/cli/pipeline-cli.ts b/src/cli/pipeline-cli.ts
+index 18c4ed0..4d476da 100644
+--- a/src/cli/pipeline-cli.ts
++++ b/src/cli/pipeline-cli.ts
+@@ -51,6 +51,24 @@ type PendingGateResolution =
 
-+    def test_fully_staged_tree_does_not_overwrite_telemetry_files(self) -> None:
-+        self.commit_all()
-+        (self.root / "changed.txt").write_text("changed", encoding="utf-8")
-+        subprocess.run(["git", "add", "changed.txt"], cwd=self.root, check=True)
-+        telemetry_files = [
-+            self.root / "evals" / "telemetry" / "changed_files.txt",
-+            self.root / "evals" / "telemetry" / "git_diff.patch",
-+            self.root / "evals" / "telemetry" / "latest_trace.json",
-+        ]
-+        before = {path: path.read_text(encoding="utf-8") for path in telemetry_files}
+ const HMAC_SHA256_HEX_SIGNATURE = /^[0-9a-f]{64}$/iu;
+ const SENTINEL_STALE_THRESHOLD_MS = 300_000;
++const DISABLE_AUTO_AGENT_RUNTIME_VALUES = new Set(["1", "true", "yes"]);
 +
-+        result = self.run_telemetry_hook()
++export function resolveCliAgentRuntimeAdapter(explicitAdapter?: string) {
++  if (explicitAdapter) {
++    return explicitAdapter;
++  }
 +
-+        self.assertEqual(result.returncode, 0, result.stderr)
-+        self.assertEqual({path: path.read_text(encoding="utf-8") for path in telemetry_files}, before)
++  if (process.env.CODEX_AGENT_RUNTIME_ADAPTER) {
++    return process.env.CODEX_AGENT_RUNTIME_ADAPTER;
++  }
 +
-     def test_read_only_telemetry_does_not_overwrite_files(self) -> None:
-         self.commit_all()
-         (self.root / "changed.txt").write_text("changed", encoding="utf-8")
++  const disabled = process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME;
++  if (disabled && DISABLE_AUTO_AGENT_RUNTIME_VALUES.has(disabled.toLowerCase())) {
++    return undefined;
++  }
++
++  return "codex-cli-process";
++}
+
+ function parseArgs(argv: string[]) {
+   const args = argv.slice(2);
+@@ -77,6 +95,7 @@ function parseArgs(argv: string[]) {
+     }
+   }
+
++  options.agentRuntimeAdapter = resolveCliAgentRuntimeAdapter(options.agentRuntimeAdapter);
+   options.task = taskParts.join(" ").trim() || undefined;
+   return options;
+ }
+diff --git a/tests/integration/plugin/package-surface.test.ts b/tests/integration/plugin/package-surface.test.ts
+index 86e637a..90bd385 100644
+--- a/tests/integration/plugin/package-surface.test.ts
++++ b/tests/integration/plugin/package-surface.test.ts
+@@ -1,6 +1,23 @@
+ import { spawnSync } from "node:child_process";
++import { readFileSync } from "node:fs";
+ import { describe, expect, it } from "vitest";
+
++const SPEC_TEMPLATE_CONSUMERS = [
++  "skills/spec-init/SKILL.md",
++  "skills/spec-requirements/SKILL.md",
++  "skills/spec-design/SKILL.md",
++  "skills/spec-tasks/SKILL.md",
++];
++
++function referencedSpecTemplates() {
++  return new Set(SPEC_TEMPLATE_CONSUMERS.flatMap((skillPath) => {
++    const skill = readFileSync(skillPath, "utf8");
++    return [...skill.matchAll(/`(references\/spec-templates\/[^`]+\.(?:json|md))`/gu)]
++      .map((match) => match[1])
++      .filter((path): path is string => Boolean(path));
++  }));
++}
++
+ function npmPackDryRunFiles() {
+   const npmExecPath = process.env.npm_execpath;
+   const result = npmExecPath
+@@ -31,4 +48,23 @@ describe("plugin package surface", () => {
+     expect(files.some((file) => file.startsWith("security-audit/"))).toBe(false);
+     expect(files.some((file) => file.startsWith("evals/telemetry/"))).toBe(false);
+   });
++
++  it("ships every spec template referenced by lifecycle skills", { timeout: 30000 }, () => {
++    const files = npmPackDryRunFiles();
++    const templatePaths = referencedSpecTemplates();
++
++    expect(templatePaths.size).toBeGreaterThan(0);
++    for (const templatePath of templatePaths) {
++      expect(files, `${templatePath} referenced by a Spec lifecycle skill must be packaged`)
++        .toContain(templatePath);
++    }
++  });
++
++  it("keeps spec template guidance on Codex-native commands", () => {
++    for (const templatePath of referencedSpecTemplates()) {
++      const template = readFileSync(templatePath, "utf8");
++      expect(template, `${templatePath} must not reference legacy Kiro slash commands`)
++        .not.toMatch(/\/kiro-spec-/u);
++    }
++  });
+ });
+diff --git a/tests/unit/cli/pipeline-cli.test.ts b/tests/unit/cli/pipeline-cli.test.ts
+index 69626bc..d15f1ff 100644
+--- a/tests/unit/cli/pipeline-cli.test.ts
++++ b/tests/unit/cli/pipeline-cli.test.ts
+@@ -1,9 +1,9 @@
+-import { describe, expect, it } from "vitest";
++import { afterEach, describe, expect, it } from "vitest";
+ import { createHmac } from "node:crypto";
+ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+ import { tmpdir } from "node:os";
+ import { join } from "node:path";
+-import { resolveCliExitCode, runPipelineCli } from "../../../src/cli/pipeline-cli.js";
++import { resolveCliAgentRuntimeAdapter, resolveCliExitCode, runPipelineCli } from "../../../src/cli/pipeline-cli.js";
+ import type { AgentRuntimeAdapter, DispatchResult } from "../../../src/dispatcher/dispatcher-types.js";
+ import { createSessionStore } from "../../../src/state/session-store.js";
+ import { createSentinelStateStore } from "../../../src/sentinel/sentinel-state.js";
+@@ -180,6 +180,45 @@ async function withSentinelHmac<T>(key: string, callback: () => Promise<T>) {
+   }
+ }
+
++describe("CLI agent runtime adapter resolution", () => {
++  const originalAdapter = process.env.CODEX_AGENT_RUNTIME_ADAPTER;
++  const originalDisable = process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME;
++
++  afterEach(() => {
++    if (originalAdapter === undefined) {
++      delete process.env.CODEX_AGENT_RUNTIME_ADAPTER;
++    } else {
++      process.env.CODEX_AGENT_RUNTIME_ADAPTER = originalAdapter;
++    }
++    if (originalDisable === undefined) {
++      delete process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME;
++    } else {
++      process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME = originalDisable;
++    }
++  });
++
++  it("defaults direct CLI runs to the Codex CLI process adapter", () => {
++    delete process.env.CODEX_AGENT_RUNTIME_ADAPTER;
++    delete process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME;
++
++    expect(resolveCliAgentRuntimeAdapter()).toBe("codex-cli-process");
++  });
++
++  it("preserves explicit and environment adapter choices", () => {
++    process.env.CODEX_AGENT_RUNTIME_ADAPTER = "custom-adapter";
++
++    expect(resolveCliAgentRuntimeAdapter("explicit-adapter")).toBe("explicit-adapter");
++    expect(resolveCliAgentRuntimeAdapter()).toBe("custom-adapter");
++  });
++
++  it("allows diagnostics to opt out of automatic CLI runtime detection", () => {
++    delete process.env.CODEX_AGENT_RUNTIME_ADAPTER;
++    process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME = "true";
++
++    expect(resolveCliAgentRuntimeAdapter()).toBeUndefined();
++  });
++});
++
+ async function withSharedIntegrityHmac<T>(key: string, callback: () => Promise<T>) {
+   const previousSentinel = process.env.PIPELINE_SENTINEL_HMAC_KEY;
+   const previousIntegrity = process.env.PIPELINE_INTEGRITY_HMAC_KEY;
+diff --git a/references/spec-templates/design.md b/references/spec-templates/design.md
+new file mode 100644
+--- /dev/null
++++ b/references/spec-templates/design.md
+@@
+# Design Document Template
+
+---
+**Purpose**: Provide sufficient detail to ensure implementation consistency across different implementers, preventing interpretation drift.
+
+**Approach**:
+- Include essential sections that directly inform implementation decisions
+- Omit optional sections unless critical to preventing implementation errors
+- Match detail level to feature complexity
+- Use diagrams and tables over lengthy prose
+
+**Warning**: Approaching 1000 lines indicates excessive feature complexity that may require design simplification or splitting into multiple specs.
+---
+
+> Sections may be reordered (e.g., surfacing Requirements Traceability earlier or moving Data Models nearer Architecture) when it improves clarity. Within each section, keep the flow **Summary → Scope → Decisions → Impacts/Risks** so reviewers can scan consistently.
+
+## Overview
+2-3 paragraphs max
+**Purpose**: This feature delivers [specific value] to [target users].
+**Users**: [Target user groups] will utilize this for [specific workflows].
+**Impact** (if applicable): Changes the current [system state] by [specific modifications].
+
+
+### Goals
+- Primary objective 1
+- Primary objective 2
+- Success criteria
+
+### Non-Goals
+- Explicitly excluded functionality
+- Future considerations outside current scope
+- Integration points deferred
+
+## Boundary Commitments
+
+State the responsibility boundary of this spec in concrete terms. Treat this as the anchor for architecture, tasks, and later validation.
+
+### This Spec Owns
+- Capabilities and behaviors this spec is responsible for
+- Data it owns or is authoritative for
+- Interfaces or contracts it defines or stabilizes
+
+### Out of Boundary
+- Related concerns this spec explicitly does NOT own
+- Work deferred to another spec, existing subsystem, or later phase
+- Changes this spec must not absorb as "just one more thing"
+
+### Allowed Dependencies
+- Upstream systems/specs/components this design may depend on
+- Shared infrastructure this design may use
+- Dependency constraints that must not be violated
+
+### Revalidation Triggers
+List the kinds of changes that should force dependent specs or consumers to re-check integration.
+
+- Contract shape changes
+- Data ownership changes
+- Dependency direction changes
+- Startup/runtime prerequisite changes
+
+## Architecture
+
+> Reference detailed discovery notes in `research.md` only for background; keep design.md self-contained for reviewers by capturing all decisions and contracts here.
+> Capture key decisions in text and let diagrams carry structural detail—avoid repeating the same information in prose.
+> Supporting sections below should remain as light as possible unless they materially clarify the responsibility boundary, dependency rules, or integration seams.
+
+### Existing Architecture Analysis (if applicable)
+When modifying existing systems:
+- Current architecture patterns and constraints
+- Existing domain boundaries to be respected
+- Integration points that must be maintained
+- Technical debt addressed or worked around
+
+### Architecture Pattern & Boundary Map
+**RECOMMENDED**: Include Mermaid diagram showing the chosen architecture pattern and system boundaries (required for complex features, optional for simple additions)
+
+**Architecture Integration**:
+- Selected pattern: [name and brief rationale]
+- Domain/feature boundaries: [how responsibilities are separated to avoid conflicts]
+- Existing patterns preserved: [list key patterns]
+- New components rationale: [why each is needed]
+- Steering compliance: [principles maintained]
+
+### Technology Stack
+
+| Layer | Choice / Version | Role in Feature | Notes |
+|-------|------------------|-----------------|-------|
+| Frontend / CLI | | | |
+| Backend / Services | | | |
+| Data / Storage | | | |
+| Messaging / Events | | | |
+| Infrastructure / Runtime | | | |
+
+> Keep rationale concise here and, when more depth is required (trade-offs, benchmarks), add a short summary plus pointer to the Supporting References section and `research.md` for raw investigation notes.
+
+## File Structure Plan
+
+Map the directory structure and file responsibilities for this feature. This section directly drives task `_Boundary:_` annotations and implementation Task Briefs. Use the appropriate level of detail:
+
+- **Small features**: List individual files with responsibilities
+- **Large features**: Describe directory-level structure + per-domain/module pattern, list only non-obvious files individually
+
+### Directory Structure
+```
+src/
+├── domain-a/              # Domain A responsibility
+│   ├── controller.ts      # Endpoint handlers
+│   ├── service.ts         # Business logic
+│   └── types.ts           # Domain types
+├── domain-b/              # Domain B (same pattern as domain-a)
+└── shared/
+    └── cross-cutting.ts   # Non-obvious: why this exists
+```
+
+> For repeated structures, describe the pattern once (e.g., "domain-b follows same pattern as domain-a"). List individual files only when their responsibility isn't obvious from the path.
+
+### Modified Files
+- `path/to/existing.ts` — What changes and why
+
+> Each file should have one clear responsibility. Group files that change together. For repeated structures, describe the pattern once rather than listing every file.
+> Avoid duplicating what Components and Interfaces already describes — focus on the physical file layout that Components maps to.
+
+## System Flows
+
+Provide only the diagrams needed to explain non-trivial flows. Use pure Mermaid syntax. Common patterns:
+- Sequence (multi-party interactions)
+- Process / state (branching logic or lifecycle)
+- Data / event flow (pipelines, async messaging)
+
+Skip this section entirely for simple CRUD changes.
+> Describe flow-level decisions (e.g., gating conditions, retries) briefly after the diagram instead of restating each step.
+
+## Requirements Traceability
+
+Use this section for complex or compliance-sensitive features where requirements span multiple domains. Straightforward 1:1 mappings can rely on the Components summary table.
+
+Map each requirement ID (e.g., `2.1`) to the design elements that realize it.
+
+| Requirement | Summary | Components | Interfaces | Flows |
+|-------------|---------|------------|------------|-------|
+| 1.1 | | | | |
+| 1.2 | | | | |
+
+> Omit this section only when a single component satisfies a single requirement without cross-cutting concerns.
+
+## Components and Interfaces
+
+Provide a quick reference before diving into per-component details.
+
+- Summaries can be a table or compact list. Example table:
+  | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies (P0/P1) | Contracts |
+  |-----------|--------------|--------|--------------|--------------------------|-----------|
+  | ExampleComponent | UI | Displays XYZ | 1, 2 | GameProvider (P0), MapPanel (P1) | Service, State |
+- Only components introducing new boundaries (e.g., logic hooks, external integrations, persistence) require full detail blocks. Simple presentation components can rely on the summary row plus a short Implementation Note.
+
+Group detailed blocks by domain or architectural layer. For each detailed component, list requirement IDs as `2.1, 2.3` (omit “Requirement”). When multiple UI components share the same contract, reference a base interface/props definition instead of duplicating code blocks.
+
+### [Domain / Layer]
+
+#### [Component Name]
+
+| Field | Detail |
+|-------|--------|
+| Intent | 1-line description of the responsibility |
+| Requirements | 2.1, 2.3 |
+| Owner / Reviewers | (optional) |
+
+**Responsibilities & Constraints**
+- Primary responsibility
+- Domain boundary and transaction scope
+- Data ownership / invariants
+
+**Dependencies**
+- Inbound: Component/service name — purpose (Criticality)
+- Outbound: Component/service name — purpose (Criticality)
+- External: Service/library — purpose (Criticality)
+
+Summarize external dependency findings here; deeper investigation (API signatures, rate limits, migration notes) lives in `research.md`.
+
+**Contracts**: Service [ ] / API [ ] / Event [ ] / Batch [ ] / State [ ]  ← check only the ones that apply.
+
+##### Service Interface
+```typescript
+interface [ComponentName]Service {
+  methodName(input: InputType): Result<OutputType, ErrorType>;
+}
+```
+- Preconditions:
+- Postconditions:
+- Invariants:
+
+##### API Contract
+| Method | Endpoint | Request | Response | Errors |
+|--------|----------|---------|----------|--------|
+| POST | /api/resource | CreateRequest | Resource | 400, 409, 500 |
+
+##### Event Contract
+- Published events:
+- Subscribed events:
+- Ordering / delivery guarantees:
+
+##### Batch / Job Contract
+- Trigger:
+- Input / validation:
+- Output / destination:
+- Idempotency & recovery:
+
+##### State Management
+- State model:
+- Persistence & consistency:
+- Concurrency strategy:
+
+**Implementation Notes**
+- Integration:
+- Validation:
+- Risks:
+
+## Data Models
+
+Focus on the portions of the data landscape that change with this feature.
+
+### Domain Model
+- Aggregates and transactional boundaries
+- Entities, value objects, domain events
+- Business rules & invariants
+- Optional Mermaid diagram for complex relationships
+
+### Logical Data Model
+
+**Structure Definition**:
+- Entity relationships and cardinality
+- Attributes and their types
+- Natural keys and identifiers
+- Referential integrity rules
+
+**Consistency & Integrity**:
+- Transaction boundaries
+- Cascading rules
+- Temporal aspects (versioning, audit)
+
+### Physical Data Model
+**When to include**: When implementation requires specific storage design decisions
+
+**For Relational Databases**:
+- Table definitions with data types
+- Primary/foreign keys and constraints
+- Indexes and performance optimizations
+- Partitioning strategy for scale
+
+**For Document Stores**:
+- Collection structures
+- Embedding vs referencing decisions
+- Sharding key design
+- Index definitions
+
+**For Event Stores**:
+- Event schema definitions
+- Stream aggregation strategies
+- Snapshot policies
+- Projection definitions
+
+**For Key-Value/Wide-Column Stores**:
+- Key design patterns
+- Column families or value structures
+- TTL and compaction strategies
+
+### Data Contracts & Integration
+
+**API Data Transfer**
+- Request/response schemas
+- Validation rules
+- Serialization format (JSON, Protobuf, etc.)
+
+**Event Schemas**
+- Published event structures
+- Schema versioning strategy
+- Backward/forward compatibility rules
+
+**Cross-Service Data Management**
+- Distributed transaction patterns (Saga, 2PC)
+- Data synchronization strategies
+- Eventual consistency handling
+
+Skip subsections that are not relevant to this feature.
+
+## Error Handling
+
+### Error Strategy
+Concrete error handling patterns and recovery mechanisms for each error type.
+
+### Error Categories and Responses
+**User Errors** (4xx): Invalid input → field-level validation; Unauthorized → auth guidance; Not found → navigation help
+**System Errors** (5xx): Infrastructure failures → graceful degradation; Timeouts → circuit breakers; Exhaustion → rate limiting
+**Business Logic Errors** (422): Rule violations → condition explanations; State conflicts → transition guidance
+
+**Process Flow Visualization** (when complex business logic exists):
+Include Mermaid flowchart only for complex error scenarios with business workflows.
+
+### Monitoring
+Error tracking, logging, and health monitoring implementation.
+
+## Testing Strategy
+
+### Default sections (adapt names/sections to fit the domain)
+- Unit Tests: 3–5 items from core functions/modules (e.g., auth methods, subscription logic)
+- Integration Tests: 3–5 cross-component flows (e.g., webhook handling, notifications)
+- E2E/UI Tests (if applicable): 3–5 critical user paths (e.g., forms, dashboards)
+- Performance/Load (if applicable): 3–4 items (e.g., concurrency, high-volume ops)
+
+## Optional Sections (include when relevant)
+
+### Security Considerations
+_Use this section for features handling auth, sensitive data, external integrations, or user permissions. Capture only decisions unique to this feature; defer baseline controls to steering docs._
+- Threat modeling, security controls, compliance requirements
+- Authentication and authorization patterns
+- Data protection and privacy considerations
+
+### Performance & Scalability
+_Use this section when performance targets, high load, or scaling concerns exist. Record only feature-specific targets or trade-offs and rely on steering documents for general practices._
+- Target metrics and measurement strategies
+- Scaling approaches (horizontal/vertical)
+- Caching strategies and optimization techniques
+
+### Migration Strategy
+Include a Mermaid flowchart showing migration phases when schema/data movement is required.
+- Phase breakdown, rollback triggers, validation checkpoints
+
+## Supporting References (Optional)
+- Create this section only when keeping the information in the main body would hurt readability (e.g., very long TypeScript definitions, vendor option matrices, exhaustive schema tables). Keep decision-making context in the main sections so the design stays self-contained.
+- Link to the supporting references from the main text instead of inlining large snippets.
+- Background research notes and comparisons continue to live in `research.md`, but their conclusions must be summarized in the main design.
+
+diff --git a/references/spec-templates/init.json b/references/spec-templates/init.json
+new file mode 100644
+--- /dev/null
++++ b/references/spec-templates/init.json
+@@
+{
+  "feature_name": "{{FEATURE_NAME}}",
+  "created_at": "{{TIMESTAMP}}",
+  "updated_at": "{{TIMESTAMP}}",
+  "language": "pt",
+  "phase": "initialized",
+  "approvals": {
+    "requirements": {
+      "generated": false,
+      "approved": false
+    },
+    "design": {
+      "generated": false,
+      "approved": false
+    },
+    "tasks": {
+      "generated": false,
+      "approved": false
+    }
+  },
+  "ready_for_implementation": false
+}
+
+diff --git a/references/spec-templates/requirements-init.md b/references/spec-templates/requirements-init.md
+new file mode 100644
+--- /dev/null
++++ b/references/spec-templates/requirements-init.md
+@@
+# Requirements Document
+
+## Project Description (Input)
+{{PROJECT_DESCRIPTION}}
+
+## Requirements
+<!-- Will be generated in /pipeline-orchestrator-for-codex:spec-requirements phase -->
+
+diff --git a/references/spec-templates/requirements.md b/references/spec-templates/requirements.md
+new file mode 100644
+--- /dev/null
++++ b/references/spec-templates/requirements.md
+@@
+# Requirements Document
+
+## Introduction
+{{INTRODUCTION}}
+
+<!-- Optional when scope could be misread or the feature touches adjacent systems/specs -->
+## Boundary Context (Optional)
+- **In scope**: {{IN_SCOPE_BEHAVIORS}}
+- **Out of scope**: {{OUT_OF_SCOPE_BEHAVIORS}}
+- **Adjacent expectations**: {{ADJACENT_SYSTEM_OR_SPEC_EXPECTATIONS}}
+
+## Requirements
+
+### Requirement 1: {{REQUIREMENT_AREA_1}}
+<!-- Requirement headings MUST include a leading numeric ID only (for example: "Requirement 1: ...", "1. Overview", "2 Feature: ..."). Alphabetic IDs like "Requirement A" are not allowed. -->
+**Objective:** As a {{ROLE}}, I want {{CAPABILITY}}, so that {{BENEFIT}}
+
+#### Acceptance Criteria
+1. When [event], the [system] shall [response/action]
+2. If [trigger], then the [system] shall [response/action]
+3. While [precondition], the [system] shall [response/action]
+4. Where [feature is included], the [system] shall [response/action]
+5. The [system] shall [response/action]
+
+### Requirement 2: {{REQUIREMENT_AREA_2}}
+**Objective:** As a {{ROLE}}, I want {{CAPABILITY}}, so that {{BENEFIT}}
+
+#### Acceptance Criteria
+1. When [event], the [system] shall [response/action]
+2. When [event] and [condition], the [system] shall [response/action]
+
+<!-- Additional requirements follow the same pattern -->
+
+diff --git a/references/spec-templates/research.md b/references/spec-templates/research.md
+new file mode 100644
+--- /dev/null
++++ b/references/spec-templates/research.md
+@@
+# Research & Design Decisions Template
+
+---
+**Purpose**: Capture discovery findings, architectural investigations, and rationale that inform the technical design.
+
+**Usage**:
+- Log research activities and outcomes during the discovery phase.
+- Document design decision trade-offs that are too detailed for `design.md`.
+- Provide references and evidence for future audits or reuse.
+---
+
+## Summary
+- **Feature**: `<feature-name>`
+- **Discovery Scope**: New Feature / Extension / Simple Addition / Complex Integration
+- **Key Findings**:
+  - Finding 1
+  - Finding 2
+  - Finding 3
+
+## Research Log
+Document notable investigation steps and their outcomes. Group entries by topic for readability.
+
+### [Topic or Question]
+- **Context**: What triggered this investigation?
+- **Sources Consulted**: Links, documentation, API references, benchmarks
+- **Findings**: Concise bullet points summarizing the insights
+- **Implications**: How this affects architecture, contracts, or implementation
+
+_Repeat the subsection for each major topic._
+
+## Architecture Pattern Evaluation
+List candidate patterns or approaches that were considered. Use the table format where helpful.
+
+| Option | Description | Strengths | Risks / Limitations | Notes |
+|--------|-------------|-----------|---------------------|-------|
+| Hexagonal | Ports & adapters abstraction around core domain | Clear boundaries, testable core | Requires adapter layer build-out | Aligns with existing steering principle X |
+
+## Design Decisions
+Record major decisions that influence `design.md`. Focus on choices with significant trade-offs.
+
+### Decision: `<Title>`
+- **Context**: Problem or requirement driving the decision
+- **Alternatives Considered**:
+  1. Option A — short description
+  2. Option B — short description
+- **Selected Approach**: What was chosen and how it works
+- **Rationale**: Why this approach fits the current project context
+- **Trade-offs**: Benefits vs. compromises
+- **Follow-up**: Items to verify during implementation or testing
+
+_Repeat the subsection for each decision._
+
+## Risks & Mitigations
+- Risk 1 — Proposed mitigation
+- Risk 2 — Proposed mitigation
+- Risk 3 — Proposed mitigation
+
+## References
+Provide canonical links and citations (official docs, standards, ADRs, internal guidelines).
+- [Title](https://example.com) — brief note on relevance
+- ...
+
+diff --git a/references/spec-templates/tasks.md b/references/spec-templates/tasks.md
+new file mode 100644
+--- /dev/null
++++ b/references/spec-templates/tasks.md
+@@
+# Implementation Plan
+
+## Task Format Template
+
+Use whichever pattern fits the work breakdown:
+
+### Major task only
+- [ ] {{NUMBER}}. {{TASK_DESCRIPTION}}{{PARALLEL_MARK}}
+  - {{DETAIL_ITEM_1}} *(Include details only when needed. If the task stands alone, omit bullet items.)*
+  - _Requirements: {{REQUIREMENT_IDS}}_
+
+### Major + Sub-task structure
+- [ ] {{MAJOR_NUMBER}}. {{MAJOR_TASK_SUMMARY}}
+- [ ] {{MAJOR_NUMBER}}.{{SUB_NUMBER}} {{SUB_TASK_DESCRIPTION}}{{SUB_PARALLEL_MARK}}
+  - {{DETAIL_ITEM_1}}
+  - {{DETAIL_ITEM_2}}
+  - {{OBSERVABLE_COMPLETION_ITEM}} *(At least one detail item should state the observable completion condition for this task.)*
+  - _Requirements: {{REQUIREMENT_IDS}}_ *(IDs only; do not add descriptions or parentheses.)*
+  - _Boundary: {{COMPONENT_NAMES}}_ *(Only for (P) tasks. Omit when scope is obvious.)*
+  - _Depends: {{TASK_IDS}}_ *(Only for non-obvious cross-boundary dependencies. Most tasks omit this.)*
+
+> **Parallel marker**: Append ` (P)` only to tasks that can be executed in parallel. Omit the marker when running in `--sequential` mode.
+>
+> **Optional test coverage**: When a sub-task is deferrable test work tied to acceptance criteria, mark the checkbox as `- [ ]*` and explain the referenced requirements in the detail bullets.

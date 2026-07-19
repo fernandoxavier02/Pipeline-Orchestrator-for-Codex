@@ -1,6 +1,6 @@
 ---
 name: measure-paperclip-fidelity
-description: "Public Codex skill that measures Paperclip execution fidelity from a company id and renders the bundled mirror-fidelity report."
+description: "Measure Paperclip execution fidelity and render the bundled mirror-fidelity report."
 disable-model-invocation: true
 allowed-tools: update_plan, Read, Bash
 argument-hint: "<companyId>"

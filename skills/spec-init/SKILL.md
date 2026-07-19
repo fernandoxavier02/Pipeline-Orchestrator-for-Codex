@@ -1,6 +1,6 @@
 ---
 name: spec-init
-description: Initialize a new specification with detailed project description
+description: "Initialize a new governed specification from a project description."
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: <project-description>
 disable-model-invocation: true

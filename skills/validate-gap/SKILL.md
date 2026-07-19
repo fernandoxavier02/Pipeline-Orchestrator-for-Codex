@@ -1,6 +1,6 @@
 ---
 name: validate-gap
-description: Analyze implementation gap between requirements and existing codebase. Use when planning integration with existing systems.
+description: "Analyze gaps between requirements, design, and existing implementation."
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: <feature-name>
 metadata:

@@ -1,17 +1,6 @@
 ---
 name: spec-heavy
-description: |
-  Prescriptive 9-step workflow for the Spec Lifecycle in Heavy mode (relevant impact: domain,
-  data, integrations, multiple flows, contracts, jobs, mobile; or maximum predictability
-  desired before implementation). Adds full content review (12 axes) and parallel adversarial
-  audits (architecture-critic + security-scanner) on top of the Light pipeline. Sequence is
-  locked (1→9, no skip, no reorder). 5 mandatory GATE_REQUEST gates at steps 1
-  (format-gate-approval), 2 (content-review-approval), 3 (tdd-scenarios-approval),
-  4 (adversarial-loop-checkpoint), 5 (post-impl-validation). 6 reused agents:
-  spec-format-gate (1), spec-content-reviewer (2), spec-post-impl-validator (5),
-  adversarial-architecture-critic (6), adversarial-security-scanner (7), spec-closer (9);
-  steps 3, 4 and 8 inline. stop_rule_max_failures: 3 (longer workflow warrants more
-  tolerance). Manual-only invocation via /pipeline-orchestrator-for-codex:spec-heavy.
+description: "Heavy governed spec lifecycle with requirements, design, tasks, checks, and audits."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"

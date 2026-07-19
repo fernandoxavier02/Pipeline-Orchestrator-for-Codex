@@ -1,6 +1,6 @@
 ---
 name: paperclip-spec
-description: "Public Codex skill that dispatches a governed Paperclip Spec task tree after dry-run preview and explicit confirmation."
+description: "Dispatch a governed Paperclip Spec task tree after dry-run preview and confirmation."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "<spec description> [--simples|--media|--complexa]"

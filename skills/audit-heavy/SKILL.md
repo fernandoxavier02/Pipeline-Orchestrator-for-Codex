@@ -1,6 +1,6 @@
 ---
 name: audit-heavy
-description: Prescriptive 9-step audit workflow for COMPLEXA audits (full system, multi-axis, regulatory, security-sensitive). Imported from Pulsar audit workflow per spec §22. Use when audit complexity is heavy or when audit-light auto-escalates at its scope gate. REPORT-ONLY by Iron Law — no code modification under any circumstance. Steps 1 subagent gate (intake + spec + inventory — REQUIRES SCOPE APPROVAL), 2-4 subagent (architecture + domain/SSOT + contracts via audit-domain-analyzer), 5-8 subagent (data + frontend + backend + governance via audit-compliance-checker), 9 subagent gate (Pa de Cal + risk matrix via audit-risk-matrix-generator — REQUIRES GO/NO-GO). Each step produces a typed JSON output (AuditIntake, DependencyImpactAudit, DecisionSSOTAudit, ContractGovernanceAudit, DataGovernanceAudit, FrontendDeepAudit, BackendDeepAudit, DeliveryGovernanceAudit, AuditMasterSeal). Manual-only invocation via /pipeline-orchestrator-for-codex:audit-heavy or via /pipeline-orchestrator-for-codex:audit --heavy.
+description: "Heavy governed audit workflow for broad or risky audits with approval gates and risk matrix."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: [audit scope — modules, axes, baseline]

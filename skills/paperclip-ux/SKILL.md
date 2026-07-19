@@ -1,6 +1,6 @@
 ---
 name: paperclip-ux
-description: "Public Codex skill that dispatches a governed Paperclip UX Simulation task tree after dry-run preview and explicit confirmation."
+description: "Dispatch a governed Paperclip UX task tree after dry-run preview and confirmation."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "<journey or screen description> [--simples|--media|--complexa]"

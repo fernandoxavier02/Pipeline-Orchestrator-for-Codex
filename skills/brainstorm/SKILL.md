@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: "Prepare a governed pipeline run before implementation. Allocates pipeline-runs/<NNN>-<slug>, captures intent, drives spec lifecycle skills, validates design/gap, then hands off to /pipeline-orchestrator-for-codex:pipeline."
+description: "Prepare a governed pipeline run, create run context, validate design/gaps, and hand off."
 agent_type: worker
 allowed-tools: update_plan, spawn_agent, wait_agent
 gates_at: [phase-0, phase-1, phase-1.5]

@@ -1,6 +1,6 @@
 ---
 name: pipeline
-description: "Automated Codex pipeline orchestrator for any project. Requires complete real-agent runtime: spawn_agent, wait_agent, artifact collection, gate recording, hook/checkpoint recording, and structured final state. Use when ANY task needs structured execution — bug fixes, features, audits, user stories, UX reviews. The public command /pipeline-orchestrator-for-codex:pipeline auto-classifies, confirms with user, then executes with TDD, batch processing, adversarial review with user gates, final review team, and Go/No-Go validation. If mandatory runtime capabilities are missing, it blocks with blocked-no-agent-runtime; manual fallback is not a valid pipeline execution."
+description: "Run the governed Pipeline Orchestrator with classification, gates, reviews, and validation."
 agent_type: worker
 allowed-tools: update_plan, spawn_agent, wait_agent
 gates_at: [phase-0, phase-1, phase-1.5, phase-2, phase-3]

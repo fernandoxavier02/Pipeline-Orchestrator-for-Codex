@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createHmac } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveCliExitCode, runPipelineCli } from "../../../src/cli/pipeline-cli.js";
+import { resolveCliAgentRuntimeAdapter, resolveCliExitCode, runPipelineCli } from "../../../src/cli/pipeline-cli.js";
 import type { AgentRuntimeAdapter, DispatchResult } from "../../../src/dispatcher/dispatcher-types.js";
 import { createSessionStore } from "../../../src/state/session-store.js";
 import { createSentinelStateStore } from "../../../src/sentinel/sentinel-state.js";
@@ -179,6 +179,45 @@ async function withSentinelHmac<T>(key: string, callback: () => Promise<T>) {
     }
   }
 }
+
+describe("CLI agent runtime adapter resolution", () => {
+  const originalAdapter = process.env.CODEX_AGENT_RUNTIME_ADAPTER;
+  const originalDisable = process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME;
+
+  afterEach(() => {
+    if (originalAdapter === undefined) {
+      delete process.env.CODEX_AGENT_RUNTIME_ADAPTER;
+    } else {
+      process.env.CODEX_AGENT_RUNTIME_ADAPTER = originalAdapter;
+    }
+    if (originalDisable === undefined) {
+      delete process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME;
+    } else {
+      process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME = originalDisable;
+    }
+  });
+
+  it("defaults direct CLI runs to the Codex CLI process adapter", () => {
+    delete process.env.CODEX_AGENT_RUNTIME_ADAPTER;
+    delete process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME;
+
+    expect(resolveCliAgentRuntimeAdapter()).toBe("codex-cli-process");
+  });
+
+  it("preserves explicit and environment adapter choices", () => {
+    process.env.CODEX_AGENT_RUNTIME_ADAPTER = "custom-adapter";
+
+    expect(resolveCliAgentRuntimeAdapter("explicit-adapter")).toBe("explicit-adapter");
+    expect(resolveCliAgentRuntimeAdapter()).toBe("custom-adapter");
+  });
+
+  it("allows diagnostics to opt out of automatic CLI runtime detection", () => {
+    delete process.env.CODEX_AGENT_RUNTIME_ADAPTER;
+    process.env.PIPELINE_CLI_DISABLE_AUTO_AGENT_RUNTIME = "true";
+
+    expect(resolveCliAgentRuntimeAdapter()).toBeUndefined();
+  });
+});
 
 async function withSharedIntegrityHmac<T>(key: string, callback: () => Promise<T>) {
   const previousSentinel = process.env.PIPELINE_SENTINEL_HMAC_KEY;

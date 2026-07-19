@@ -1,6 +1,6 @@
 ---
 name: codex-kb-drift-check
-description: "Check whether local repo files have drifted from contracts documented in the Codex KB. Use before PR/release, after bulk edits to hooks, skills, AGENTS.md, plugin.json, marketplace/cache docs, agents, or when asked to verify KB compliance. Read-only: produces a drift report and never edits files."
+description: "Check repo drift against the local Codex/OpenAI KB and report read-only findings."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[scope: 'all' | article-name | glob-pattern]"

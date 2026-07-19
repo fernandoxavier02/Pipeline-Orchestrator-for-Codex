@@ -1,6 +1,6 @@
 ---
 name: review
-description: Review a task implementation against approved specs, task boundaries, and verification evidence. Use after an implementer finishes a task, after remediation, or before accepting a task as complete.
+description: "Review an implementation against specs, task boundaries, and verification evidence."
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: <task-id>
 disable-model-invocation: true

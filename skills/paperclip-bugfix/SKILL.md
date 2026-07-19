@@ -1,6 +1,6 @@
 ---
 name: paperclip-bugfix
-description: "Public Codex skill that dispatches a governed Paperclip Bug Fix task tree after dry-run preview and explicit confirmation."
+description: "Dispatch a governed Paperclip Bug Fix task tree after dry-run preview and confirmation."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "<bug description> [--simples|--media|--complexa]"

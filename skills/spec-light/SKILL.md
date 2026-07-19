@@ -1,15 +1,6 @@
 ---
 name: spec-light
-description: |
-  Prescriptive 6-step workflow for the Spec Lifecycle in Light mode (small-to-medium scope,
-  controlled risk, prefer speed with discipline; trusts the spec content and skips the deep
-  content-review phase, focusing instead on a 25-check Format Gate, ATDD seed, TDD
-  implementation with adversarial loop, 6-axis post-impl congruence, simplified confidence
-  dashboard, and formal closure). Sequence is locked (1→6, no skip, no reorder). 4 mandatory
-  GATE_REQUEST gates at steps 1 (format-gate-approval), 2 (tdd-scenarios-approval),
-  3 (adversarial-loop-checkpoint), 4 (post-impl-validation). 3 reused executor agents:
-  spec-format-gate (1), spec-post-impl-validator (4), spec-closer (6); step 2 and 5 inline.
-  Manual-only invocation via /pipeline-orchestrator-for-codex:spec-light.
+description: "Light governed spec lifecycle with requirements, design, tasks, and validation."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[spec feature name or path to pipeline-runs/<run_id>/01-spec/]"

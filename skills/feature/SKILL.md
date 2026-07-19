@@ -1,6 +1,6 @@
 ---
 name: feature
-description: Feature shortcut — skips task-orchestrator type-classification by pre-fixing task_type=Feature. Same pipeline machinery as /pipeline-orchestrator-for-codex:pipeline (information-gate, design-interrogator, plan-architect, executor-controller, sanity, Pa de Cal). Invoked manually via `/pipeline-orchestrator-for-codex:feature [task]`. Variant flags `--light` / `--heavy` route directly to skills/feature-light or skills/feature-heavy with their prescriptive 13-step procedures imported from Pulsar.
+description: "Shortcut for governed feature workflow with planning, TDD, review, and validation."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: [feature description with user story + DoD]

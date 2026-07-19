@@ -1,6 +1,6 @@
 ---
 name: spec-tasks
-description: Generate implementation tasks from requirements and design. Use when creating actionable task lists.
+description: "Generate implementation tasks from approved requirements and design."
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: <feature-name> [-y] [--sequential]
 metadata:

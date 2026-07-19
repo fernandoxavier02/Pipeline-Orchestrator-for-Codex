@@ -1,6 +1,6 @@
 ---
 name: help
-description: "Help surface for Pipeline Orchestrator. Lists every public execution form and recommends the best command/flow when the user includes a task or instruction. Informational only: never executes the recommended workflow."
+description: "Show Pipeline Orchestrator commands and recommend the right workflow without executing it."
 disable-model-invocation: true
 allowed-tools: update_plan, spawn_agent, wait_agent
 argument-hint: "[optional task or instruction to classify and recommend]"
