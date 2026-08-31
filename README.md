@@ -59,11 +59,6 @@ git clone https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.gi
 # Install into Codex plugins cache
 mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.3
 cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.3/
-
-# Optional: Install Node.js dependencies (only needed for TypeScript development/testing)
-# The plugin works WITHOUT npm install — hooks use only Node.js builtins (fs, path)
-# cd ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex/0.5.3
-# npm install --production
 ```
 
 **Option 3: Symlink for development**
@@ -71,7 +66,6 @@ cp -r Pipeline-Orchestrator-for-Codex/* ~/.codex/plugins/cache/fx-studio-ai/pipe
 ```bash
 git clone https://github.com/fernandoxavier02/Pipeline-Orchestrator-for-Codex.git
 cd Pipeline-Orchestrator-for-Codex
-npm install
 
 # Create a symlink in the plugins cache
 mkdir -p ~/.codex/plugins/cache/fx-studio-ai/pipeline-orchestrator-for-codex
