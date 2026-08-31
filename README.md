@@ -374,8 +374,8 @@ pipeline-orchestrator-for-codex/
 Create `.codex/pipeline.local.md` in your project root (optional):
 
 ```yaml
-build_command: "npm run build"
-test_command: "npm test"
+build_command: "make build"
+test_command: "make test"
 ```
 
 If absent, the orchestrator auto-detects from `package.json`, `Makefile`, or common conventions.
